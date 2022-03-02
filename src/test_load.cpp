@@ -66,8 +66,6 @@ void check_index(reference_index& ri, const std::string& ref_fname ){
                 }
             }
             ++kit;
-            
-           //break;
         }
         ++refnum;
     }
