@@ -246,7 +246,7 @@ int main(int argc, char** argv) {
 
     /* mandatory arguments */
     parser.add("input_filename",
-               "Must be a segment / sequence format file pair.");
+               "Must be a segment / sequence format file pair (cuttlefish v1 reduced GFA format).");
     parser.add("k", "Length of k with which cdbg was built.");
     parser.add("output_filename", "Output file name where the data structure will be serialized.",
                "-o", false);

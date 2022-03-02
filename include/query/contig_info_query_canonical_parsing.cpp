@@ -34,7 +34,9 @@ struct contig_info_query_canonical_parsing {
         , m_window_size(0)
         , m_prev_query_offset(0)
         , m_reverse(false)
-
+        , m_prev_contig_id(0)
+        , m_prev_contig_length(0)
+        , m_prev_contig_offset(0)
     {
         assert(m_dict->m_canonical_parsing);
     }
@@ -63,13 +65,9 @@ struct contig_info_query_canonical_parsing {
         // should consider this as basically a "new"
         // query
         if (!m_start) {
-            if ( (m_prev_query_offset + 1) == query_offset ) {
-                m_prev_query_offset = query_offset;
-            } else {
-                m_prev_query_offset = query_offset;
-                m_start = true;
-            }
+            m_start = (m_prev_query_offset + 1) != query_offset;
         }
+        m_prev_query_offset = query_offset;
 
         return _get_contig_pos();
     }
@@ -113,10 +111,10 @@ struct contig_info_query_canonical_parsing {
         /******************************/
         
         /* no optimizations */
+        /*
         bool answer = false;
         m_minimizer_not_found = false;
         locate_bucket();
-
         int ret = is_member(qr);
         if (ret == return_value::MINIMIZER_NOT_FOUND) {
             m_minimizer_not_found = true;
@@ -124,14 +122,14 @@ struct contig_info_query_canonical_parsing {
         } else {
             answer = (ret == return_value::KMER_FOUND);
         }
+        */
         /* compute answer */
-        /*
         bool answer = false;
         if (same_minimizer()) {
             if (m_minimizer_not_found) {
                 answer = false;
             } else if (extends()) {
-                extend();
+                extend(qr);
                 answer = true;
             } else {
                 int ret = is_member(qr);
@@ -143,7 +141,7 @@ struct contig_info_query_canonical_parsing {
 
             // Try to extend matching even when we change minimizer. 
             if (extends()) {
-                extend();
+                extend(qr);
                 answer = true;
             } else {
                 int ret = is_member(qr);
@@ -155,7 +153,6 @@ struct contig_info_query_canonical_parsing {
                 }
             }
         }
-        */
         /******************/
 
         /* update state */
@@ -165,6 +162,14 @@ struct contig_info_query_canonical_parsing {
 
         assert(m_dict->is_member(kmer) == answer);
         qr.is_member = answer;
+        // record the query information we will 
+        // need if the next query is answered via 
+        // extension.
+        if (answer) {
+            m_prev_contig_id = qr.contig_id;
+            m_prev_contig_length = qr.contig_length;
+            m_prev_contig_offset = qr.contig_offset;
+        }
         return qr;//{true, answer};
     }
 
@@ -191,6 +196,7 @@ private:
     uint64_t m_pos_in_window, m_window_size;
     uint64_t m_prev_query_offset;
     bool m_reverse;
+    uint64_t m_prev_contig_id, m_prev_contig_length, m_prev_contig_offset;
 
     enum return_value { MINIMIZER_NOT_FOUND = 0, KMER_FOUND = 1, KMER_NOT_FOUND = 2 };
 
@@ -288,16 +294,23 @@ private:
         return return_value::KMER_NOT_FOUND;
     }
 
-    inline void extend() {
+    inline void extend(query_result& qr) {
         if (m_reverse) {
             m_string_iterator.eat_reverse(2);
             m_pos_in_window -= 1;
+            m_prev_contig_offset -= 1;
+            qr.is_forward = false;
             assert(m_pos_in_window >= 1);
         } else {
             m_string_iterator.eat(2);
             m_pos_in_window += 1;
+            m_prev_contig_offset += 1;
+            qr.is_forward = true;
             assert(m_pos_in_window <= m_window_size);
         }
+        qr.contig_id = m_prev_contig_id;
+        qr.contig_length = m_prev_contig_length;
+        qr.contig_offset = m_prev_contig_offset;
     }
 
     inline bool extends() {
