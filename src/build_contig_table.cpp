@@ -216,7 +216,6 @@ bool build_contig_table(const std::string& input_filename,
     for (size_t i = 0; i < bct.m_ctg_offsets.size() - 1; ++i) {
         auto curr_start = bct.m_ctg_offsets.access(i);
         auto curr_end = bct.m_ctg_offsets.access(i+1);
-        auto len = curr_end - curr_start;
 
         uint32_t prior_ref = 0;
         uint32_t prior_pos = 0;
