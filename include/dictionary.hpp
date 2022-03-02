@@ -1,3 +1,4 @@
+
 #pragma once
 
 #include "util.hpp"
@@ -51,6 +52,7 @@ struct dictionary {
 
     friend struct membership_query_canonical_parsing;
     friend struct membership_query_regular_parsing;
+    friend struct contig_info_query_canonical_parsing;
 
     struct membership_query_result {
         membership_query_result() : num_kmers(0), num_valid_kmers(0), num_positive_kmers(0) {}
@@ -72,6 +74,7 @@ struct dictionary {
         bool has_next() const { return it.has_next(); }
         std::pair<uint64_t, std::string> next() { return it.next(); }
 
+
     private:
         typename buckets::iterator it;
     };
@@ -92,6 +95,7 @@ struct dictionary {
 
     void print_info() const;
     void print_space_breakdown() const;
+
 
     template <typename Visitor>
     void visit(Visitor& visitor) {
@@ -120,5 +124,6 @@ private:
     uint64_t lookup_uint64_regular_parsing(uint64_t uint64_kmer) const;
     uint64_t lookup_uint64_canonical_parsing(uint64_t uint64_kmer) const;
 };
+
 
 }  // namespace sshash

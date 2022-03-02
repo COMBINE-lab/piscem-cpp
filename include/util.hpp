@@ -1,5 +1,6 @@
 #pragma once
 
+
 #include <vector>
 #include <cassert>
 #include <fstream>
@@ -29,6 +30,59 @@ typedef pthash::single_phf<base_hasher_type,               // base hasher
     pthash_mphf_type;
 
 namespace util {
+
+// For the time being, assume < 4B contigs
+// and that each contig is < 4B bases
+struct Position {
+    // std::string transcript_id;
+    uint32_t transcript_id_;
+    uint32_t pos_;
+
+    // bool orien;
+    Position() {
+        transcript_id_ = std::numeric_limits<decltype(transcript_id_)>::max();
+        pos_ = std::numeric_limits<decltype(pos_)>::max();
+    }
+
+    Position(uint32_t tid, uint32_t tpos, bool torien) {
+        transcript_id_ = tid;
+        pos_ = tpos;
+        setOrientation(torien);
+        // orien = torien;
+    }
+
+    // The most significant bit carry
+    // the orientation information
+
+    void setOrientation(bool orientation) {
+        if (orientation) {
+            pos_ |= 1 << 31;
+        } else {
+            pos_ &= 0x7FFFFFFF;
+        }
+    }
+
+    inline uint32_t transcript_id() { return transcript_id_; }
+
+    inline uint32_t pos() { return (pos_ & 0x7FFFFFFF); }
+
+    inline bool orientation() { return (pos_ & 0x80000000); }
+
+    template <typename Visitor>
+    void visit(Visitor& visitor) {
+        visitor.visit(transcript_id_);
+        visitor.visit(pos_);
+    }
+
+
+    void update(uint32_t tid, uint32_t tpos, bool torien) {
+        transcript_id_ = tid;
+        pos_ = tpos;
+        setOrientation(torien);
+    }
+};
+
+
 
 void check_hash_collision_probability(uint64_t size) {
     /*
@@ -73,6 +127,7 @@ struct build_configuration {
     uint64_t m;  // minimizer size
     uint64_t seed;
 
+
     uint64_t l;  // drive dictionary trade-off
     double c;    // drive PTHash trade-off
 
@@ -101,6 +156,7 @@ struct buckets_statistics {
         (void)num_strings;
         m_bucket_sizes.resize(max_bucket_size + 1, 0);
         m_total_kmers.resize(max_bucket_size + 1, 0);
+
         m_string_sizes.resize(max_string_size + 1, 0);
     }
 
@@ -174,6 +230,7 @@ struct buckets_statistics {
                           << " strings = " << (m_bucket_sizes[bucket_size] * 100.0) / m_num_buckets
                           << "%" << std::endl;
             }
+
         }
         std::cout << "max_num_strings_in_bucket " << m_max_num_strings_in_bucket << std::endl;
 
@@ -238,6 +295,7 @@ char decimal  binary
  G     71     01000-11-1 -> 11
  T     84     01010-10-0 -> 10
 */
+/*
 uint64_t char_to_uint64(char c) { return (c >> 1) & 3; }
 
 char uint64_to_char(uint64_t x) {
@@ -245,38 +303,42 @@ char uint64_to_char(uint64_t x) {
     static char nucleotides[4] = {'A', 'C', 'T', 'G'};
     return nucleotides[x];
 }
+*/
+
+
 
 /*
     Traditional mapping.
 */
-// uint64_t char_to_uint64(char c) {
-//     switch (c) {
-//         case 'A':
-//             return 0;
-//         case 'C':
-//             return 1;
-//         case 'G':
-//             return 2;
-//         case 'T':
-//             return 3;
-//     }
-//     assert(false);
-//     return -1;
-// }
-// char uint64_to_char(uint64_t x) {
-//     switch (x) {
-//         case 0:
-//             return 'A';
-//         case 1:
-//             return 'C';
-//         case 2:
-//             return 'G';
-//         case 3:
-//             return 'T';
-//     }
-//     assert(false);
-//     return 0;
-// }
+uint64_t char_to_uint64(char c) {
+    switch (c) {
+        case 'A':
+            return 0;
+
+        case 'C':
+            return 1;
+        case 'G':
+            return 2;
+        case 'T':
+            return 3;
+    }
+    assert(false);
+    return -1;
+}
+char uint64_to_char(uint64_t x) {
+    switch (x) {
+        case 0:
+            return 'A';
+        case 1:
+            return 'C';
+        case 2:
+            return 'G';
+        case 3:
+            return 'T';
+    }
+    assert(false);
+    return 0;
+}
 
 /****************************************************************************
     The following two functions preserves the lexicographic order of k-mers,
@@ -341,6 +403,8 @@ std::string uint64_to_string_no_reverse(uint64_t x, uint64_t k) {
     in binary:
     reverse_complement("00011001000111") = 01111011001110
 */
+
+/*
 uint64_t compute_reverse_complement(uint64_t x, uint64_t size) {
     assert(size <= 32);
     // Complement, swap byte order
@@ -354,6 +418,19 @@ uint64_t compute_reverse_complement(uint64_t x, uint64_t size) {
     res >>= 64 - 2 * size;
     return res;
 }
+*/
+
+uint64_t compute_reverse_complement(uint64_t x, uint64_t k) {
+    uint64_t res = ~x;
+    res = (res >> 2 & 0x3333333333333333) | (res & 0x3333333333333333) << 2;
+    res = (res >> 4 & 0x0F0F0F0F0F0F0F0F) | (res & 0x0F0F0F0F0F0F0F0F) << 4;
+    res = (res >> 8 & 0x00FF00FF00FF00FF) | (res & 0x00FF00FF00FF00FF) << 8;
+    res = (res >> 16 & 0x0000FFFF0000FFFF) | (res & 0x0000FFFF0000FFFF) << 16;
+    res = (res >> 32 & 0x00000000FFFFFFFF) | (res & 0x00000000FFFFFFFF) << 32;
+
+    return res >> (2 * (32 - k));
+}
+
 
 // forward character map. A -> A, C -> C, G -> G, T -> T. rest maps to zero.
 static const char canonicalize_basepair_forward_map[256] = {
