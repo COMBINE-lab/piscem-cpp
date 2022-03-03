@@ -43,6 +43,40 @@ struct buckets {
         return {ret, p, piece_end, prev_end};
     }
 
+    std::tuple<uint64_t, uint64_t, uint64_t, uint64_t> _offset_to_contig_info(uint64_t offset,
+                                                                              uint64_t k) const {
+        auto [pos, piece_end] = pieces.next_geq(offset);
+        uint64_t piece_begin = 0;
+
+        /* The following two facts hold. */
+        assert(pieces.access(pos) == piece_end);
+        assert(piece_end >= offset);
+
+        bool shift = piece_end > offset;
+        uint64_t contig_id = pos - shift;
+
+        if (piece_end == offset) {
+            assert(shift == false);
+            assert(pos + 1 < pieces.size());
+            piece_begin = piece_end;
+            piece_end = pieces.access(pos + 1);
+        } else {
+            assert(shift == true);
+            /* Note that pieces.access(0) = 0 by construction, so we could avoid the following test
+               on contig_id.
+               We keep it anyway, for the moment, to avoid an access when contig_id = 0. */
+            piece_begin = (contig_id > 0) ? pieces.access(contig_id) : 0;
+        }
+
+        /* Now, the following two facts hold. */
+        assert(offset >= contig_id * (k - 1));
+        assert(piece_end > offset);
+
+        uint64_t kmer_id = offset - contig_id * (k - 1);
+
+        return {kmer_id, contig_id, piece_begin, piece_end};
+    }
+
     uint64_t id_to_offset(uint64_t id, uint64_t k) const {
         constexpr uint64_t linear_scan_threshold = 8;
         uint64_t lo = 0;
