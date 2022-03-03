@@ -19,13 +19,14 @@ struct buckets {
         return {offset - p * (k - 1), piece_end};
     }
 
-    std::tuple<uint64_t, uint64_t, uint64_t, uint64_t> offset_to_contig_info(uint64_t offset, uint64_t k) const {
+    std::tuple<uint64_t, uint64_t, uint64_t, uint64_t> offset_to_contig_info(uint64_t offset,
+                                                                             uint64_t k) const {
         auto [pos, piece_end] = pieces.next_geq(offset);
 
         bool shift = (piece_end > offset);
         uint64_t p = pos - shift;
 
-        auto prev_end = (p > 0) ? pieces.access( (shift ? pos-1 : pos) ) : 0;
+        auto prev_end = (p > 0) ? pieces.access((shift ? pos - 1 : pos)) : 0;
         if (piece_end == offset) {
             assert(pos + 1 < pieces.size());
             piece_end = pieces.access(pos + 1);
@@ -41,7 +42,6 @@ struct buckets {
         // 3: position at end of the previous contig
         return {ret, p, piece_end, prev_end};
     }
-
 
     uint64_t id_to_offset(uint64_t id, uint64_t k) const {
         constexpr uint64_t linear_scan_threshold = 8;
