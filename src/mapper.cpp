@@ -31,7 +31,7 @@ void do_map(mindex::reference_index& ri, const std::string& reads_filename) {
     size_t max_occ_default = 200;
     size_t max_occ_recover = 1000;
     const bool attempt_occ_recover = (max_occ_recover > max_occ_default);
-    size_t alt_max_occ = 0;
+    // size_t alt_max_occ = 0;
 
     size_t num_hits = 0;
     sshash::contig_info_query_canonical_parsing q(ri.get_dict());
@@ -44,12 +44,13 @@ void do_map(mindex::reference_index& ri, const std::string& reads_filename) {
             std::cerr << "readnum : " << read_num << ", num_hits : " << num_hits << "\n";
         }
         
-        alt_max_occ = 0;
+        //alt_max_occ = 0;
         q.start();
         hs.clear();
         hit_map.clear();
         accepted_hits.clear();
         bool had_left_hit = hs.get_raw_hits_sketch(record.seq, q, true, false);
+        bool early_stop = false;
 
         // if there were hits
         if (had_left_hit) {
@@ -78,7 +79,7 @@ void do_map(mindex::reference_index& ri, const std::string& reads_filename) {
 
             auto collect_mappings_from_hits =
                 [&max_stretch, &min_occ, &hit_map, &num_valid_hits, &total_occs,
-                 &largest_occ](auto& raw_hits, auto& prev_read_pos, auto& max_allowed_occ,
+                 &largest_occ, &early_stop](auto& raw_hits, auto& prev_read_pos, auto& max_allowed_occ,
                                       auto& had_alt_max_occ) -> bool {
                 for (auto& raw_hit : raw_hits) {
                     auto& read_pos = raw_hit.first;
@@ -140,7 +141,7 @@ void do_map(mindex::reference_index& ri, const std::string& reads_filename) {
 
             bool _discard = false;
             auto mao_first_pass = max_occ_default - 1;
-            bool early_stop =
+            early_stop =
                 collect_mappings_from_hits(raw_hits, prev_read_pos, mao_first_pass, _discard);
 
             // If our default threshold was too stringent, then fallback to a more liberal
@@ -156,7 +157,7 @@ void do_map(mindex::reference_index& ri, const std::string& reads_filename) {
             }
 
             uint32_t best_alt_hits = 0;
-            int32_t signed_read_len = static_cast<int32_t>(record.seq.length());
+            // int32_t signed_read_len = static_cast<int32_t>(record.seq.length());
 
             for (auto& kv : hit_map) {
                 auto best_hit_dir = kv.second.best_hit_direction();
@@ -184,7 +185,7 @@ void do_map(mindex::reference_index& ri, const std::string& reads_filename) {
                 }
             }
 
-            alt_max_occ = had_alt_max_occ ? accepted_hits.size() : max_occ_default;
+            // alt_max_occ = had_alt_max_occ ? accepted_hits.size() : max_occ_default;
 
             /*
              * This rule; if enabled, allows through mappings missing a single hit, if there
