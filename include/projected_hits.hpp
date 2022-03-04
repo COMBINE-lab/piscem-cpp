@@ -2,7 +2,7 @@
 
 #include "nonstd/span.hpp"
 #include "util.hpp"
-
+#include <iostream>
 struct ref_pos {
     uint32_t pos;
     bool isFW;
@@ -67,4 +67,18 @@ struct projected_hits {
 
         return {rpos, rfw};
     }
+    
+    friend std::ostream& operator<<(std::ostream& os, projected_hits& h);
 };
+
+
+std::ostream& operator<<(std::ostream& os, projected_hits& h) {
+    os << "{ proj_hit : \n"
+       << "\t{ contig_idx : " << h.contigIdx_ << ", "
+       << "contig_pos : " << h.contigPos_ << ", "
+       << "contig_ori : " << (h.contigOrientation_ ? "fw" : "rc") << ", "
+       << "contig_len : " << h.contigLen_ << ", "
+       << "global_pos : " << h.globalPos_ << ", "
+       << "ref_range_len : " << h.refRange.size() << "}\n}\n";
+    return os;
+}

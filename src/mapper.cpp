@@ -18,12 +18,16 @@ void do_map(mindex::reference_index& ri, const std::string& reads_filename) {
     gzFile fp = gzopen(reads_filename.c_str(), "r");
     auto ks = make_kstream(fp, gzread, mode::in);
 
+    size_t num_hits = 0;
     sshash::contig_info_query_canonical_parsing q(ri.get_dict());
     mindex::hit_searcher hs(&ri);
     uint64_t read_num = 0;
     while (ks >> record) {
         ++read_num;
-        std::cout << "readnum : " << read_num << "\n";
+        // std::cout << "readnum : " << read_num << "\n";
+        if (read_num % 100000 == 0) {
+            std::cout << "readnum : " << read_num << ", num_hits : " << num_hits << "\n";
+        }
         q.start();
         hs.clear();
         bool had_left_hit = hs.get_raw_hits_sketch(record.seq, q, true, false);
@@ -32,9 +36,10 @@ void do_map(mindex::reference_index& ri, const std::string& reads_filename) {
         if (!left_hits.empty()) {
             for (auto& lh : left_hits) {
                 auto& ph = lh.second;
-                std::cout << "qp : " << lh.first 
-                          << ", hit : [ ctg:" << ph.contigIdx_ << " @ " 
-                          << ph.contigPos_ << " {" << (ph.contigOrientation_ ? "fw" : "rc") << "}]\n";
+                ++num_hits;
+                //std::cout << "qp : " << lh.first 
+                //          << ", hit : [ ctg:" << ph.contigIdx_ << " @ " 
+                //          << ph.contigPos_ << " {" << (ph.contigOrientation_ ? "fw" : "rc") << "}]\n";
             }
         }
 

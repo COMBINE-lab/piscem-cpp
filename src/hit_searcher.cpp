@@ -70,7 +70,6 @@ struct SkipContext {
 
     if (!found_match) {
       phits = pfi->query(kit1, qc);
-      //pfi->getRefPos(kit1->first, qc);
     }
 
     return !phits.empty();
@@ -247,6 +246,7 @@ struct SkipContext {
       size_t cEndPos = cStartPos + phits.contigLen_;
       size_t cCurrPos = phits.globalPos_; 
       global_contig_pos = static_cast<int64_t>(cCurrPos);
+
       int32_t ctg_skip = 1;
       // fw ori
       if (phits.contigOrientation_) {
@@ -300,6 +300,12 @@ struct SkipContext {
       // set ourselves up for a fast check in case we see 
       // what we expect to see.
       if (expected_skip and (expected_cid != invalid_cid) and (kit1 != kit_end)) {
+        /*
+      if (2*cCurrPos > ref_contig_it.size()) {
+        std::cout << "cCurrPos = " << 2*cCurrPos << ", ref_contig_len = " << ref_contig_it.size() << "\n";
+        std::cout << "expected_cid = " << expected_cid << ", skip = " << skip << "\n";
+      }
+      */
         if (phits.contigOrientation_) { 
           // if match is fw, go to the next k-mer in the contig
           cCurrPos += skip;
@@ -307,7 +313,6 @@ struct SkipContext {
           fast_hit.offset = skip;
           ref_contig_it.at(2*cCurrPos);
           fast_hit.ref_kmer = ref_contig_it.read(2*k);
-          //}
           return;
         } else {
           cCurrPos -= skip;
@@ -315,7 +320,6 @@ struct SkipContext {
           fast_hit.offset = -skip;
           ref_contig_it.at(2*cCurrPos);
           fast_hit.ref_kmer = ref_contig_it.read(2*k);
-          //}
           return;
         }
       }

@@ -291,6 +291,7 @@ private:
                     qr.contig_offset = (nuc_pos - prev_end);
                     qr.contig_id = contig_id;
                     qr.contig_length = (offset_end - prev_end);
+                    qr.global_pos = nuc_pos;
                     return return_value::KMER_FOUND;
                 }
             }
@@ -299,23 +300,31 @@ private:
         return return_value::KMER_NOT_FOUND;
     }
 
+    // If `extends()` returned true, then we do the actual
+    // extension here.  
+    // Move the relevant offsets and iterators depending on 
+    // the direction of the hit, and set the relevant state for the 
+    // query result.
     inline void extend(query_result& qr) {
         if (m_reverse) {
             m_string_iterator.eat_reverse(2);
             m_pos_in_window -= 1;
             m_prev_contig_offset -= 1;
+            m_prev_global_pos -= 1;
             qr.is_forward = false;
             assert(m_pos_in_window >= 1);
         } else {
             m_string_iterator.eat(2);
             m_pos_in_window += 1;
             m_prev_contig_offset += 1;
+            m_prev_global_pos += 1;
             qr.is_forward = true;
             assert(m_pos_in_window <= m_window_size);
         }
         qr.contig_id = m_prev_contig_id;
         qr.contig_length = m_prev_contig_length;
         qr.contig_offset = m_prev_contig_offset;
+        qr.global_pos = m_prev_global_pos;
     }
 
     inline bool extends() {
