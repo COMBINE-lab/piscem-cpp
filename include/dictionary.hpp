@@ -7,6 +7,10 @@
 #include "skew_index.hpp"
 #include "abundances.hpp"
 
+namespace mindex {
+    class reference_index;
+}
+
 namespace sshash {
 
 struct dictionary {
@@ -53,6 +57,7 @@ struct dictionary {
     friend struct membership_query_canonical_parsing;
     friend struct membership_query_regular_parsing;
     friend struct contig_info_query_canonical_parsing;
+    friend class ::mindex::reference_index;
 
     struct membership_query_result {
         membership_query_result() : num_kmers(0), num_valid_kmers(0), num_positive_kmers(0) {}

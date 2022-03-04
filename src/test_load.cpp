@@ -9,7 +9,7 @@
 
 using namespace klibpp;
 
-void check_index(reference_index& ri, const std::string& ref_fname ){
+void check_index(mindex::reference_index& ri, const std::string& ref_fname ){
 
     CanonicalKmer::k(ri.k());
 
@@ -86,7 +86,7 @@ int main(int argc, char** argv) {
     auto input_filename = parser.get<std::string>("input_filename");
     auto ref_filename = parser.get<std::string>("ref_filename");
 
-    reference_index ri(input_filename);
+    mindex::reference_index ri(input_filename);
     
     check_index(ri, ref_filename);
     return 0;

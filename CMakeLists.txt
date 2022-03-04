@@ -52,3 +52,7 @@ target_link_libraries(build_contig_table z)
 add_executable(test_load src/test_load.cpp)
 target_include_directories(test_load PUBLIC ${CMAKE_SOURCE_DIR}/include ${ZLIB_INCLUDE_DIRS})
 target_link_libraries(test_load ZLIB::ZLIB)
+
+add_executable(mapper src/mapper.cpp) 
+target_include_directories(mapper PUBLIC ${CMAKE_SOURCE_DIR}/include ${ZLIB_INCLUDE_DIRS})
+target_link_libraries(mapper ZLIB::ZLIB)

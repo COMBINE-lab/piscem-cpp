@@ -1,6 +1,7 @@
 #pragma once
 
 #include "nonstd/span.hpp"
+#include "util.hpp"
 
 struct ref_pos {
     uint32_t pos;
@@ -16,6 +17,7 @@ struct projected_hits {
     // true for fw, false for rc
     bool contigOrientation_;
     uint32_t contigLen_;
+    uint64_t globalPos_;
     uint32_t k_;
     nonstd::span<sshash::util::Position> refRange;
 

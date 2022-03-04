@@ -36,7 +36,8 @@ struct contig_info_query_canonical_parsing {
         , m_reverse(false)
         , m_prev_contig_id(0)
         , m_prev_contig_length(0)
-        , m_prev_contig_offset(0) {
+        , m_prev_contig_offset(0)
+        , m_prev_global_pos(0) {
         assert(m_dict->m_canonical_parsing);
     }
 
@@ -48,6 +49,7 @@ struct contig_info_query_canonical_parsing {
         uint64_t contig_id;
         uint64_t contig_length;
         uint64_t contig_offset;
+        uint64_t global_pos;
         bool is_forward;
     };
 
@@ -74,7 +76,8 @@ struct contig_info_query_canonical_parsing {
     // NOTE: think about a more general "caching" mechanism — what if the expected
     query_result get_contig_pos(const char* kmer) {
         constexpr uint64_t invalid = std::numeric_limits<uint64_t>::max();
-        query_result qr = {false, false, invalid, invalid, invalid, true};
+        query_result qr = {false, false, invalid, invalid, invalid, invalid, true};
+
         /* validation */
         bool is_valid = m_start ? util::is_valid(kmer, m_k) : util::is_valid(kmer[m_k - 1]);
         if (!is_valid) {
@@ -98,7 +101,7 @@ struct contig_info_query_canonical_parsing {
     // assumes that m_kmer and m_kmer_rc have been set, and gets the result
     query_result _get_contig_pos() {
         constexpr uint64_t invalid = std::numeric_limits<uint64_t>::max();
-        query_result qr = {false, false, invalid, invalid, invalid, true};
+        query_result qr = {false, false, invalid, invalid, invalid, invalid, true};
 
         m_curr_minimizer = m_minimizer_enum.next(m_kmer, m_start);
         assert(m_curr_minimizer == util::compute_minimizer(m_kmer, m_k, m_m, m_seed));
@@ -168,6 +171,7 @@ struct contig_info_query_canonical_parsing {
             m_prev_contig_id = qr.contig_id;
             m_prev_contig_length = qr.contig_length;
             m_prev_contig_offset = qr.contig_offset;
+            m_prev_global_pos = qr.global_pos;
         }
         return qr;  //{true, answer};
     }
@@ -195,7 +199,7 @@ private:
     uint64_t m_pos_in_window, m_window_size;
     uint64_t m_prev_query_offset;
     bool m_reverse;
-    uint64_t m_prev_contig_id, m_prev_contig_length, m_prev_contig_offset;
+    uint64_t m_prev_contig_id, m_prev_contig_length, m_prev_contig_offset, m_prev_global_pos;
 
     enum return_value { MINIMIZER_NOT_FOUND = 0, KMER_FOUND = 1, KMER_NOT_FOUND = 2 };
 
@@ -273,6 +277,7 @@ private:
                     qr.contig_offset = (nuc_pos - (prev_end + 1));
                     qr.contig_id = contig_id;
                     qr.contig_length = (offset_end - prev_end);
+                    qr.global_pos = nuc_pos;
                     return return_value::KMER_FOUND;
                 }
 

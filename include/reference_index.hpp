@@ -4,8 +4,15 @@
 #include "basic_contig_table.hpp"
 #include "../external/pthash/external/essentials/include/essentials.hpp"
 #include "query/contig_info_query_canonical_parsing.cpp"
+#include "bit_vector_iterator.hpp"
 #include "CanonicalKmerIterator.hpp"
 #include "projected_hits.hpp"
+
+/*namespace sshash {
+    class contig_info_query_canonical_parsing;
+    class dictionary;
+}*/
+namespace mindex {
 class reference_index {
 public:
     reference_index(const std::string& basename) {
@@ -29,12 +36,13 @@ public:
                 static_cast<uint32_t>(qres.contig_offset),
                 qres.is_forward,
                 static_cast<uint32_t>(qres.contig_length),
+                qres.global_pos,
                 static_cast<uint32_t>(m_dict.k()),
                 s
             };
         } else {
             return {
-                0, 0, false, 0, static_cast<uint32_t>(m_dict.k()), 
+                0, 0, false, 0, static_cast<uint32_t>(m_dict.k()), 0,
                 nonstd::span<sshash::util::Position>()
             };
         }
@@ -42,7 +50,9 @@ public:
 
     uint64_t k() const { return m_dict.k(); }
     const sshash::dictionary* get_dict() const { return &m_dict; }
+    pthash::bit_vector& contigs() { return m_dict.m_buckets.strings; }
 private:
     sshash::dictionary m_dict;
     sshash::basic_contig_table bct;
 };
+}
