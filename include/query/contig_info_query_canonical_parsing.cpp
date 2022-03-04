@@ -1,4 +1,4 @@
-#pragma once 
+#pragma once
 #include "../dictionary.hpp"
 #include "../minimizer_enumerator.hpp"
 #include "../util.hpp"
@@ -36,8 +36,7 @@ struct contig_info_query_canonical_parsing {
         , m_reverse(false)
         , m_prev_contig_id(0)
         , m_prev_contig_length(0)
-        , m_prev_contig_offset(0)
-    {
+        , m_prev_contig_offset(0) {
         assert(m_dict->m_canonical_parsing);
     }
 
@@ -53,27 +52,26 @@ struct contig_info_query_canonical_parsing {
     };
 
     // Given a k-mer `k-mer`, return the query_result associated with it.
-    // NOTE: think about a more general "caching" mechanism — what if the expected 
-    query_result get_contig_pos(const uint64_t km, const uint64_t km_rc, const uint64_t query_offset) {
+    // NOTE: think about a more general "caching" mechanism — what if the expected
+    query_result get_contig_pos(const uint64_t km, const uint64_t km_rc,
+                                const uint64_t query_offset) {
         m_kmer = km;
         m_kmer_rc = km_rc;
 
-        // if the current query offset position is 
-        // the next position after the stored query 
-        // offset position, then we can apply the 
-        // relevant optimizations.  Otherwise, we 
+        // if the current query offset position is
+        // the next position after the stored query
+        // offset position, then we can apply the
+        // relevant optimizations.  Otherwise, we
         // should consider this as basically a "new"
         // query
-        if (!m_start) {
-            m_start = (m_prev_query_offset + 1) != query_offset;
-        }
+        if (!m_start) { m_start = (m_prev_query_offset + 1) != query_offset; }
         m_prev_query_offset = query_offset;
 
         return _get_contig_pos();
     }
 
     // Given a k-mer `k-mer`, return the query_result associated with it.
-    // NOTE: think about a more general "caching" mechanism — what if the expected 
+    // NOTE: think about a more general "caching" mechanism — what if the expected
     query_result get_contig_pos(const char* kmer) {
         constexpr uint64_t invalid = std::numeric_limits<uint64_t>::max();
         query_result qr = {false, false, invalid, invalid, invalid, true};
@@ -89,7 +87,7 @@ struct contig_info_query_canonical_parsing {
         if (!m_start) {
             m_kmer >>= 2;
             m_kmer += (util::char_to_uint64(kmer[m_k - 1])) << m_shift;
-            assert(m_kmer == util::string_to_uint64_no_reverse(kmer, mk));
+            assert(m_kmer == util::string_to_uint64_no_reverse(kmer, m_k));
         } else {
             m_kmer = util::string_to_uint64_no_reverse(kmer, m_k);
         }
@@ -109,7 +107,7 @@ struct contig_info_query_canonical_parsing {
         assert(minimizer_rc == util::compute_minimizer(m_kmer_rc, m_k, m_m, m_seed));
         m_curr_minimizer = std::min<uint64_t>(m_curr_minimizer, minimizer_rc);
         /******************************/
-        
+
         /* no optimizations */
         /*
         bool answer = false;
@@ -139,7 +137,7 @@ struct contig_info_query_canonical_parsing {
             m_minimizer_not_found = false;
             locate_bucket();
 
-            // Try to extend matching even when we change minimizer. 
+            // Try to extend matching even when we change minimizer.
             if (extends()) {
                 extend(qr);
                 answer = true;
@@ -160,17 +158,18 @@ struct contig_info_query_canonical_parsing {
         m_start = false;
         /****************/
 
-        assert(m_dict->is_member(kmer) == answer);
+        // assert(m_dict->is_member(kmer) == answer);
+
         qr.is_member = answer;
-        // record the query information we will 
-        // need if the next query is answered via 
+        // record the query information we will
+        // need if the next query is answered via
         // extension.
         if (answer) {
             m_prev_contig_id = qr.contig_id;
             m_prev_contig_length = qr.contig_length;
             m_prev_contig_offset = qr.contig_offset;
         }
-        return qr;//{true, answer};
+        return qr;  //{true, answer};
     }
 
     /* counts */
@@ -236,15 +235,16 @@ private:
     }
 
     int is_member(uint64_t begin, uint64_t end, bool check_minimizer, query_result& qr) {
-        // check every string (super k-mer occurrence) to which this 
+        // check every string (super k-mer occurrence) to which this
         // k-mer might belong
         for (uint64_t string_id = begin; string_id != end; ++string_id) {
             uint64_t offset = (m_dict->m_buckets).offsets.access(string_id);
             uint64_t pos_in_string = 2 * offset;
             m_reverse = false;
             m_string_iterator.at(pos_in_string);
-            auto [kmer_id, contig_id, offset_end, prev_end] = (m_dict->m_buckets).offset_to_contig_info(offset, m_k);
-            //auto [kmer_id, offset_end] = (m_dict->m_buckets).offset_to_id(offset, m_k);
+            auto [kmer_id, contig_id, offset_end, prev_end] =
+                (m_dict->m_buckets).offset_to_contig_info(offset, m_k);
+            // auto [kmer_id, offset_end] = (m_dict->m_buckets).offset_to_id(offset, m_k);
             (void)prev_end;
             (void)kmer_id;
             m_pos_in_window = 0;
@@ -270,7 +270,7 @@ private:
                     num_searches += 1;
                     qr.is_forward = true;
                     uint64_t nuc_pos = pos_in_string / 2;
-                    qr.contig_offset = (nuc_pos - (prev_end+1));
+                    qr.contig_offset = (nuc_pos - (prev_end + 1));
                     qr.contig_id = contig_id;
                     qr.contig_length = (offset_end - prev_end);
                     return return_value::KMER_FOUND;
