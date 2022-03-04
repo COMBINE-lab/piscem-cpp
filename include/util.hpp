@@ -5,6 +5,7 @@
 #include <cassert>
 #include <fstream>
 #include <cmath>  // for std::ceil on linux
+#include <numeric>
 
 #include "../external/pthash/include/pthash.hpp"
 
@@ -31,6 +32,7 @@ typedef pthash::single_phf<base_hasher_type,               // base hasher
 
 namespace util {
 
+ 
 // For the time being, assume < 4B contigs
 // and that each contig is < 4B bases
 struct Position {
