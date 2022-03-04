@@ -220,7 +220,7 @@ struct SkipContext {
       // the offset of the hit on the read
       int32_t read_offset = kit1->second;
       // the skip that would take us to the last base of the read
-      int32_t read_skip = (read_len - read_offset + k - 1);
+      int32_t read_skip = (read_len - k) - read_offset;
 
       // If we got here after a miss, and we have an expectation, and this hit 
       // matches it, then we want to avoid replaying this whole scenario again.
@@ -278,7 +278,6 @@ struct SkipContext {
 
       // skip must be at least 1
       skip = skip < 1 ? 1 : skip;
-      
       // onward
       int32_t pos_before_skip = kit1->second;
       kit1 += skip;
