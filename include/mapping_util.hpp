@@ -29,7 +29,7 @@ struct simple_hit {
 
     // add a hit to the current target that occurs in the forward 
     // orientation with respect to the target.
-    bool add_fw(int32_t ref_pos, int32_t read_pos, int32_t max_stretch, float score_inc) {
+    bool add_fw(int32_t ref_pos, int32_t read_pos, int32_t rl, int32_t k, int32_t max_stretch, float score_inc) {
       bool added{false};
       
       // since hits are collected by moving _forward_ in the
@@ -56,7 +56,7 @@ struct simple_hit {
 
     // add a hit to the current target that occurs in the forward 
     // orientation with respect to the target.
-    bool add_rc(int32_t ref_pos, int32_t read_pos, int32_t max_stretch, float score_inc) {
+    bool add_rc(int32_t ref_pos, int32_t read_pos, int32_t rl, int32_t k, int32_t max_stretch, float score_inc) {
 
       bool added{false};
       // since hits are collected by moving _forward_ in the
@@ -66,7 +66,7 @@ struct simple_hit {
       // This ensures that we don't double-count a k-mer that 
       // might occur twice on this target.
       if (ref_pos < last_ref_pos_rc and read_pos > last_read_pos_rc) {
-        approx_pos_rc = ref_pos;
+        approx_pos_rc = (ref_pos - (rl - (read_pos + k)));
         if (last_read_pos_rc == -1) { 
           approx_end_pos_rc = ref_pos + read_pos; 
         } else {

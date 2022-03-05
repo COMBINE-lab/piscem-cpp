@@ -29,6 +29,7 @@ public:
         std::string ref_info = basename+".refinfo";
         std::fstream s{ref_info.c_str(), s.binary | s.in};
         auto state = bitsery::quickDeserialization<bitsery::InputStreamAdapter>(s, m_ref_names);
+        state = bitsery::quickDeserialization<bitsery::InputStreamAdapter>(s, m_ref_lens);
     }
 
     projected_hits query(pufferfish::CanonicalKmerIterator kmit, sshash::contig_info_query_canonical_parsing& q) {
@@ -67,11 +68,13 @@ public:
     uint64_t k() const { return m_dict.k(); }
     const sshash::dictionary* get_dict() const { return &m_dict; }
     pthash::bit_vector& contigs() { return m_dict.m_buckets.strings; }
-    const std::string& ref_name(size_t i) { return m_ref_names[i]; }
-
+    const std::string& ref_name(size_t i) const { return m_ref_names[i]; }
+    uint64_t ref_len(size_t i) const { return m_ref_lens[i]; }
+    uint64_t num_refs() const { return m_ref_names.size(); }
 private:
     sshash::dictionary m_dict;
     sshash::basic_contig_table bct;
     std::vector<std::string> m_ref_names;
+    std::vector<uint64_t> m_ref_lens;
 };
 }

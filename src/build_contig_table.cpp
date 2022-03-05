@@ -27,6 +27,11 @@ bool build_contig_table(const std::string& input_filename, uint64_t k,
     const std::string refstr = "Reference";
     const auto hlen = refstr.length();
 
+    // where we will write the reference info 
+    std::string out_refinfo = output_filename + ".refinfo";
+    std::fstream s{out_refinfo.c_str(), s.binary | s.trunc | s.out};
+    bitsery::Serializer<bitsery::OutputBufferedStreamAdapter> ser{s};
+
     {
         // In the first pass over the cf_seq file we
         // will assign each segment an ID based on the
@@ -77,18 +82,11 @@ bool build_contig_table(const std::string& input_filename, uint64_t k,
             }
         }
         
-        // write the reference names
-        std::string out_refinfo = output_filename + ".refinfo";
-        std::fstream s{out_refinfo.c_str(), s.binary | s.trunc | s.out};
-
-        bitsery::Serializer<bitsery::OutputBufferedStreamAdapter> ser{s};
         ser(ref_names);
         // flush to writer
         ser.adapter().flush();
-        s.close();
+        //s.close();
     }
-
-
 
     std::cerr << "completed first pass over paths.\n";
     std::cerr << "there were " << id_to_rank.size() << " segments\n";
@@ -165,6 +163,7 @@ bool build_contig_table(const std::string& input_filename, uint64_t k,
         uint64_t refctr = 0;
         bool first = true;
         uint64_t current_offset = 0;
+        std::vector<uint64_t> ref_lens;
 
         while (!ifile.eof()) {
             std::string tok;
@@ -174,12 +173,13 @@ bool build_contig_table(const std::string& input_filename, uint64_t k,
                 if (tok.compare(0, hlen, refstr) == 0) {
                     if (!first) {
                         ++refctr;
-                        std::cerr << "processing reference #" << refctr << "\n";
+                        uint64_t len = current_offset + (k - 1);
+                        ref_lens.push_back(len);
                     }
+                    std::cerr << "processing reference #" << refctr << "\n";
                     first = false;
                     current_offset = 0;
                     tctr = 0;
-                    // TODO: extract the reference name
                 } else {  // this should be a segemnt entry
 
                     bool is_fw = true;
@@ -209,9 +209,16 @@ bool build_contig_table(const std::string& input_filename, uint64_t k,
                 }
             }
         }
+        // for the last reference
+        uint64_t len = current_offset + (k - 1);
+        ref_lens.push_back(len);
         // serialize this part of the segment table.
-        // ar(seg_table);
+        ser(ref_lens);
+        // flush to writer
+        ser.adapter().flush();
     }
+    // close the buffer that we are serializing to
+    s.close();
 
     std::string out_ctab = output_filename + ".ctab";
     essentials::save(bct, out_ctab.c_str());

@@ -17,12 +17,28 @@
 
 using namespace klibpp;
 
+
+
+void print_header(mindex::reference_index& ri, std::string& cmdline) {
+    std::cout << "@HD\tVN:1.0\tSO:unsorted\n";
+    for (uint64_t i = 0; i < ri.num_refs(); ++i) {
+        std::cout << "@SQ\tNS:" << ri.ref_name(i) << "\tLN:" << ri.ref_len(i) << "\n";
+    }
+    std::cout << "@PG\tID:mindex_map\tPN:mapper\tVN:0.0.1\t"
+              << "CL:" << cmdline << "\n";
+}
+
 void do_map(mindex::reference_index& ri, const std::string& reads_filename) {
     CanonicalKmer::k(ri.k());
 
     KSeq record;
     gzFile fp = gzopen(reads_filename.c_str(), "r");
     auto ks = make_kstream(fp, gzread, mode::in);
+
+    constexpr uint16_t is_secondary = 256;
+    constexpr uint16_t is_unmapped = 4;
+    constexpr uint16_t is_rc = 16;
+    constexpr uint16_t first_seg = 64;
 
     // map from reference id to hit info
     phmap::flat_hash_map<uint32_t, mapping::util::sketch_hit_info> hit_map; 
@@ -37,6 +53,8 @@ void do_map(mindex::reference_index& ri, const std::string& reads_filename) {
     sshash::contig_info_query_canonical_parsing q(ri.get_dict());
     mindex::hit_searcher hs(&ri);
     uint64_t read_num = 0;
+    std::string workstr;
+    int32_t k = static_cast<int32_t>(ri.k());
     while (ks >> record) {
         ++read_num;
         // std::cout << "readnum : " << read_num << "\n";
@@ -76,10 +94,10 @@ void do_map(mindex::reference_index& ri, const std::string& reads_filename) {
             // if *every* collected hit for this fragment occurs
             // max_occ_default times or more.
             bool had_alt_max_occ = false;
-
+            int32_t signed_rl = static_cast<int32_t>(record.seq.length());
             auto collect_mappings_from_hits =
                 [&max_stretch, &min_occ, &hit_map, &num_valid_hits, &total_occs,
-                 &largest_occ, &early_stop](auto& raw_hits, auto& prev_read_pos, auto& max_allowed_occ,
+                 &largest_occ, &early_stop, signed_rl, k](auto& raw_hits, auto& prev_read_pos, auto& max_allowed_occ,
                                       auto& had_alt_max_occ) -> bool {
                 for (auto& raw_hit : raw_hits) {
                     auto& read_pos = raw_hit.first;
@@ -114,11 +132,11 @@ void do_map(mindex::reference_index& ri, const std::string& reads_filename) {
                             // here.
                             if (target.max_hits_for_target() >= num_valid_hits) {
                                 if (ori) {
-                                    target.add_fw(pos, static_cast<int32_t>(read_pos), max_stretch,
-                                                  score_inc);
+                                    target.add_fw(pos, static_cast<int32_t>(read_pos), 
+                                                  signed_rl, k, max_stretch, score_inc);
                                 } else {
-                                    target.add_rc(pos, static_cast<int32_t>(read_pos), max_stretch,
-                                                  score_inc);
+                                    target.add_rc(pos, static_cast<int32_t>(read_pos), 
+                                                  signed_rl, k, max_stretch, score_inc);
                                 }
 
                                 still_have_valid_target |=
@@ -204,13 +222,34 @@ void do_map(mindex::reference_index& ri, const std::string& reads_filename) {
         }  // DONE : if (rh)
 
         if (!accepted_hits.empty()) {
-            std::cout << "[ seq : " << record.name << "\n";
+            bool secondary = false;
             for (auto& ah : accepted_hits) {
-                std::cout << "  { ref : " << ri.ref_name(ah.tid) << ", pos : " << ah.pos
-                          << ", ori : " << (ah.is_fw ? "fw" : "rc")
-                          << ", num_hits : " << ah.num_hits << ", score : " << ah.score << "}\n";
+                uint16_t flag = secondary ? is_secondary : 0;
+                //flag += 2;
+                flag += ah.is_fw ? 0 : is_rc;
+                //flag += first_seg;
+
+                std::string* sptr = nullptr;
+                if (is_rc) {
+                    combinelib::kmers::reverseComplement(record.seq, workstr);
+                    sptr = &workstr;
+                } else {
+                    sptr = &record.seq;
+                }
+                std::cout << record.name 
+                    << "\t"
+                    << flag 
+                    << "\t" << ri.ref_name(ah.tid)
+                    << "\t" << ah.pos + 1 
+                    << "\t255\t*\t*\t0\t" << record.seq.length() 
+                    << "\t" << *sptr << "\t*\n";
+                secondary = true;
             }
-            std::cout << "]\n\n";
+        } else {
+            std::cout << record.name  << "\t"
+                << 4 << "\t"
+                << "*\t0\t0\t*\t*\t0\t0\t"
+                << record.seq << "\t*\n";
         }
     }
 }
@@ -230,7 +269,16 @@ int main(int argc, char** argv) {
     auto read_filename = parser.get<std::string>("reads");
 
     mindex::reference_index ri(input_filename);
-    
+
+    std::string cmdline;
+    size_t narg = static_cast<size_t>(argc);
+    for (size_t i = 0; i < narg; ++i) {
+        cmdline += std::string(argv[i]);
+        cmdline.push_back(' ');
+    }
+    cmdline.pop_back();
+    print_header(ri, cmdline);
+
     do_map(ri, read_filename);
     return 0;
 }
