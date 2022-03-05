@@ -30,6 +30,8 @@ struct simple_hit {
     // add a hit to the current target that occurs in the forward 
     // orientation with respect to the target.
     bool add_fw(int32_t ref_pos, int32_t read_pos, int32_t rl, int32_t k, int32_t max_stretch, float score_inc) {
+      (void)rl;
+      (void)k;
       bool added{false};
       
       // since hits are collected by moving _forward_ in the

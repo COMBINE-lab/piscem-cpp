@@ -36,9 +36,7 @@ void do_map(mindex::reference_index& ri, const std::string& reads_filename) {
     auto ks = make_kstream(fp, gzread, mode::in);
 
     constexpr uint16_t is_secondary = 256;
-    constexpr uint16_t is_unmapped = 4;
     constexpr uint16_t is_rc = 16;
-    constexpr uint16_t first_seg = 64;
 
     // map from reference id to hit info
     phmap::flat_hash_map<uint32_t, mapping::util::sketch_hit_info> hit_map; 
