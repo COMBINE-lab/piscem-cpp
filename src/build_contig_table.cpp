@@ -6,6 +6,11 @@
 #include "../external/pthash/external/cmd_line_parser/include/parser.hpp"
 #include "../include/util.hpp"
 #include "../include/parallel_hashmap/phmap.h"
+#include "../include/bitsery/bitsery.h"
+#include "../include/bitsery/brief_syntax.h"
+#include "../include/bitsery/adapter/stream.h"
+#include "../include/bitsery/brief_syntax/vector.h"
+#include "../include/bitsery/brief_syntax/string.h"
 
 using namespace sshash;
 using phmap::flat_hash_map;
@@ -21,6 +26,7 @@ bool build_contig_table(const std::string& input_filename, uint64_t k,
     flat_hash_map<uint64_t, rank_count> id_to_rank;
     const std::string refstr = "Reference";
     const auto hlen = refstr.length();
+
     {
         // In the first pass over the cf_seq file we
         // will assign each segment an ID based on the
@@ -31,18 +37,24 @@ bool build_contig_table(const std::string& input_filename, uint64_t k,
         uint64_t refctr = 0;
         bool first = true;
         uint64_t next_rank = 0;
+        std::vector<std::string> ref_names;
 
         while (!ifile.eof()) {
             std::string tok;
             while (ifile >> tok) {
                 // this is a new reference
                 if (tok.compare(0, hlen, refstr) == 0) {
+
+                    auto sp = tok.find("Sequence:");
+                    auto ep = sp+9;
+                    std::string refname = tok.substr(ep);
+                    ref_names.push_back(refname);
+
                     if (!first) {
                         ++refctr;
-                        std::cerr << "processing reference #" << refctr << "\n";
+                        std::cerr << "processing reference #" << refctr << " : " << refname << "\n";
                     }
                     first = false;
-                    // TODO: extract the reference name
                 } else {  // this should be a segemnt entry
 
                     if (!((tok.back() == '-') or (tok.back() == '+'))) {
@@ -64,7 +76,19 @@ bool build_contig_table(const std::string& input_filename, uint64_t k,
                 }
             }
         }
+        
+        // write the reference names
+        std::string out_refinfo = output_filename + ".refinfo";
+        std::fstream s{out_refinfo.c_str(), s.binary | s.trunc | s.out};
+
+        bitsery::Serializer<bitsery::OutputBufferedStreamAdapter> ser{s};
+        ser(ref_names);
+        // flush to writer
+        ser.adapter().flush();
+        s.close();
     }
+
+
 
     std::cerr << "completed first pass over paths.\n";
     std::cerr << "there were " << id_to_rank.size() << " segments\n";
@@ -172,23 +196,12 @@ bool build_contig_table(const std::string& input_filename, uint64_t k,
                     uint64_t id = std::stoul(tok, nullptr, 0);
                     // get the entry for this segment
                     auto& v = id_to_rank[id];
-
-                    if (tok == "1005663691") {
-                        std::cerr << "\tfound contig at offset : " << tctr << "\n";
-                        std::cerr << "\tcurrent_offset = " << current_offset << "\n";
-                        std::cerr << "\trank : " << v.rank << "\n";
-                        std::cerr << "\tat index " << v.count << " in the table"
-                                  << "\n";
-                        std::cerr << "\toffsets for this contig are ["
-                                  << bct.m_ctg_offsets.access(v.rank) << ", "
-                                  << bct.m_ctg_offsets.access(v.rank + 1) << ")\n";
-                    }
                     ++tctr;
 
                     // insert the next entry for this segment
                     // at the index given by v.count.
                     auto entry_idx = v.count;
-                    seg_table[entry_idx] = sshash::util::Position(refctr, current_offset, is_fw);
+                    seg_table[entry_idx].update(refctr, current_offset, is_fw);
                     // then we increment entry_idx for next time
                     v.count += 1;
                     // then we increment the current offset
@@ -200,8 +213,10 @@ bool build_contig_table(const std::string& input_filename, uint64_t k,
         // ar(seg_table);
     }
 
-    essentials::save(bct, output_filename.c_str());
+    std::string out_ctab = output_filename + ".ctab";
+    essentials::save(bct, out_ctab.c_str());
 
+    /*
     std::cerr << "verifying contig table invariants.\n";
 
     for (size_t i = 0; i < bct.m_ctg_offsets.size() - 1; ++i) {
@@ -228,7 +243,7 @@ bool build_contig_table(const std::string& input_filename, uint64_t k,
             prior_pos = p.pos();
         }
     }
-
+    */
     return true;
 }
 
@@ -239,7 +254,7 @@ int main(int argc, char** argv) {
     parser.add("input_filename",
                "Must be a segment / sequence format file pair (cuttlefish v1 reduced GFA format).");
     parser.add("k", "Length of k with which cdbg was built.");
-    parser.add("output_filename", "Output file name where the data structure will be serialized.",
+    parser.add("output_filename", "Output file name where the data structure will be serialized, without extension.",
                "-o", false);
     if (!parser.parse()) return 1;
 

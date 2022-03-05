@@ -1,8 +1,14 @@
 #pragma once
 
+#include <fstream>
+
 #include "dictionary.hpp"
 #include "basic_contig_table.hpp"
 #include "../external/pthash/external/essentials/include/essentials.hpp"
+#include "../include/bitsery/bitsery.h"
+#include "../include/bitsery/adapter/stream.h"
+#include "../include/bitsery/brief_syntax/vector.h"
+#include "../include/bitsery/brief_syntax/string.h"
 #include "query/contig_info_query_canonical_parsing.cpp"
 #include "bit_vector_iterator.hpp"
 #include "CanonicalKmerIterator.hpp"
@@ -20,6 +26,9 @@ public:
         essentials::load(m_dict, dict_name.c_str());
         std::string ctg_name = basename+".ctab";
         essentials::load(bct, ctg_name.c_str());
+        std::string ref_info = basename+".refinfo";
+        std::fstream s{ref_info.c_str(), s.binary | s.in};
+        auto state = bitsery::quickDeserialization<bitsery::InputStreamAdapter>(s, m_ref_names);
     }
 
     projected_hits query(pufferfish::CanonicalKmerIterator kmit, sshash::contig_info_query_canonical_parsing& q) {
@@ -58,8 +67,11 @@ public:
     uint64_t k() const { return m_dict.k(); }
     const sshash::dictionary* get_dict() const { return &m_dict; }
     pthash::bit_vector& contigs() { return m_dict.m_buckets.strings; }
+    const std::string& ref_name(size_t i) { return m_ref_names[i]; }
+
 private:
     sshash::dictionary m_dict;
     sshash::basic_contig_table bct;
+    std::vector<std::string> m_ref_names;
 };
 }

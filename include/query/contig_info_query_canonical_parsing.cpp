@@ -273,8 +273,10 @@ private:
                 if (m_kmer == val) {
                     num_searches += 1;
                     qr.is_forward = true;
-                    uint64_t nuc_pos = pos_in_string / 2;
-                    qr.contig_offset = (nuc_pos - (prev_end + 1));
+                    // -2 because we incremented outside 
+                    // this if
+                    uint64_t nuc_pos = (pos_in_string-2)/ 2;
+                    qr.contig_offset = (nuc_pos - prev_end);
                     qr.contig_id = contig_id;
                     qr.contig_length = (offset_end - prev_end);
                     qr.global_pos = nuc_pos;

@@ -41,17 +41,18 @@ struct Position {
     uint32_t pos_;
 
     // bool orien;
-    Position() {
-        transcript_id_ = std::numeric_limits<decltype(transcript_id_)>::max();
-        pos_ = std::numeric_limits<decltype(pos_)>::max();
-    }
-
+    //Position() {
+    //    transcript_id_ = std::numeric_limits<decltype(transcript_id_)>::max();
+    //    pos_ = std::numeric_limits<decltype(pos_)>::max();
+    //}
+    /* can't have this and be POD
     Position(uint32_t tid, uint32_t tpos, bool torien) {
         transcript_id_ = tid;
         pos_ = tpos;
         setOrientation(torien);
         // orien = torien;
     }
+    */
 
     // The most significant bit carry
     // the orientation information

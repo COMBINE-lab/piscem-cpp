@@ -206,7 +206,7 @@ void do_map(mindex::reference_index& ri, const std::string& reads_filename) {
         if (!accepted_hits.empty()) {
             std::cout << "[ seq : " << record.name << "\n";
             for (auto& ah : accepted_hits) {
-                std::cout << "  { ref : " << ah.tid << ", pos : " << ah.pos
+                std::cout << "  { ref : " << ri.ref_name(ah.tid) << ", pos : " << ah.pos
                           << ", ori : " << (ah.is_fw ? "fw" : "rc")
                           << ", num_hits : " << ah.num_hits << ", score : " << ah.score << "}\n";
             }

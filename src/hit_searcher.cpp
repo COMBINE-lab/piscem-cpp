@@ -219,7 +219,7 @@ struct SkipContext {
       int32_t skip = 1;
       // the offset of the hit on the read
       int32_t read_offset = kit1->second;
-      // the skip that would take us to the last base of the read
+      // the skip that would take us to the last queryable position of the read
       int32_t read_skip = (read_len - k) - read_offset;
 
       // If we got here after a miss, and we have an expectation, and this hit 

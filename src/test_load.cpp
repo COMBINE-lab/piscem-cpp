@@ -87,7 +87,7 @@ int main(int argc, char** argv) {
     auto ref_filename = parser.get<std::string>("ref_filename");
 
     mindex::reference_index ri(input_filename);
-    
+
     check_index(ri, ref_filename);
     return 0;
 }
