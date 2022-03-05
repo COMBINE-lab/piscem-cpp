@@ -23,13 +23,23 @@ class reference_index {
 public:
     reference_index(const std::string& basename) {
         std::string dict_name = basename+".sshash";
+        std::cerr << "loading sequence index from " << dict_name << "\n";
         essentials::load(m_dict, dict_name.c_str());
+        std::cerr << "loaded sshash\n";
+
         std::string ctg_name = basename+".ctab";
+        std::cerr << "loading contig table from " << ctg_name << "\n";
         essentials::load(bct, ctg_name.c_str());
+        std::cerr << "loaded contig table\n";
+
         std::string ref_info = basename+".refinfo";
+        std::cerr << "loading ref info from " << ref_info << "\n";
+        
         std::fstream s{ref_info.c_str(), s.binary | s.in};
         auto state = bitsery::quickDeserialization<bitsery::InputStreamAdapter>(s, m_ref_names);
+        std::cerr << "loaded ref names\n";
         state = bitsery::quickDeserialization<bitsery::InputStreamAdapter>(s, m_ref_lens);
+        std::cerr << "loaded ref lengths\n";
     }
 
     projected_hits query(pufferfish::CanonicalKmerIterator kmit, sshash::contig_info_query_canonical_parsing& q) {

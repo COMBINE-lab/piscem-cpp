@@ -33,6 +33,7 @@ if (UNIX)
 endif()
 
 find_package(ZLIB REQUIRED)
+find_package(Threads REQUIRED)
 
 add_executable(build src/build.cpp)
 target_link_libraries(build z)
@@ -55,4 +56,5 @@ target_link_libraries(test_load ZLIB::ZLIB)
 
 add_executable(mapper src/mapper.cpp) 
 target_include_directories(mapper PUBLIC ${CMAKE_SOURCE_DIR}/include ${ZLIB_INCLUDE_DIRS})
-target_link_libraries(mapper ZLIB::ZLIB)
+target_link_libraries(mapper ZLIB::ZLIB Threads::Threads) 
+
