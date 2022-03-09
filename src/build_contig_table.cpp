@@ -254,21 +254,7 @@ bool build_contig_table(const std::string& input_filename, uint64_t k,
     return true;
 }
 
-int main(int argc, char** argv) {
-    cmd_line_parser::parser parser(argc, argv);
-
-    /* mandatory arguments */
-    parser.add("input_filename",
-               "Must be a segment / sequence format file pair (cuttlefish v1 reduced GFA format).");
-    parser.add("k", "Length of k with which cdbg was built.");
-    parser.add("output_filename", "Output file name where the data structure will be serialized, without extension.",
-               "-o", false);
-    if (!parser.parse()) return 1;
-
-    auto input_filename = parser.get<std::string>("input_filename");
-    auto output_filename = parser.get<std::string>("output_filename");
-    uint64_t k = parser.get<uint64_t>("k");
-
+int build_contig_table_main(const std::string& input_filename, uint64_t k, const std::string& output_filename) {
     bool success = build_contig_table(input_filename, k, output_filename);
     if (!success) { std::cerr << "failed to build contig table.\n"; }
     return 0;

@@ -242,6 +242,140 @@ void parse_file(std::istream& is, parse_data& data, build_configuration const& b
     assert(data.strings.pieces.size() == num_read_lines + 1);
 }
 
+
+void parse_file_from_cuttlefish(std::istream& is, parse_data& data, build_configuration const& build_config) {
+    uint64_t k = build_config.k;
+    uint64_t m = build_config.m;
+    uint64_t seed = build_config.seed;
+    uint64_t max_num_kmers_in_string = k - m + 1;
+    uint64_t block_size = 2 * k - m;  // max_num_kmers_in_string + k - 1
+
+    if (max_num_kmers_in_string >= (1ULL << (sizeof(num_kmers_in_string_uint_type) * 8))) {
+        throw std::runtime_error("max_num_kmers_in_string " +
+                                 std::to_string(max_num_kmers_in_string) + " does not fit into " +
+                                 std::to_string(sizeof(num_kmers_in_string_uint_type) * 8) +
+                                 " bits");
+    }
+
+    /* fit into the wanted number of bits */
+    assert(max_num_kmers_in_string < (1ULL << (sizeof(num_kmers_in_string_uint_type) * 8)));
+
+    compact_string_pool::builder builder(k);
+
+    std::string line;
+    uint64_t prev_minimizer = constants::invalid;
+
+    uint64_t begin = 0;           // begin of parsed string in line
+    uint64_t end = 0;             // end of parsed string in line
+    uint64_t num_read_lines = 0;  // total read lines
+    uint64_t num_read_bases = 0;
+    bool glue = false;
+
+    auto append_string = [&]() {
+        if (line.empty() or prev_minimizer == constants::invalid or begin == end) return;
+
+        assert(end > begin);
+        char const* string = line.data() + begin;
+        uint64_t size = (end - begin) + k - 1;
+        assert(util::is_valid(string, size));
+
+        /* if num_kmers_in_string > k - m + 1, then split the string into blocks */
+        uint64_t num_kmers_in_string = end - begin;
+        uint64_t num_blocks = num_kmers_in_string / max_num_kmers_in_string +
+                              (num_kmers_in_string % max_num_kmers_in_string != 0);
+        assert(num_blocks > 0);
+        for (uint64_t i = 0; i != num_blocks; ++i) {
+            uint64_t n = block_size;
+            if (i == num_blocks - 1) n = size;
+            uint64_t num_kmers_in_block = n - k + 1;
+            assert(num_kmers_in_block <= max_num_kmers_in_string);
+            data.minimizers.emplace_back(prev_minimizer, builder.offset, num_kmers_in_block);
+            builder.append(string + i * max_num_kmers_in_string, n, glue);
+            if (glue) {
+                assert(data.minimizers.back().offset > k - 1);
+                data.minimizers.back().offset -= k - 1;
+            }
+            size -= max_num_kmers_in_string;
+            glue = true;
+        }
+    };
+
+    uint64_t seq_len = 0;
+    data.abundances_builder.init(constants::most_frequent_abundance);
+
+    /* intervals of kmer_ids */
+    //uint64_t kmer_id_value = constants::invalid;
+    //uint64_t kmer_id_length = 1;
+
+    /* intervals of abundances */
+    //uint64_t ab_value = constants::invalid;
+    //uint64_t ab_length = 1;
+
+    while (!is.eof()) {
+        std::getline(is, line);  // header sequence
+        // if (build_config.store_abundances) parse_header();
+        auto tsep = line.find('\t');
+        line = line.substr(tsep + 1); // DNA sequence
+        //std::getline(is, line);  
+        if (line.size() < k) continue;
+
+        if (++num_read_lines % 100000 == 0) {
+            std::cout << "read " << num_read_lines << " lines, " << num_read_bases << " bases, "
+                      << data.num_kmers << " kmers" << std::endl;
+        }
+
+        begin = 0;
+        end = 0;
+        glue = false;  // start a new piece
+        prev_minimizer = constants::invalid;
+        num_read_bases += line.size();
+
+        if (build_config.store_abundances and seq_len != line.size()) {
+            std::cout << "ERROR: expected a sequence of length " << seq_len
+                      << " but got one of length " << line.size() << std::endl;
+            throw std::runtime_error("file is malformed");
+        }
+
+        while (end != line.size() - k + 1) {
+            char const* kmer = line.data() + end;
+            assert(util::is_valid(kmer, k));
+            uint64_t uint64_kmer = util::string_to_uint64_no_reverse(kmer, k);
+            uint64_t minimizer = util::compute_minimizer(uint64_kmer, k, m, seed);
+
+            if (build_config.canonical_parsing) {
+                uint64_t uint64_kmer_rc = util::compute_reverse_complement(uint64_kmer, k);
+                uint64_t minimizer_rc = util::compute_minimizer(uint64_kmer_rc, k, m, seed);
+                minimizer = std::min<uint64_t>(minimizer, minimizer_rc);
+            }
+
+            if (prev_minimizer == constants::invalid) prev_minimizer = minimizer;
+            if (minimizer != prev_minimizer) {
+                append_string();
+                begin = end;
+                prev_minimizer = minimizer;
+                glue = true;
+            }
+
+            ++data.num_kmers;
+            ++end;
+        }
+
+        append_string();
+    }
+
+    builder.finalize();
+    builder.build(data.strings);
+
+    std::cout << "read " << num_read_lines << " lines, " << num_read_bases << " bases, "
+              << data.num_kmers << " kmers" << std::endl;
+    std::cout << "num_kmers " << data.num_kmers << std::endl;
+    std::cout << "num_strings " << data.strings.size() << std::endl;
+    std::cout << "num_pieces " << data.strings.pieces.size() << " (+"
+              << (2.0 * data.strings.pieces.size() * (k - 1)) / data.num_kmers << " [bits/kmer])"
+              << std::endl;
+    assert(data.strings.pieces.size() == num_read_lines + 1);
+}
+
 parse_data parse_file(std::string const& filename, build_configuration const& build_config) {
     std::ifstream is(filename.c_str());
     if (!is.good()) throw std::runtime_error("error in opening the file '" + filename + "'");
@@ -249,9 +383,9 @@ parse_data parse_file(std::string const& filename, build_configuration const& bu
     parse_data data;
     if (util::ends_with(filename, ".gz")) {
         zip_istream zis(is);
-        parse_file(zis, data, build_config);
+        parse_file_from_cuttlefish(zis, data, build_config);
     } else {
-        parse_file(is, data, build_config);
+        parse_file_from_cuttlefish(is, data, build_config);
     }
     is.close();
     return data;

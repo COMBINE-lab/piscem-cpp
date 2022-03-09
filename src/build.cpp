@@ -5,6 +5,7 @@
 #include "../include/lookup.cpp"
 #include "../include/info.cpp"
 #include "../include/builder/build.cpp"
+#include "build_contig_table.cpp"
 #include "bench_utils.hpp"
 #include "check_utils.hpp"
 
@@ -15,10 +16,7 @@ int main(int argc, char** argv) {
 
     /* mandatory arguments */
     parser.add("input_filename",
-               "Must be a FASTA file (.fa/fasta extension) compressed with gzip (.gz) or not:\n"
-               "\t- without duplicate nor invalid kmers\n"
-               "\t- one DNA sequence per line.\n"
-               "\tFor example, it could be the de Bruijn graph topology output by BCALM.");
+               "Must be the prefix of a cuttlefish file (ending with the .cf_seq/.cf_seg suffixes) compressed with gzip (.gz) or not.");
     parser.add("k", "K-mer length (must be <= " + std::to_string(constants::max_k) + ").");
     parser.add("m", "Minimizer length (must be < k).");
 
@@ -55,7 +53,6 @@ int main(int argc, char** argv) {
     auto k = parser.get<uint64_t>("k");
     auto m = parser.get<uint64_t>("m");
 
-    dictionary dict;
 
     build_configuration build_config;
     build_config.k = k;
@@ -69,26 +66,27 @@ int main(int argc, char** argv) {
     build_config.verbose = parser.get<bool>("verbose");
     build_config.print();
 
-    dict.build(input_filename, build_config);
-    assert(dict.k() == k);
+    if (!parser.parsed("output_filename")) {
+        essentials::logger("output filename is required but missing!\n");
+        return 1;
+    }
+    auto output_filename = parser.get<std::string>("output_filename");
+    
+    auto input_seq = input_filename + ".cf_seg";
+    {
+        // make this scope here and put dict inside of it to
+        // ensure it goes out of scope before we build the
+        // contig table
+        dictionary dict;
+        dict.build(input_seq, build_config);
+        assert(dict.k() == k);
 
-    bool check = parser.get<bool>("check");
-    if (check) {
-        check_correctness_lookup_access(dict, input_filename);
-        if (build_config.store_abundances) check_correctness_abundances(dict, input_filename);
-        check_correctness_iterator(dict);
-    }
-    bool bench = parser.get<bool>("bench");
-    if (bench) {
-        perf_test_lookup_access(dict);
-        perf_test_iterator(dict);
-    }
-    if (parser.parsed("output_filename")) {
-        auto output_filename = parser.get<std::string>("output_filename");
+        auto output_seqidx = output_filename + ".sshash";
         essentials::logger("saving data structure to disk...");
-        essentials::save(dict, output_filename.c_str());
+        essentials::save(dict, output_seqidx.c_str());
         essentials::logger("DONE");
     }
 
-    return 0;
+    // now build the contig table
+    return build_contig_table_main(input_filename, k, output_filename);
 }

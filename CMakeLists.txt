@@ -46,9 +46,9 @@ target_link_libraries(check z)
 add_executable(query src/query.cpp)
 target_link_libraries(query z)
 
-add_executable(build_contig_table src/build_contig_table.cpp)
-target_include_directories(build_contig_table PUBLIC ${CMAKE_SOURCE_DIR}/include)
-target_link_libraries(build_contig_table z)
+#add_executable(build_contig_table src/build_contig_table.cpp)
+#target_include_directories(build_contig_table PUBLIC ${CMAKE_SOURCE_DIR}/include)
+#target_link_libraries(build_contig_table z)
 
 add_executable(test_load src/test_load.cpp)
 target_include_directories(test_load PUBLIC ${CMAKE_SOURCE_DIR}/include ${ZLIB_INCLUDE_DIRS})
