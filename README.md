@@ -3,7 +3,7 @@
 Notes on mindex development
 ===========================
 
-Currently, the reference-based indexing code is not well-integrated and there are a few cumbersome steps to get the full index.  We'll provide an example below, assuming we start with a reference genome sequence in a fasta file called `ref.fa`.  Further, we will assume for the time being that `ref.fa` contains *no invalid characters* (in practice this is achieved by running a genome through the `fixFasta` functionality of pufferfish).
+Currently, the reference-based indexing code piggybacks off of the existing `build` command. To build the full reference index you will need the `cuttlefish` reduced GFA1 output. We'll provide an example below, assuming we start with a reference genome sequence in a fasta file called `ref.fa`.  Further, we will assume for the time being that `ref.fa` contains *no invalid characters* (in practice this is achieved by running a genome through the `fixFasta` functionality of pufferfish).
 
 First we need to build the compacted reference de Bruijn Graph.  We do this using [`cuttlefish`](https://github.com/COMBINE-lab/cuttlefish).
 
@@ -11,28 +11,21 @@ First we need to build the compacted reference de Bruijn Graph.  We do this usin
 $ cuttlefish build -s ref.fa -k 31 -t 16 -o ref_dbg -m 8 -f 3
 ```
 
-This creates 2 files called `ref_dbg.cf_seq` and `ref_dbg.cf_seg`.  Next we will build sshash on the `ref_dbg.cf_seg` file.
+This creates 2 files called `ref_dbg.cf_seq` and `ref_dbg.cf_seg`.  Next we build the reference index:
 
 ```
-$ ./build <( awk '{ print ">"$1"\n"$2; }' ref_dbg.cf_seg ) 31 20 --canonical-parsing -o ref_idx.sshash
-```
-We are using input redirection here to convert the `cf_seg` file to a fasta file on the fly.  Next we will build the contig table:
-
-```
-$ ./build_contig_table ref_dbg 31 -o ref_idx.ctab
+$ ./build ref_dbg 31 20 --canonical-parsing -o ref_idx
 ```
 
-Now, we have a complete index consisting of the sequence index (the `.sshash` file) and the contig index (the `.ctab` file).  Right now,
-the reference index loader assumed these specific suffixes.  Of course, this is fragile and error prone, so we'll make it better.  Finally
-you can test out the index with:
+This will output 3 files, all with the prefix `ref_idx`.  The files will be named `ref_idx.sshash`, `ref_idx.ctab`, and `ref_index.refinfo`.  Together, these comprise the reference index over the original reference sequences in `ref.fa`.
+
+The reference index loader assumed these specific suffixes.  Finally, you can test out the index with:
 
 ```
 $ ./test_load ref_idx ref.fa
 ```
 
-This will iterate over all of the positions of `ref.fa` and ensure that the observed k-mer has an entry in the reference index that points
-back to the current reference sequence, at the current position, in the provided (forward) orientation.
-
+This will iterate over all of the positions of `ref.fa` and ensure that the observed k-mer has an entry in the reference index that points back to the current reference sequence, at the current position, in the provided (forward) orientation.
 
 SSHash
 ======
