@@ -15,8 +15,9 @@ int main(int argc, char** argv) {
     cmd_line_parser::parser parser(argc, argv);
 
     /* mandatory arguments */
-    parser.add("input_filename",
-               "Must be the prefix of a cuttlefish file (ending with the .cf_seq/.cf_seg suffixes) compressed with gzip (.gz) or not.");
+    parser.add("input_files_basename",
+               "Must be the basename of input cuttlefish files (expected suffixes are .cf_seq and "
+               ".cf_seg, possibly ending with '.gz'.)");
     parser.add("k", "K-mer length (must be <= " + std::to_string(constants::max_k) + ").");
     parser.add("m", "Minimizer length (must be < k).");
 
@@ -49,10 +50,9 @@ int main(int argc, char** argv) {
 
     if (!parser.parse()) return 1;
 
-    auto input_filename = parser.get<std::string>("input_filename");
+    auto input_files_basename = parser.get<std::string>("input_files_basename");
     auto k = parser.get<uint64_t>("k");
     auto m = parser.get<uint64_t>("m");
-
 
     build_configuration build_config;
     build_config.k = k;
@@ -71,16 +71,15 @@ int main(int argc, char** argv) {
         return 1;
     }
     auto output_filename = parser.get<std::string>("output_filename");
-    
-    auto input_seq = input_filename + ".cf_seg";
+
     {
         // make this scope here and put dict inside of it to
         // ensure it goes out of scope before we build the
         // contig table
+        auto input_seq = input_files_basename + ".cf_seg";
         dictionary dict;
         dict.build(input_seq, build_config);
         assert(dict.k() == k);
-
         auto output_seqidx = output_filename + ".sshash";
         essentials::logger("saving data structure to disk...");
         essentials::save(dict, output_seqidx.c_str());
@@ -88,5 +87,5 @@ int main(int argc, char** argv) {
     }
 
     // now build the contig table
-    return build_contig_table_main(input_filename, k, output_filename);
+    return build_contig_table_main(input_files_basename, k, output_filename);
 }

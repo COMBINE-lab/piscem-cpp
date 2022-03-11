@@ -22,19 +22,19 @@ namespace mindex {
 class reference_index {
 public:
     reference_index(const std::string& basename) {
-        std::string dict_name = basename+".sshash";
+        std::string dict_name = basename + ".sshash";
         std::cerr << "loading sequence index from " << dict_name << "\n";
         essentials::load(m_dict, dict_name.c_str());
         std::cerr << "loaded sshash\n";
 
-        std::string ctg_name = basename+".ctab";
+        std::string ctg_name = basename + ".ctab";
         std::cerr << "loading contig table from " << ctg_name << "\n";
-        essentials::load(bct, ctg_name.c_str());
+        essentials::load(m_bct, ctg_name.c_str());
         std::cerr << "loaded contig table\n";
 
-        std::string ref_info = basename+".refinfo";
+        std::string ref_info = basename + ".refinfo";
         std::cerr << "loading ref info from " << ref_info << "\n";
-        
+
         std::fstream s{ref_info.c_str(), s.binary | s.in};
         auto state = bitsery::quickDeserialization<bitsery::InputStreamAdapter>(s, m_ref_names);
         std::cerr << "loaded ref names\n";
@@ -42,38 +42,46 @@ public:
         std::cerr << "loaded ref lengths\n";
     }
 
-    projected_hits query(pufferfish::CanonicalKmerIterator kmit, sshash::contig_info_query_canonical_parsing& q) {
+    projected_hits query(pufferfish::CanonicalKmerIterator kmit,
+                         sshash::contig_info_query_canonical_parsing& q) {
         auto qres = q.get_contig_pos(kmit->first.fwWord(), kmit->first.rcWord(), kmit->second);
 
         constexpr uint64_t invalid_u64 = std::numeric_limits<uint64_t>::max();
         constexpr uint32_t invalid_u32 = std::numeric_limits<uint32_t>::max();
 
         if (qres.is_member) {
-            auto start_pos = bct.m_ctg_offsets.access(qres.contig_id);
-            auto end_pos = bct.m_ctg_offsets.access(qres.contig_id+1);
+            auto start_pos = m_bct.m_ctg_offsets.access(qres.contig_id);
+            auto end_pos = m_bct.m_ctg_offsets.access(qres.contig_id + 1);
             size_t len = end_pos - start_pos;
-            nonstd::span s(bct.m_ctg_entries.begin() + start_pos, len);
+            nonstd::span s(m_bct.m_ctg_entries.begin() + start_pos, len);
 
-            uint32_t contig_id = (qres.contig_id > invalid_u32) ? invalid_u32 : static_cast<uint32_t>(qres.contig_id);
-            uint32_t contig_offset = (qres.contig_offset > invalid_u32) ? invalid_u32 : static_cast<uint32_t>(qres.contig_offset);
-            uint32_t contig_length = (qres.contig_length> invalid_u32) ? invalid_u32 : static_cast<uint32_t>(qres.contig_length);
+            uint32_t contig_id = (qres.contig_id > invalid_u32)
+                                     ? invalid_u32
+                                     : static_cast<uint32_t>(qres.contig_id);
+            uint32_t contig_offset = (qres.contig_offset > invalid_u32)
+                                         ? invalid_u32
+                                         : static_cast<uint32_t>(qres.contig_offset);
+            uint32_t contig_length = (qres.contig_length > invalid_u32)
+                                         ? invalid_u32
+                                         : static_cast<uint32_t>(qres.contig_length);
 
-            return projected_hits {
-                contig_id,
-                contig_offset,
-                qres.is_forward,
-                contig_length,
-                qres.global_pos,
-                static_cast<uint32_t>(m_dict.k()),
-                s
-            };
+            return projected_hits{contig_id,
+                                  contig_offset,
+                                  qres.is_forward,
+                                  contig_length,
+                                  qres.global_pos,
+                                  static_cast<uint32_t>(m_dict.k()),
+                                  s};
         } else {
-            return {
-                invalid_u32, invalid_u32, false, invalid_u32, invalid_u64, static_cast<uint32_t>(m_dict.k()), 
-                nonstd::span<sshash::util::Position>()
-            };
+            return {invalid_u32,
+                    invalid_u32,
+                    false,
+                    invalid_u32,
+                    invalid_u64,
+                    static_cast<uint32_t>(m_dict.k()),
+                    nonstd::span<sshash::util::Position>()};
         }
-    }   
+    }
 
     uint64_t k() const { return m_dict.k(); }
     const sshash::dictionary* get_dict() const { return &m_dict; }
@@ -81,10 +89,11 @@ public:
     const std::string& ref_name(size_t i) const { return m_ref_names[i]; }
     uint64_t ref_len(size_t i) const { return m_ref_lens[i]; }
     uint64_t num_refs() const { return m_ref_names.size(); }
+
 private:
     sshash::dictionary m_dict;
-    sshash::basic_contig_table bct;
+    sshash::basic_contig_table m_bct;
     std::vector<std::string> m_ref_names;
     std::vector<uint64_t> m_ref_lens;
 };
-}
+}  // namespace mindex

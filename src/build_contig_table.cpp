@@ -27,7 +27,7 @@ bool build_contig_table(const std::string& input_filename, uint64_t k,
     const std::string refstr = "Reference";
     const auto hlen = refstr.length();
 
-    // where we will write the reference info 
+    // where we will write the reference info
     std::string out_refinfo = output_filename + ".refinfo";
     std::fstream s{out_refinfo.c_str(), s.binary | s.trunc | s.out};
     bitsery::Serializer<bitsery::OutputBufferedStreamAdapter> ser{s};
@@ -49,9 +49,8 @@ bool build_contig_table(const std::string& input_filename, uint64_t k,
             while (ifile >> tok) {
                 // this is a new reference
                 if (tok.compare(0, hlen, refstr) == 0) {
-
                     auto sp = tok.find("Sequence:");
-                    auto ep = sp+9;
+                    auto ep = sp + 9;
                     std::string refname = tok.substr(ep);
                     ref_names.push_back(refname);
 
@@ -60,7 +59,7 @@ bool build_contig_table(const std::string& input_filename, uint64_t k,
                         std::cerr << "processing reference #" << refctr << " : " << refname << "\n";
                     }
                     first = false;
-                } else {  // this should be a segemnt entry
+                } else {  // this should be a segment entry
 
                     if (!((tok.back() == '-') or (tok.back() == '+'))) {
                         std::cerr << "unexpected last character of tiling entry [" << tok.back()
@@ -81,11 +80,11 @@ bool build_contig_table(const std::string& input_filename, uint64_t k,
                 }
             }
         }
-        
+
         ser(ref_names);
         // flush to writer
         ser.adapter().flush();
-        //s.close();
+        // s.close();
     }
 
     std::cerr << "completed first pass over paths.\n";
@@ -94,7 +93,7 @@ bool build_contig_table(const std::string& input_filename, uint64_t k,
     uint64_t tot_seg_occ = 0;
     for (auto& kv : id_to_rank) { tot_seg_occ += kv.second.count; }
 
-    std::cerr << "there were " << tot_seg_occ << " total segement occurrences\n";
+    std::cerr << "there were " << tot_seg_occ << " total segment occurrences\n";
 
     std::vector<uint64_t> segment_order;
     segment_order.reserve(id_to_rank.size() + 1);
@@ -137,7 +136,7 @@ bool build_contig_table(const std::string& input_filename, uint64_t k,
 
         std::cerr << "converting segment counts to offsets.\n";
         // now convert each `count` entry for each contig to
-        // the current offset where it's next entry will be written
+        // the current offset where its next entry will be written
         for (size_t i = 0; i < segment_order.size(); ++i) {
             auto seg_id = segment_order[i];
             id_to_rank[seg_id].count = contig_offsets[i];
@@ -180,7 +179,7 @@ bool build_contig_table(const std::string& input_filename, uint64_t k,
                     first = false;
                     current_offset = 0;
                     tctr = 0;
-                } else {  // this should be a segemnt entry
+                } else {  // this should be a segment entry
 
                     bool is_fw = true;
                     if (tok.back() == '-') {
@@ -254,8 +253,12 @@ bool build_contig_table(const std::string& input_filename, uint64_t k,
     return true;
 }
 
-int build_contig_table_main(const std::string& input_filename, uint64_t k, const std::string& output_filename) {
+int build_contig_table_main(const std::string& input_filename, uint64_t k,
+                            const std::string& output_filename) {
     bool success = build_contig_table(input_filename, k, output_filename);
-    if (!success) { std::cerr << "failed to build contig table.\n"; }
+    if (!success) {
+        std::cerr << "failed to build contig table.\n";
+        return 1;
+    }
     return 0;
 }

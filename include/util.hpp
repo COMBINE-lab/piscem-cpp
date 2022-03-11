@@ -1,6 +1,5 @@
 #pragma once
 
-
 #include <vector>
 #include <cassert>
 #include <fstream>
@@ -32,16 +31,14 @@ typedef pthash::single_phf<base_hasher_type,               // base hasher
 
 namespace util {
 
- 
 // For the time being, assume < 4B contigs
 // and that each contig is < 4B bases
 struct Position {
-    // std::string transcript_id;
-    uint32_t transcript_id_;
-    uint32_t pos_;
+    uint32_t transcript_id_;  // reference id
+    uint32_t pos_;            // position in reference
 
     // bool orien;
-    //Position() {
+    // Position() {
     //    transcript_id_ = std::numeric_limits<decltype(transcript_id_)>::max();
     //    pos_ = std::numeric_limits<decltype(pos_)>::max();
     //}
@@ -56,7 +53,6 @@ struct Position {
 
     // The most significant bit carry
     // the orientation information
-
     void setOrientation(bool orientation) {
         if (orientation) {
             pos_ |= 1 << 31;
@@ -66,9 +62,7 @@ struct Position {
     }
 
     inline uint32_t transcript_id() { return transcript_id_; }
-
     inline uint32_t pos() { return (pos_ & 0x7FFFFFFF); }
-
     inline bool orientation() { return (pos_ & 0x80000000); }
 
     template <typename Visitor>
@@ -77,15 +71,12 @@ struct Position {
         visitor.visit(pos_);
     }
 
-
     void update(uint32_t tid, uint32_t tpos, bool torien) {
         transcript_id_ = tid;
         pos_ = tpos;
         setOrientation(torien);
     }
 };
-
-
 
 void check_hash_collision_probability(uint64_t size) {
     /*
@@ -129,7 +120,6 @@ struct build_configuration {
     uint64_t k;  // kmer size
     uint64_t m;  // minimizer size
     uint64_t seed;
-
 
     uint64_t l;  // drive dictionary trade-off
     double c;    // drive PTHash trade-off
@@ -233,7 +223,6 @@ struct buckets_statistics {
                           << " strings = " << (m_bucket_sizes[bucket_size] * 100.0) / m_num_buckets
                           << "%" << std::endl;
             }
-
         }
         std::cout << "max_num_strings_in_bucket " << m_max_num_strings_in_bucket << std::endl;
 
@@ -307,8 +296,6 @@ char uint64_to_char(uint64_t x) {
     return nucleotides[x];
 }
 */
-
-
 
 /*
     Traditional mapping.
@@ -433,7 +420,6 @@ uint64_t compute_reverse_complement(uint64_t x, uint64_t k) {
 
     return res >> (2 * (32 - k));
 }
-
 
 // forward character map. A -> A, C -> C, G -> G, T -> T. rest maps to zero.
 static const char canonicalize_basepair_forward_map[256] = {
