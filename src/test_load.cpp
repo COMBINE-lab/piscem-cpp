@@ -21,7 +21,9 @@ void check_index(mindex::reference_index& ri, const std::string& ref_fname ){
     sshash::contig_info_query_canonical_parsing q(ri.get_dict());
     uint64_t refnum = 0;
     uint64_t global_idx = 0;
+    bool first = true;
     while (ks >> record) {
+        //if (first) { ++refnum; first = false; continue; }
         q.start();
         pufferfish::CanonicalKmerIterator kit(record.seq);
         while (kit != kend) {
@@ -37,9 +39,10 @@ void check_index(mindex::reference_index& ri, const std::string& ref_fname ){
                 std::cerr << "didn't find k-mer " << kit->first.fwMer().toStr() << " at all in the index!\n";
             }
             
-            for (auto& h : ref_hits.refRange) {
+            for (auto h : ref_hits.refRange) {
+                auto txp_id = sshash::util::transcript_id(h);
                 auto rp = ref_hits.decode_hit(h);
-                if ((h.transcript_id() == refnum) and 
+                if ((txp_id == refnum) and 
                     (static_cast<int>(rp.pos) == kit->second) and 
                     (rp.isFW == true)) {
                     found_ref_pos = true;
@@ -49,17 +52,18 @@ void check_index(mindex::reference_index& ri, const std::string& ref_fname ){
             if (!found_ref_pos) {
                 std::cerr << "querying reference : " << refnum << " at position " << kit->second << "\n";
                 std::cerr << "did NOT find reference position in hit list!\n";
-                for (auto& h : ref_hits.refRange) {
+                for (auto h : ref_hits.refRange) {
+
                     auto rp = ref_hits.decode_hit(h);
                     
                     std::cerr << "\t[ kmer: " << kit->first.fwMer().toStr()
-                              << ", rawpos: " << h.pos_
+                              //<< ", rawpos: " << h.pos_
                               << ", contig: " << ref_hits.contig_id() 
                               << ", clen: " << ref_hits.contigLen_ 
-                              << ", cstart: " << h.pos() 
+                              << ", cstart: " << sshash::util::pos(h) 
                               << ", coff: " << ref_hits.contigPos_
                               << ", cori: " << (ref_hits.contigOrientation_ ? "fw" : "rc")
-                              << ", ref: " << h.transcript_id() 
+                              << ", ref: " << sshash::util::transcript_id(h) 
                               << ", pos: " << rp.pos 
                               << ", ori: " << (rp.isFW ? "fw" : "rc") << "]\n";
                     std::exit(1);

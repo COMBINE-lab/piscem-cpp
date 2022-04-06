@@ -58,3 +58,8 @@ add_executable(mapper src/mapper.cpp)
 target_include_directories(mapper PUBLIC ${CMAKE_SOURCE_DIR}/include ${ZLIB_INCLUDE_DIRS})
 target_link_libraries(mapper ZLIB::ZLIB Threads::Threads) 
 
+add_executable(evaluator src/index_evaluator.cpp) 
+target_include_directories(evaluator PUBLIC ${CMAKE_SOURCE_DIR}/include ${ZLIB_INCLUDE_DIRS})
+target_link_libraries(evaluator ZLIB::ZLIB Threads::Threads) 
+
+

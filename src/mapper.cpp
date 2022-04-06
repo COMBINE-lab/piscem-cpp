@@ -126,9 +126,10 @@ void do_map(mindex::reference_index& ri, fastx_parser::FastxParser<fastx_parser:
                             largest_occ = (num_occ > largest_occ) ? num_occ : largest_occ;
                             float score_inc = 1.0;
 
-                            for (auto& pos_it : refs) {
-                                const auto& ref_pos_ori = proj_hits.decode_hit(pos_it);
-                                uint32_t tid = pos_it.transcript_id();
+                            for (auto v : refs) {
+                                //uint64_t v = *pos_it;
+                                const auto& ref_pos_ori = proj_hits.decode_hit(v);
+                                uint32_t tid = sshash::util::transcript_id(v);
                                 int32_t pos = static_cast<int32_t>(ref_pos_ori.pos);
                                 bool ori = ref_pos_ori.isFW;
                                 auto& target = hit_map[tid];

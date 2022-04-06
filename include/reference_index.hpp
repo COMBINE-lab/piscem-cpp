@@ -13,6 +13,7 @@
 #include "bit_vector_iterator.hpp"
 #include "CanonicalKmerIterator.hpp"
 #include "projected_hits.hpp"
+#include "util.hpp"
 
 /*namespace sshash {
     class contig_info_query_canonical_parsing;
@@ -30,6 +31,14 @@ public:
         std::string ctg_name = basename + ".ctab";
         std::cerr << "loading contig table from " << ctg_name << "\n";
         essentials::load(m_bct, ctg_name.c_str());
+        // based on the number of bits used to encode reference positions
+        // read from the file, set the shift we have to perform on a
+        // contig table entry to read off the reference id (= m_ref_len_bits + 1)
+        // where the +1 is for the orientation bit.
+        sshash::util::_ref_shift = (m_bct.m_ref_len_bits + 1);
+        // based on the value of m_ref_len_bits, select the appropriate mask to use
+        // when decoding a reference position from a contig table entry.
+        sshash::util::_pos_mask = sshash::util::pos_masks[m_bct.m_ref_len_bits];
         std::cerr << "loaded contig table\n";
 
         std::string ref_info = basename + ".refinfo";
@@ -53,7 +62,8 @@ public:
             auto start_pos = m_bct.m_ctg_offsets.access(qres.contig_id);
             auto end_pos = m_bct.m_ctg_offsets.access(qres.contig_id + 1);
             size_t len = end_pos - start_pos;
-            nonstd::span s(m_bct.m_ctg_entries.begin() + start_pos, len);
+            sshash::util::contig_span s{
+                m_bct.m_ctg_entries.at(start_pos), m_bct.m_ctg_entries.at(start_pos+len), len};
 
             uint32_t contig_id = (qres.contig_id > invalid_u32)
                                      ? invalid_u32
@@ -79,7 +89,7 @@ public:
                     invalid_u32,
                     invalid_u64,
                     static_cast<uint32_t>(m_dict.k()),
-                    nonstd::span<sshash::util::Position>()};
+                    {}};
         }
     }
 
@@ -89,6 +99,7 @@ public:
     const std::string& ref_name(size_t i) const { return m_ref_names[i]; }
     uint64_t ref_len(size_t i) const { return m_ref_lens[i]; }
     uint64_t num_refs() const { return m_ref_names.size(); }
+    const sshash::basic_contig_table& get_contig_table() const { return m_bct; }
 
 private:
     sshash::dictionary m_dict;

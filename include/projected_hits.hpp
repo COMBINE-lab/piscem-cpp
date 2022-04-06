@@ -19,15 +19,16 @@ struct projected_hits {
     uint32_t contigLen_;
     uint64_t globalPos_;
     uint32_t k_;
-    nonstd::span<sshash::util::Position> refRange;
+
+    sshash::util::contig_span refRange;
 
     inline bool empty() { return refRange.empty(); }
 
     inline uint32_t contig_id() const { return contigIdx_; }
 
-    inline ref_pos decode_hit(sshash::util::Position& p) {
+    inline ref_pos decode_hit(uint64_t v) {
         // true if the contig is fowrard on the reference
-        bool contigFW = p.orientation();
+        bool contigFW = sshash::util::orientation(v);
         // we are forward with respect to the reference if :
         // (1) contigFW and contigOrientation_
         // (2) !contigFW and !contigOrientation_
@@ -43,25 +44,25 @@ struct projected_hits {
             // kmer   :          AGC
             // contig :      ACTTAGC
             // ref    :  GCA[ACTTAGC]CA
-            rpos = p.pos() + contigPos_;
+            rpos = sshash::util::pos(v) + contigPos_;
             rfw = true;
         } else if (contigFW and !contigOrientation_) {
             // kmer   :          GCT
             // contig :      ACTTAGC
             // ref    :  GCA[ACTTAGC]CA
-            rpos = p.pos() + contigPos_;
+            rpos = sshash::util::pos(v) + contigPos_;
             rfw = false;
         } else if (!contigFW and contigOrientation_) {
             // kmer   :          AGT
             // contig :      GCTAAGT
             // ref    :  GCA[ACTTAGC]CA
-            rpos = p.pos() + contigLen_ - (contigPos_ + k_);
+            rpos = sshash::util::pos(v) + contigLen_ - (contigPos_ + k_);
             rfw = false;
         } else {  // if (!contigFW and !contigOrientation_) {
             // kmer   :          ACT
             // contig :      GCTAAGT
             // ref    :  GCA[ACTTAGC]CA
-            rpos = p.pos() + contigLen_ - (contigPos_ + k_);
+            rpos = sshash::util::pos(v) + contigLen_ - (contigPos_ + k_);
             rfw = true;
         }
 

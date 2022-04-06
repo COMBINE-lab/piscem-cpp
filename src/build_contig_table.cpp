@@ -32,17 +32,46 @@ bool build_contig_table(const std::string& input_filename, uint64_t k,
     std::fstream s{out_refinfo.c_str(), s.binary | s.trunc | s.out};
     bitsery::Serializer<bitsery::OutputBufferedStreamAdapter> ser{s};
 
+
+    std::vector<uint64_t> segment_order;
+    {
+        // First, we will pass over the segment file to collect the
+        // identifier and length of each segment.
+        std::ifstream seg_file(input_filename + ".cf_seg");
+        uint64_t idx = 0;
+        while (!seg_file.eof()) {
+            uint64_t seg_id;
+            uint32_t seg_len;
+            std::string seg;
+            while (seg_file >> seg_id >> seg) {
+                segment_order.push_back(seg_id);
+                seg_len = seg.length();
+                id_to_rank[seg_id] = { idx, seg_len, 0 };
+                ++idx;
+            }
+        }
+        std::cerr << "computed all segment lengths.\n";
+    }
+
+
+
+    size_t num_refs = 0;
+    size_t max_ref_len = 0;
     {
         // In the first pass over the cf_seq file we
         // will assign each segment an ID based on the
-        // order of its first appearance (rank), and
-        // will count how many times each segment occurs.
+        // order of its first appearance (rank),
+        // will count how many times each segment occurs, and 
+        // will compute the lengths of all reference 
+        // sequences.
         std::ifstream ifile(input_filename + ".cf_seq");
 
         uint64_t refctr = 0;
         bool first = true;
         uint64_t next_rank = 0;
+        uint64_t current_offset = 0;
         std::vector<std::string> ref_names;
+        std::vector<uint64_t> ref_lens;
 
         while (!ifile.eof()) {
             std::string tok;
@@ -51,13 +80,23 @@ bool build_contig_table(const std::string& input_filename, uint64_t k,
                 if (tok.compare(0, hlen, refstr) == 0) {
                     auto sp = tok.find("Sequence:");
                     auto ep = sp + 9;
+
+                    if (!first) {
+                        if (ref_names.empty()) {
+                            std::cerr << "ref_names is empty, but first is false; should not happen!\n";
+                        }
+                        auto rn = ref_names.back();
+                        uint64_t len = current_offset + (k - 1);
+                        ref_lens.push_back(len);
+                        max_ref_len = std::max(max_ref_len, len);
+                        std::cerr << "finished processing reference #" << refctr << " : " << rn << ", len : " << len << "\n";
+                        ++refctr;
+                    }
+
                     std::string refname = tok.substr(ep);
                     ref_names.push_back(refname);
 
-                    if (!first) {
-                        ++refctr;
-                        std::cerr << "processing reference #" << refctr << " : " << refname << "\n";
-                    }
+                    current_offset = 0;
                     first = false;
                 } else {  // this should be a segment entry
 
@@ -69,54 +108,69 @@ bool build_contig_table(const std::string& input_filename, uint64_t k,
 
                     tok.pop_back();
                     uint64_t id = std::stoul(tok, nullptr, 0);
-
+                    
                     auto rit = id_to_rank.find(id);
                     if (rit == id_to_rank.end()) {
-                        id_to_rank[id] = {next_rank, 0, 1};
-                        ++next_rank;
+                        std::cerr << "encountered segment " << id << " that was not found in "
+                        << "the id_to_rank dictionary!\n";
                     } else {
                         rit->second.count += 1;
+                        // then we increment the current offset
+                        current_offset += rit->second.len - (k - 1);
                     }
                 }
             }
         }
+        if (ref_names.empty()) {
+            std::cerr << "ref_names is empty, but first is false; should not happen!\n";
+        }
+        auto rn = ref_names.back();
+        // for the last reference
+        uint64_t len = current_offset + (k - 1);
+        ref_lens.push_back(len);
+        max_ref_len = std::max(max_ref_len, len);
+        std::cerr << "finished processing reference #" << refctr << " : " << rn << ", len : " << len << "\n";
+        num_refs = ref_lens.size();
 
-        ser(ref_names);
-        // flush to writer
-        ser.adapter().flush();
-        // s.close();
+        {
+            ser(ref_names);
+            // flush to writer
+            ser.adapter().flush();
+            // s.close();
+        }
+
+        {
+            // serialize this part of the segment table.
+            ser(ref_lens);
+            // flush to writer
+            ser.adapter().flush();
+        }
     }
+    // close the buffer that we are serializing to
+    s.close();
+
+    uint64_t ref_len_bits = std::ceil(std::log2(max_ref_len + 1));
+    uint64_t num_ref_bits = std::ceil(std::log2(num_refs + 1));
+    uint64_t total_ctg_bits = ref_len_bits + num_ref_bits + 1; 
+
+    // to get to the ref we shift ref_len_bits + 1 (orientation bit)
+    sshash::util::_ref_shift = ref_len_bits + 1;
+    sshash::util::_pos_mask = sshash::util::pos_masks[ref_len_bits];
 
     std::cerr << "completed first pass over paths.\n";
     std::cerr << "there were " << id_to_rank.size() << " segments\n";
+    std::cerr << "max ref len = " << max_ref_len << ", requires " << ref_len_bits << " bits\n";
+    std::cerr << "num refs = " << num_refs << ", requires " << num_ref_bits << " bits\n";
 
     uint64_t tot_seg_occ = 0;
     for (auto& kv : id_to_rank) { tot_seg_occ += kv.second.count; }
 
     std::cerr << "there were " << tot_seg_occ << " total segment occurrences\n";
 
-    std::vector<uint64_t> segment_order;
-    segment_order.reserve(id_to_rank.size() + 1);
-    {
-        // now we go over the file defining the segments
-        // to determine the length of each segment.
-        std::ifstream seg_file(input_filename + ".cf_seg");
-        while (!seg_file.eof()) {
-            uint64_t seg_id;
-            uint32_t seg_len;
-            std::string seg;
-            while (seg_file >> seg_id >> seg) {
-                seg_len = seg.length();
-                id_to_rank[seg_id].len = seg_len;
-                segment_order.push_back(seg_id);
-            }
-        }
-    }
-    std::cerr << "computed all segment lengths.\n";
-
     std::cerr << "computing cumulative offset vector.\n";
 
     basic_contig_table bct;
+    bct.m_ref_len_bits = ref_len_bits;
     {
         // next we compute an offest vector that will point
         // to where, in the concatenated contig occurrence
@@ -140,7 +194,10 @@ bool build_contig_table(const std::string& input_filename, uint64_t k,
         for (size_t i = 0; i < segment_order.size(); ++i) {
             auto seg_id = segment_order[i];
             id_to_rank[seg_id].count = contig_offsets[i];
-            id_to_rank[seg_id].rank = i;
+            if (id_to_rank[seg_id].rank != i) {
+                std::cerr << "expected segment " << seg_id << " to have "
+                << "rank " << i << ", but it had rank " << id_to_rank[seg_id].rank << "\n";
+            }
         }
         // since the contig offset vector is a monotonic sequence
         // it is amenable to Elias-Fano compression, so compress it
@@ -155,32 +212,27 @@ bool build_contig_table(const std::string& input_filename, uint64_t k,
     {
         // Finally, we'll go over the sequences of segments again
         // and build the final table.
-        auto& seg_table = bct.m_ctg_entries;
-        seg_table.resize(tot_seg_occ);
+        auto seg_table_builder = pthash::compact_vector::builder(tot_seg_occ, total_ctg_bits);
+        //auto& seg_table = bct.m_ctg_entries;
+        //seg_table.resize(tot_seg_occ);
         std::ifstream ifile(input_filename + ".cf_seq");
 
         uint64_t refctr = 0;
         bool first = true;
         uint64_t current_offset = 0;
-        std::vector<uint64_t> ref_lens;
 
         while (!ifile.eof()) {
             std::string tok;
-            uint64_t tctr = 0;
             while (ifile >> tok) {
                 // this is a new reference
                 if (tok.compare(0, hlen, refstr) == 0) {
                     if (!first) {
                         ++refctr;
-                        uint64_t len = current_offset + (k - 1);
-                        ref_lens.push_back(len);
                     }
                     std::cerr << "processing reference #" << refctr << "\n";
                     first = false;
                     current_offset = 0;
-                    tctr = 0;
                 } else {  // this should be a segment entry
-
                     bool is_fw = true;
                     if (tok.back() == '-') {
                         is_fw = false;
@@ -195,12 +247,13 @@ bool build_contig_table(const std::string& input_filename, uint64_t k,
                     uint64_t id = std::stoul(tok, nullptr, 0);
                     // get the entry for this segment
                     auto& v = id_to_rank[id];
-                    ++tctr;
 
                     // insert the next entry for this segment
                     // at the index given by v.count.
                     auto entry_idx = v.count;
-                    seg_table[entry_idx].update(refctr, current_offset, is_fw);
+                    uint64_t encoded_entry = sshash::util::encode_contig_entry(refctr, current_offset, is_fw);
+                    //[entry_idx].update(refctr, current_offset, is_fw);
+                    seg_table_builder.set(entry_idx, encoded_entry);
                     // then we increment entry_idx for next time
                     v.count += 1;
                     // then we increment the current offset
@@ -208,16 +261,8 @@ bool build_contig_table(const std::string& input_filename, uint64_t k,
                 }
             }
         }
-        // for the last reference
-        uint64_t len = current_offset + (k - 1);
-        ref_lens.push_back(len);
-        // serialize this part of the segment table.
-        ser(ref_lens);
-        // flush to writer
-        ser.adapter().flush();
+        seg_table_builder.build(bct.m_ctg_entries);
     }
-    // close the buffer that we are serializing to
-    s.close();
 
     std::string out_ctab = output_filename + ".ctab";
     essentials::save(bct, out_ctab.c_str());

@@ -31,6 +31,62 @@ typedef pthash::single_phf<base_hasher_type,               // base hasher
 
 namespace util {
 
+struct contig_span {
+    pthash::compact_vector::iterator start;
+    pthash::compact_vector::iterator stop;
+    size_t len=0;
+
+    inline pthash::compact_vector::iterator begin() { return start; }
+    inline pthash::compact_vector::iterator end() { return stop; }
+    inline bool empty() const { return len == 0; }
+    inline size_t size() const { return len; }
+};
+
+// the amount we have to shift right
+// to get just the reference on which
+// the hit occurs
+static uint64_t _ref_shift;
+
+// once we shift 1 bit (to get rid of position)
+// the maks we have to apply to remove the 
+// upper reference bits
+static uint64_t _pos_mask;
+
+constexpr uint64_t pos_masks[] = {
+0x0, 0x1, 0x3, 0x7, 0xf, 0x1f, 0x3f, 0x7f, 0xff, 0x1ff, 0x3ff,
+0x7ff, 0xfff, 0x1fff, 0x3fff, 0x7fff, 0xffff, 0x1ffff, 0x3ffff,
+0x7ffff, 0xfffff, 0x1fffff, 0x3fffff, 0x7fffff, 0xffffff,
+0x1ffffff, 0x3ffffff, 0x7ffffff, 0xfffffff, 0x1fffffff, 0x3fffffff,
+0x7fffffff, 0xffffffff, 0x1ffffffff, 0x3ffffffff, 0x7ffffffff,
+0xfffffffff, 0x1fffffffff, 0x3fffffffff, 0x7fffffffff, 0xffffffffff,
+0x1ffffffffff, 0x3ffffffffff, 0x7ffffffffff, 0xfffffffffff,
+0x1fffffffffff, 0x3fffffffffff, 0x7fffffffffff, 0xffffffffffff,
+0x1ffffffffffff, 0x3ffffffffffff, 0x7ffffffffffff, 0xfffffffffffff,
+0x1fffffffffffff, 0x3fffffffffffff, 0x7fffffffffffff, 0xffffffffffffff,
+0x1ffffffffffffff, 0x3ffffffffffffff, 0x7ffffffffffffff,
+0xfffffffffffffff, 0x1fffffffffffffff, 0x3fffffffffffffff,
+0x7fffffffffffffff};
+
+inline uint32_t transcript_id(uint64_t e) { 
+    return static_cast<uint32_t>((e >> _ref_shift));
+}
+inline uint32_t pos(uint64_t e) { 
+    return static_cast<uint32_t>((e >> 1) & _pos_mask); 
+}
+inline bool orientation(uint64_t e) { return (e & 0x1); }
+
+uint64_t encode_contig_entry(uint64_t refctr, uint64_t current_offset, bool is_fw) {
+    // e starts out with the reference index
+    uint64_t e = refctr;
+    // we shift this left by _ref_shift (which is pos_bits + 1)
+    e <<= _ref_shift;
+    // shift the current offset left by 1 and add it to the representation
+    e |= (current_offset << 1);
+    // set the orientation bit
+    e |= is_fw ? 1 : 0;
+    return e;
+}
+
 // For the time being, assume < 4B contigs
 // and that each contig is < 4B bases
 struct Position {
