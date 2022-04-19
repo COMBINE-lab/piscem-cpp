@@ -267,6 +267,7 @@ void do_map(mindex::reference_index& ri, fastx_parser::FastxParser<fastx_parser:
                 std::cout << o;
                 iomut.unlock();
                 osstream.clear();
+                osstream.str("");
                 processed = 0;
             }
         }
@@ -278,6 +279,8 @@ void do_map(mindex::reference_index& ri, fastx_parser::FastxParser<fastx_parser:
     std::cout << o;
     iomut.unlock();
     osstream.clear();
+    // don't need this here because osstream goes away at end of scope
+    // osstream.str("");
 }
 
 int main(int argc, char** argv) {
