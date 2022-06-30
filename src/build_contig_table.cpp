@@ -203,7 +203,7 @@ bool build_contig_table(const std::string& input_filename, uint64_t k,
         // it is amenable to Elias-Fano compression, so compress it
         // as such and write it.
         // ef_sequence efo;
-        bct.m_ctg_offsets.encode(contig_offsets.begin(), contig_offsets.size());
+        bct.m_ctg_offsets.encode(contig_offsets.begin(), contig_offsets.size(), contig_offsets.back());
         // std::string cto_fname = output_filename+"_coff.bin";
         // essentials::save(efo, cto_fname.c_str());
     }

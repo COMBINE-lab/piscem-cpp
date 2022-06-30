@@ -52,7 +52,7 @@ struct SkipContext {
     return kit1->first;
   }
 
-  inline bool query_kmer(sshash::contig_info_query_canonical_parsing& qc) {
+  inline bool query_kmer(sshash::streaming_query_canonical_parsing& qc) {
     bool found_match = false;
     if (fast_hit.valid()) {
       auto keq = kit1->first.isEquivalent(fast_hit.ref_kmer);
@@ -468,7 +468,7 @@ struct SkipContext {
 // Nat Biotechnol. 2016;34(5):525-527.
 //
 bool hit_searcher::get_raw_hits_sketch(std::string &read,
-                  sshash::contig_info_query_canonical_parsing& qc,
+                  sshash::streaming_query_canonical_parsing& qc,
                   bool isLeft,
                   bool verbose) {
   (void) verbose;

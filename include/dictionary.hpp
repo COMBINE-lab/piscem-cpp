@@ -1,11 +1,10 @@
-
 #pragma once
 
 #include "util.hpp"
 #include "minimizers.hpp"
 #include "buckets.hpp"
 #include "skew_index.hpp"
-#include "abundances.hpp"
+#include "weights.hpp"
 
 namespace mindex {
     class reference_index;
@@ -23,53 +22,34 @@ struct dictionary {
     uint64_t k() const { return m_k; }
     uint64_t m() const { return m_m; }
     bool canonicalized() const { return m_canonical_parsing; }
-    bool weighted() const { return !m_abundances.empty(); }
+    bool weighted() const { return !m_weights.empty(); }
 
-    uint64_t lookup(char const* string_kmer, bool check_reverse_complement_too = true) const {
-        uint64_t uint64_kmer = util::string_to_uint64_no_reverse(string_kmer, m_k);
-        return lookup_uint64(uint64_kmer, check_reverse_complement_too);
-    }
+    uint64_t lookup(char const* string_kmer, bool check_reverse_complement_too = true) const;
+    uint64_t lookup_uint64(uint64_t uint64_kmer, bool check_reverse_complement_too = true) const;
 
-    uint64_t lookup_uint64(uint64_t uint64_kmer, bool check_reverse_complement_too = true) const {
-        if (m_canonical_parsing) return lookup_uint64_canonical_parsing(uint64_kmer);
-        uint64_t kmer_id = lookup_uint64_regular_parsing(uint64_kmer);
-        if (check_reverse_complement_too and kmer_id == constants::invalid) {
-            uint64_t uint64_kmer_rc = util::compute_reverse_complement(uint64_kmer, m_k);
-            kmer_id = lookup_uint64_regular_parsing(uint64_kmer_rc);
-        }
-        return kmer_id;
-    }
+    lookup_result lookup_advanced(char const* string_kmer,
+                                  bool check_reverse_complement_too = true) const;
+    lookup_result lookup_advanced_uint64(uint64_t uint64_kmer,
+                                         bool check_reverse_complement_too = true) const;
 
-    void access(uint64_t kmer_id, char* string_kmer) const {
-        assert(kmer_id < size());
-        m_buckets.access(kmer_id, string_kmer, m_k);
-    }
+    /* Return the number of kmers in contig. Since contigs do not have duplicates,
+       the length of the contig is always size + k - 1. */
+    uint64_t contig_size(uint64_t contig_id) const;
+    // std::vector<uint32_t> contig_neighbours(uint64_t contig_id) const;
 
-    uint64_t abundance(uint64_t kmer_id) const {
-        assert(kmer_id < size());
-        return m_abundances.abundance(kmer_id);
-    }
+    uint64_t weight(uint64_t kmer_id) const;
 
-    bool is_member(char const* string_kmer, bool check_reverse_complement_too = true) const {
-        return lookup(string_kmer, check_reverse_complement_too) != constants::invalid;
-    }
+    void access(uint64_t kmer_id, char* string_kmer) const;
 
-    friend struct membership_query_canonical_parsing;
-    friend struct membership_query_regular_parsing;
-    friend struct contig_info_query_canonical_parsing;
+    bool is_member(char const* string_kmer, bool check_reverse_complement_too = true) const;
+    bool is_member_uint64(uint64_t uint64_kmer, bool check_reverse_complement_too = true) const;
+
+    friend struct streaming_query_canonical_parsing;
+    friend struct streaming_query_regular_parsing;
     friend class ::mindex::reference_index;
-
-    struct membership_query_result {
-        membership_query_result() : num_kmers(0), num_valid_kmers(0), num_positive_kmers(0) {}
-        uint64_t num_kmers;
-        uint64_t num_valid_kmers;
-        uint64_t num_positive_kmers;
-        uint64_t num_searches;
-        uint64_t num_extensions;
-    };
-
-    membership_query_result membership_query_from_file(std::string const& filename,
-                                                       bool multiline) const;
+    
+    streaming_query_report streaming_query_from_file(std::string const& filename,
+                                                     bool multiline) const;
 
     struct iterator {
         iterator(dictionary const* ptr, uint64_t kmer_id = 0) {
@@ -78,7 +58,6 @@ struct dictionary {
 
         bool has_next() const { return it.has_next(); }
         std::pair<uint64_t, std::string> next() { return it.next(); }
-
 
     private:
         typename buckets::iterator it;
@@ -91,16 +70,9 @@ struct dictionary {
         return iterator(this, kmer_id);
     }
 
-    uint64_t num_bits() const {
-        return 8 * (sizeof(m_size) + sizeof(m_seed) + sizeof(m_k) + sizeof(m_m) +
-                    sizeof(m_canonical_parsing)) +
-               m_minimizers.num_bits() + m_buckets.num_bits() + m_skew_index.num_bits() +
-               m_abundances.num_bits();
-    }
-
+    uint64_t num_bits() const;
     void print_info() const;
     void print_space_breakdown() const;
-
 
     template <typename Visitor>
     void visit(Visitor& visitor) {
@@ -112,7 +84,7 @@ struct dictionary {
         visitor.visit(m_minimizers);
         visitor.visit(m_buckets);
         visitor.visit(m_skew_index);
-        visitor.visit(m_abundances);
+        visitor.visit(m_weights);
     }
 
 private:
@@ -124,11 +96,10 @@ private:
     minimizers m_minimizers;
     buckets m_buckets;
     skew_index m_skew_index;
-    abundances m_abundances;
+    weights m_weights;
 
-    uint64_t lookup_uint64_regular_parsing(uint64_t uint64_kmer) const;
-    uint64_t lookup_uint64_canonical_parsing(uint64_t uint64_kmer) const;
+    lookup_result lookup_uint64_regular_parsing(uint64_t uint64_kmer) const;
+    lookup_result lookup_uint64_canonical_parsing(uint64_t uint64_kmer) const;
 };
-
 
 }  // namespace sshash

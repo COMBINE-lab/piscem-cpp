@@ -3,6 +3,7 @@
 #include "../include/reference_index.hpp"
 #include "../include/CanonicalKmerIterator.hpp"
 //#include "../include/query/contig_info_query_canonical_parsing.cpp"
+#include "../include/query/streaming_query_canonical_parsing.hpp"
 #include "../include/projected_hits.hpp"
 #include "../include/util.hpp"
 #include "../include/mapping_util.hpp"
@@ -48,7 +49,8 @@ void do_map(mindex::reference_index& ri, fastx_parser::FastxParser<fastx_parser:
     // size_t alt_max_occ = 0;
 
     size_t num_hits = 0;
-    sshash::contig_info_query_canonical_parsing q(ri.get_dict());
+    //sshash::contig_info_query_canonical_parsing q(ri.get_dict());
+    sshash::streaming_query_canonical_parsing q(ri.get_dict());
     mindex::hit_searcher hs(&ri);
     uint64_t read_num = 0;
     uint64_t processed = 0;
@@ -108,13 +110,14 @@ void do_map(mindex::reference_index& ri, fastx_parser::FastxParser<fastx_parser:
                 int32_t signed_rl = static_cast<int32_t>(record.seq.length());
                 auto collect_mappings_from_hits =
                     [&max_stretch, &min_occ, &hit_map, &num_valid_hits, &total_occs, &largest_occ,
-                     &early_stop, signed_rl,
+                     &early_stop, &record, signed_rl,
                      k](auto& raw_hits, auto& prev_read_pos, auto& max_allowed_occ,
                         auto& had_alt_max_occ) -> bool {
                     for (auto& raw_hit : raw_hits) {
                         auto& read_pos = raw_hit.first;
                         auto& proj_hits = raw_hit.second;
                         auto& refs = proj_hits.refRange;
+                        
                         uint64_t num_occ = static_cast<uint64_t>(refs.size());
                         min_occ = std::min(min_occ, num_occ);
                         had_alt_max_occ = true;
@@ -133,7 +136,7 @@ void do_map(mindex::reference_index& ri, fastx_parser::FastxParser<fastx_parser:
                                 int32_t pos = static_cast<int32_t>(ref_pos_ori.pos);
                                 bool ori = ref_pos_ori.isFW;
                                 auto& target = hit_map[tid];
-
+                                
                                 // Why >= here instead of == ?
                                 // Because hits can happen on the same target in both the forward
                                 // and rc orientations, it is possible that we start the loop with

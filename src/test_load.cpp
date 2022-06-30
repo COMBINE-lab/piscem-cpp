@@ -3,7 +3,8 @@
 #include "../include/reference_index.hpp"
 #include "../include/kseq++.hpp"
 #include "../include/CanonicalKmerIterator.hpp"
-#include "../include/query/contig_info_query_canonical_parsing.cpp"
+//#include "../include/query/contig_info_query_canonical_parsing.cpp"
+#include "../include/query/streaming_query_canonical_parsing.hpp"
 #include "../include/projected_hits.hpp"
 #include "zlib.h"
 
@@ -18,7 +19,7 @@ void check_index(mindex::reference_index& ri, const std::string& ref_fname ){
     auto ks = make_kstream(fp, gzread, mode::in);
 
     pufferfish::CanonicalKmerIterator kend;
-    sshash::contig_info_query_canonical_parsing q(ri.get_dict());
+    sshash::streaming_query_canonical_parsing q(ri.get_dict());
     uint64_t refnum = 0;
     uint64_t global_idx = 0;
     bool first = true;

@@ -9,7 +9,8 @@
 #include "../include/bitsery/adapter/stream.h"
 #include "../include/bitsery/brief_syntax/vector.h"
 #include "../include/bitsery/brief_syntax/string.h"
-#include "query/contig_info_query_canonical_parsing.cpp"
+//#include "query/contig_info_query_canonical_parsing.cpp"
+#include "query/streaming_query_canonical_parsing.hpp"
 #include "bit_vector_iterator.hpp"
 #include "CanonicalKmerIterator.hpp"
 #include "projected_hits.hpp"
@@ -52,13 +53,16 @@ public:
     }
 
     projected_hits query(pufferfish::CanonicalKmerIterator kmit,
-                         sshash::contig_info_query_canonical_parsing& q) {
+                         sshash::streaming_query_canonical_parsing& q) {
         auto qres = q.get_contig_pos(kmit->first.fwWord(), kmit->first.rcWord(), kmit->second);
 
         constexpr uint64_t invalid_u64 = std::numeric_limits<uint64_t>::max();
         constexpr uint32_t invalid_u32 = std::numeric_limits<uint32_t>::max();
 
-        if (qres.is_member) {
+        bool is_member = (qres.kmer_id != sshash::constants::invalid_uint64);
+
+        if (is_member) {
+            qres.contig_size += m_dict.k() - 1;
             auto start_pos = m_bct.m_ctg_offsets.access(qres.contig_id);
             auto end_pos = m_bct.m_ctg_offsets.access(qres.contig_id + 1);
             size_t len = end_pos - start_pos;
@@ -68,18 +72,20 @@ public:
             uint32_t contig_id = (qres.contig_id > invalid_u32)
                                      ? invalid_u32
                                      : static_cast<uint32_t>(qres.contig_id);
-            uint32_t contig_offset = (qres.contig_offset > invalid_u32)
+            uint32_t contig_offset = (qres.kmer_id_in_contig > invalid_u32)
                                          ? invalid_u32
-                                         : static_cast<uint32_t>(qres.contig_offset);
-            uint32_t contig_length = (qres.contig_length > invalid_u32)
+                                         : static_cast<uint32_t>(qres.kmer_id_in_contig);
+            uint32_t contig_length = (qres.contig_size > invalid_u32)
                                          ? invalid_u32
-                                         : static_cast<uint32_t>(qres.contig_length);
+                                         : static_cast<uint32_t>(qres.contig_size);
+
+            bool is_forward = (qres.kmer_orientation == sshash::constants::forward_orientation);
 
             return projected_hits{contig_id,
                                   contig_offset,
-                                  qres.is_forward,
+                                  is_forward,
                                   contig_length,
-                                  qres.global_pos,
+                                  qres.kmer_id,
                                   static_cast<uint32_t>(m_dict.k()),
                                   s};
         } else {

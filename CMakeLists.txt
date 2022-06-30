@@ -35,15 +35,32 @@ endif()
 find_package(ZLIB REQUIRED)
 find_package(Threads REQUIRED)
 
+set(Z_LIB_SOURCES
+  include/gz/zip_stream.cpp
+)
+
+set(SSHASH_SOURCES
+  include/dictionary.cpp
+  include/info.cpp
+)
+
+# Create a static lib
+add_library(sshash_static STATIC
+  ${Z_LIB_SOURCES}
+  ${SSHASH_SOURCES}
+  include/builder/build.cpp
+)
+
+
 add_executable(build src/build.cpp)
-target_link_libraries(build z)
+target_link_libraries(build sshash_static z)
 
-add_executable(bench src/bench.cpp)
+add_executable(bench src/bench.cpp ${SSHASH_SOURCES})
 
-add_executable(check src/check.cpp)
+add_executable(check src/check.cpp ${SSHASH_SOURCES} ${Z_LIB_SOURCES})
 target_link_libraries(check z)
 
-add_executable(query src/query.cpp)
+add_executable(query src/query.cpp ${SSHASH_SOURCES} ${Z_LIB_SOURCES})
 target_link_libraries(query z)
 
 #add_executable(build_contig_table src/build_contig_table.cpp)
@@ -52,14 +69,14 @@ target_link_libraries(query z)
 
 add_executable(test_load src/test_load.cpp)
 target_include_directories(test_load PUBLIC ${CMAKE_SOURCE_DIR}/include ${ZLIB_INCLUDE_DIRS})
-target_link_libraries(test_load ZLIB::ZLIB)
+target_link_libraries(test_load ZLIB::ZLIB sshash_static)
 
 add_executable(mapper src/mapper.cpp) 
 target_include_directories(mapper PUBLIC ${CMAKE_SOURCE_DIR}/include ${ZLIB_INCLUDE_DIRS})
-target_link_libraries(mapper ZLIB::ZLIB Threads::Threads) 
+target_link_libraries(mapper ZLIB::ZLIB Threads::Threads sshash_static) 
 
 add_executable(evaluator src/index_evaluator.cpp) 
 target_include_directories(evaluator PUBLIC ${CMAKE_SOURCE_DIR}/include ${ZLIB_INCLUDE_DIRS})
-target_link_libraries(evaluator ZLIB::ZLIB Threads::Threads) 
+target_link_libraries(evaluator ZLIB::ZLIB Threads::Threads sshash_static) 
 
 

@@ -111,7 +111,6 @@ struct bit_vector_iterator {
 
     inline uint64_t position() const { return m_pos; }
 
-    inline size_t size() const { return static_cast<size_t>(m_bv->size()); }
 private:
     inline void fill_buf() {
         m_buf = m_bv->get_word64(m_pos);

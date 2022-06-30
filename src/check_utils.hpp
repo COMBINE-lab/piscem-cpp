@@ -1,6 +1,6 @@
 #pragma once
 
-#include "../include/gz/zip_stream.cpp"
+#include "../include/gz/zip_stream.hpp"
 #include "common.hpp"
 
 namespace sshash {
@@ -12,6 +12,8 @@ bool check_correctness_lookup_access(std::istream& is, dictionary const& dict) {
     std::string line;
     uint64_t pos = 0;
     uint64_t num_kmers = 0;
+    lookup_result prev;
+    prev.contig_id = 0;
 
     std::string got_kmer_str(k, 0);
     std::string expected_kmer_str(k, 0);
@@ -27,6 +29,7 @@ bool check_correctness_lookup_access(std::istream& is, dictionary const& dict) {
         for (uint64_t i = 0; i + k <= line.size(); ++i) {
             assert(util::is_valid(line.data() + i, k));
             uint64_t uint64_kmer = util::string_to_uint64_no_reverse(line.data() + i, k);
+            bool orientation = constants::forward_orientation;
 
             if (num_kmers != 0 and num_kmers % 5000000 == 0) {
                 std::cout << "checked " << num_kmers << " kmers" << std::endl;
@@ -34,6 +37,7 @@ bool check_correctness_lookup_access(std::istream& is, dictionary const& dict) {
             if ((num_kmers & 1) == 0) {
                 /* transform 50% of the kmers into their reverse complements */
                 uint64_kmer = util::compute_reverse_complement(uint64_kmer, k);
+                orientation = constants::backward_orientation;
             }
             util::uint64_to_string_no_reverse(uint64_kmer, expected_kmer_str.data(), k);
             uint64_t id = dict.lookup(expected_kmer_str.c_str());
@@ -44,10 +48,78 @@ bool check_correctness_lookup_access(std::istream& is, dictionary const& dict) {
             */
             if (id != num_kmers) std::cout << "wrong id assigned" << std::endl;
 
-            if (id == constants::invalid) {
+            if (id == constants::invalid_uint64) {
                 std::cout << "kmer '" << expected_kmer_str << "' not found!" << std::endl;
             }
-            assert(id != constants::invalid);
+            assert(id != constants::invalid_uint64);
+
+            auto curr = dict.lookup_advanced(expected_kmer_str.c_str());
+            assert(curr.kmer_id == id);
+
+            if (curr.kmer_orientation != orientation) {
+                std::cout << "ERROR: got orientation " << int(curr.kmer_orientation)
+                          << " but expected " << int(orientation) << std::endl;
+            }
+            assert(curr.kmer_orientation == orientation);
+
+            if (num_kmers == 0) {
+                if (curr.contig_id != 0) {
+                    std::cout << "contig_id " << curr.contig_id << " but expected 0" << std::endl;
+                }
+                assert(curr.contig_id == 0);  // at the beginning, contig_id must be 0
+            } else {
+                if (curr.kmer_id != prev.kmer_id + 1) {
+                    std::cout << "ERROR: got curr.kmer_id " << curr.kmer_id << " but expected "
+                              << prev.kmer_id + 1 << std::endl;
+                }
+                assert(curr.kmer_id == prev.kmer_id + 1);  // kmer_id must be sequential
+
+                if (curr.kmer_id_in_contig >= curr.contig_size) {
+                    std::cout << "ERROR: got curr.kmer_id_in_contig " << curr.kmer_id_in_contig
+                              << " but expected something < " << curr.contig_size << std::endl;
+                }
+                assert(curr.kmer_id_in_contig <
+                       curr.contig_size);  // kmer_id_in_contig must always be < contig_size
+
+                if (curr.contig_id == prev.contig_id) {
+                    /* same contig */
+                    if (curr.contig_size != prev.contig_size) {
+                        std::cout << "ERROR: got curr.contig_size " << curr.contig_size
+                                  << " but expected " << prev.contig_size << std::endl;
+                    }
+                    assert(curr.contig_size == prev.contig_size);  // contig_size must be same
+                    if (curr.kmer_id_in_contig != prev.kmer_id_in_contig + 1) {
+                        std::cout << "ERROR: got curr.kmer_id_in_contig " << curr.kmer_id_in_contig
+                                  << " but expected " << prev.kmer_id_in_contig + 1 << std::endl;
+                    }
+                    assert(curr.kmer_id_in_contig ==
+                           prev.kmer_id_in_contig + 1);  // kmer_id_in_contig must be sequential
+                } else {
+                    /* we have changed contig */
+                    if (curr.contig_id != prev.contig_id + 1) {
+                        std::cout << "ERROR: got curr.contig_id " << curr.contig_id
+                                  << " but expected " << prev.contig_id + 1 << std::endl;
+                    }
+                    assert(curr.contig_id ==
+                           prev.contig_id + 1);  // contig_id must be sequential since we stream
+                    if (curr.kmer_id_in_contig != 0) {
+                        std::cout << "ERROR: got curr.kmer_id_in_contig " << curr.kmer_id_in_contig
+                                  << " but expected 0" << std::endl;
+                    }
+                    assert(curr.kmer_id_in_contig ==
+                           0);  // kmer_id_in_contig must be 0 when we change contig
+                }
+            }
+
+            /* check also contig_size() */
+            uint64_t contig_size = dict.contig_size(curr.contig_id);
+            if (contig_size != curr.contig_size) {
+                std::cout << "ERROR: got contig_size " << contig_size << " but expected "
+                          << curr.contig_size << std::endl;
+            }
+            assert(contig_size == curr.contig_size);
+
+            prev = curr;
 
             // check access
             dict.access(id, got_kmer_str.data());
@@ -81,7 +153,7 @@ bool check_correctness_lookup_access(std::istream& is, dictionary const& dict) {
             but that would take much more memory...
         */
         uint64_t id = dict.lookup(got_kmer_str.c_str());
-        if (id != constants::invalid) {
+        if (id != constants::invalid_uint64) {
             std::cout << "kmer '" << got_kmer_str << "' found!" << std::endl;
         }
     }
@@ -90,17 +162,17 @@ bool check_correctness_lookup_access(std::istream& is, dictionary const& dict) {
     return true;
 }
 
-bool check_correctness_abundances(std::istream& is, dictionary const& dict) {
+bool check_correctness_weights(std::istream& is, dictionary const& dict) {
     uint64_t k = dict.k();
     std::string line;
     uint64_t kmer_id = 0;
 
     if (!dict.weighted()) {
-        std::cerr << "ERROR: the dictionary does not store any abundance" << std::endl;
+        std::cerr << "ERROR: the dictionary does not store weights" << std::endl;
         return false;
     }
 
-    std::cout << "checking correctness of abundances..." << std::endl;
+    std::cout << "checking correctness of weights..." << std::endl;
 
     while (!is.eof()) {
         std::getline(is, line);  // header line
@@ -121,22 +193,22 @@ bool check_correctness_abundances(std::istream& is, dictionary const& dict) {
         i += 5;  // skip "ab:Z:"
 
         for (uint64_t j = 0; j != seq_len - k + 1; ++j, ++kmer_id) {
-            uint64_t expected_ab = std::strtoull(line.data() + i, &end, 10);
+            uint64_t expected = std::strtoull(line.data() + i, &end, 10);
             i = line.find_first_of(' ', i) + 1;
-            uint64_t got_ab = dict.abundance(kmer_id);
-            if (expected_ab != got_ab) {
-                std::cout << "ERROR for kmer_id " << kmer_id << ": expected_ab " << expected_ab
-                          << " but got_ab " << got_ab << std::endl;
+            uint64_t got = dict.weight(kmer_id);
+            if (expected != got) {
+                std::cout << "ERROR for kmer_id " << kmer_id << ": expected " << expected
+                          << " but got " << got << std::endl;
             }
             if (kmer_id != 0 and kmer_id % 5000000 == 0) {
-                std::cout << "checked " << kmer_id << " abundances" << std::endl;
+                std::cout << "checked " << kmer_id << " weights" << std::endl;
             }
         }
 
         std::getline(is, line);  // skip DNA sequence
     }
 
-    std::cout << "checked " << kmer_id << " abundances" << std::endl;
+    std::cout << "checked " << kmer_id << " weights" << std::endl;
     std::cout << "EVERYTHING OK!" << std::endl;
     return true;
 }
@@ -162,15 +234,15 @@ bool check_correctness_lookup_access(dictionary const& dict, std::string const& 
 /*
    The input file must be the one the index was built from.
 */
-bool check_correctness_abundances(dictionary const& dict, std::string const& filename) {
+bool check_correctness_weights(dictionary const& dict, std::string const& filename) {
     std::ifstream is(filename.c_str());
     if (!is.good()) throw std::runtime_error("error in opening the file '" + filename + "'");
     bool good = true;
     if (util::ends_with(filename, ".gz")) {
         zip_istream zis(is);
-        good = check_correctness_abundances(zis, dict);
+        good = check_correctness_weights(zis, dict);
     } else {
-        good = check_correctness_abundances(is, dict);
+        good = check_correctness_weights(is, dict);
     }
     is.close();
     return good;
@@ -186,7 +258,7 @@ bool check_dictionary(dictionary const& dict) {
         if (id != 0 and id % 5000000 == 0) std::cout << "checked " << id << " kmers" << std::endl;
         dict.access(id, kmer.data());
         uint64_t got_id = dict.lookup(kmer.c_str());
-        if (got_id == constants::invalid) {
+        if (got_id == constants::invalid_uint64) {
             std::cout << "kmer '" << kmer << "' not found!" << std::endl;
             return false;
         }
