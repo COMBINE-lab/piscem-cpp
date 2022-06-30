@@ -71,9 +71,9 @@ add_executable(test_load src/test_load.cpp)
 target_include_directories(test_load PUBLIC ${CMAKE_SOURCE_DIR}/include ${ZLIB_INCLUDE_DIRS})
 target_link_libraries(test_load ZLIB::ZLIB sshash_static)
 
-add_executable(mapper src/mapper.cpp) 
-target_include_directories(mapper PUBLIC ${CMAKE_SOURCE_DIR}/include ${ZLIB_INCLUDE_DIRS})
-target_link_libraries(mapper ZLIB::ZLIB Threads::Threads sshash_static) 
+add_executable(pesc src/pesc.cpp) 
+target_include_directories(pesc PUBLIC ${CMAKE_SOURCE_DIR}/include ${ZLIB_INCLUDE_DIRS})
+target_link_libraries(pesc ZLIB::ZLIB Threads::Threads sshash_static) 
 
 add_executable(evaluator src/index_evaluator.cpp) 
 target_include_directories(evaluator PUBLIC ${CMAKE_SOURCE_DIR}/include ${ZLIB_INCLUDE_DIRS})

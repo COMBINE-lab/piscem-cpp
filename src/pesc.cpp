@@ -1,4 +1,3 @@
-
 #include "../external/pthash/external/cmd_line_parser/include/parser.hpp"
 #include "../include/reference_index.hpp"
 #include "../include/CanonicalKmerIterator.hpp"
@@ -32,15 +31,16 @@ void print_header(mindex::reference_index& ri, std::string& cmdline) {
               << "CL:" << cmdline << "\n";
 }
 
-void do_map(mindex::reference_index& ri, fastx_parser::FastxParser<fastx_parser::ReadSeq>& parser, 
-            std::atomic<uint64_t>& global_nr, std::mutex& iomut) {
+void do_map(mindex::reference_index& ri, fastx_parser::FastxParser<fastx_parser::ReadSeq>& parser,
+            std::atomic<uint64_t>& global_nr, std::atomic<uint64_t>& global_nhits,
+            std::mutex& iomut) {
     CanonicalKmer::k(ri.k());
 
     constexpr uint16_t is_secondary = 256;
     constexpr uint16_t is_rc = 16;
 
     // map from reference id to hit info
-    phmap::flat_hash_map<uint32_t, mapping::util::sketch_hit_info> hit_map; 
+    phmap::flat_hash_map<uint32_t, mapping::util::sketch_hit_info> hit_map;
     std::vector<mapping::util::simple_hit> accepted_hits;
 
     size_t max_occ_default = 200;
@@ -48,8 +48,7 @@ void do_map(mindex::reference_index& ri, fastx_parser::FastxParser<fastx_parser:
     const bool attempt_occ_recover = (max_occ_recover > max_occ_default);
     // size_t alt_max_occ = 0;
 
-    size_t num_hits = 0;
-    //sshash::contig_info_query_canonical_parsing q(ri.get_dict());
+    // sshash::contig_info_query_canonical_parsing q(ri.get_dict());
     sshash::streaming_query_canonical_parsing q(ri.get_dict());
     mindex::hit_searcher hs(&ri);
     uint64_t read_num = 0;
@@ -58,7 +57,7 @@ void do_map(mindex::reference_index& ri, fastx_parser::FastxParser<fastx_parser:
     std::string workstr;
 
     std::ostringstream osstream;
-    
+
     int32_t k = static_cast<int32_t>(ri.k());
     // Get the read group by which this thread will
     // communicate with the parser (*once per-thread*)
@@ -71,8 +70,9 @@ void do_map(mindex::reference_index& ri, fastx_parser::FastxParser<fastx_parser:
             ++global_nr;
             ++read_num;
             auto rctr = global_nr.load();
+            auto hctr = global_nhits.load();
             if (rctr % 100000 == 0) {
-                std::cerr << "readnum : " << rctr << ", num_hits : " << num_hits << "\n";
+                std::cerr << "readnum : " << rctr << ", num_hits : " << hctr << "\n";
             }
 
             // alt_max_occ = 0;
@@ -117,7 +117,7 @@ void do_map(mindex::reference_index& ri, fastx_parser::FastxParser<fastx_parser:
                         auto& read_pos = raw_hit.first;
                         auto& proj_hits = raw_hit.second;
                         auto& refs = proj_hits.refRange;
-                        
+
                         uint64_t num_occ = static_cast<uint64_t>(refs.size());
                         min_occ = std::min(min_occ, num_occ);
                         had_alt_max_occ = true;
@@ -130,13 +130,13 @@ void do_map(mindex::reference_index& ri, fastx_parser::FastxParser<fastx_parser:
                             float score_inc = 1.0;
 
                             for (auto v : refs) {
-                                //uint64_t v = *pos_it;
+                                // uint64_t v = *pos_it;
                                 const auto& ref_pos_ori = proj_hits.decode_hit(v);
                                 uint32_t tid = sshash::util::transcript_id(v);
                                 int32_t pos = static_cast<int32_t>(ref_pos_ori.pos);
                                 bool ori = ref_pos_ori.isFW;
                                 auto& target = hit_map[tid];
-                                
+
                                 // Why >= here instead of == ?
                                 // Because hits can happen on the same target in both the forward
                                 // and rc orientations, it is possible that we start the loop with
@@ -240,6 +240,7 @@ void do_map(mindex::reference_index& ri, fastx_parser::FastxParser<fastx_parser:
             }  // DONE : if (rh)
 
             if (!accepted_hits.empty()) {
+                ++global_nhits;
                 bool secondary = false;
                 for (auto& ah : accepted_hits) {
                     uint16_t flag = secondary ? is_secondary : 0;
@@ -287,27 +288,25 @@ void do_map(mindex::reference_index& ri, fastx_parser::FastxParser<fastx_parser:
 }
 
 int main(int argc, char** argv) {
+    /**
+     * PESC : Pseudoalignment Enhanced with Structural Constraints
+     **/
     std::ios_base::sync_with_stdio(false);
     cmd_line_parser::parser parser(argc, argv);
 
     size_t nthread = 16;
     /* mandatory arguments */
-    parser.add("input_filename",
-               "input index prefix.");
-    parser.add("reads",
-               "read filename.");
-    parser.add("t",
-               "A (integer) that specifies the number of threads to use.",
-               "-t", false);
-    parser.add("reads",
-               "read filename.");
+    parser.add("input_filename", "input index prefix.");
+    parser.add("reads", "read filename.");
+    parser.add("t", "A (integer) that specifies the number of threads to use.", "-t", false);
+    parser.add("reads", "read filename.");
     if (!parser.parse()) return 1;
 
     auto input_filename = parser.get<std::string>("input_filename");
     auto read_filename = parser.get<std::string>("reads");
-    
+
     if (parser.parsed("t")) { nthread = parser.get<size_t>("t"); }
-    
+
     std::cerr << "thread: " << nthread << "\n";
 
     mindex::reference_index ri(input_filename);
@@ -320,28 +319,30 @@ int main(int argc, char** argv) {
     }
     cmdline.pop_back();
     print_header(ri, cmdline);
-    
+
     std::mutex iomut;
 
     std::vector<std::string> filenames = {read_filename};
 
     uint32_t np = 1;
-    if ((filenames.size() > 1) and (nthread >= 6)) { np += 1; nthread -= 1;}
-    
+    if ((filenames.size() > 1) and (nthread >= 6)) {
+        np += 1;
+        nthread -= 1;
+    }
+
     fastx_parser::FastxParser<fastx_parser::ReadSeq> rparser(filenames, nthread, np);
     rparser.start();
 
     std::atomic<uint64_t> global_nr{0};
+    std::atomic<uint64_t> global_nh{0};
     std::vector<std::thread> workers;
     for (size_t i = 0; i < nthread; ++i) {
-        workers.push_back(std::thread([&ri, &rparser, &global_nr, &iomut]() {
-            do_map(ri, rparser, global_nr, iomut);
+        workers.push_back(std::thread([&ri, &rparser, &global_nr, &global_nh, &iomut]() {
+            do_map(ri, rparser, global_nr, global_nh, iomut);
         }));
     }
 
-    for (auto& w : workers) {
-        w.join();
-    } 
+    for (auto& w : workers) { w.join(); }
 
     rparser.stop();
 
