@@ -59,10 +59,16 @@ public:
         constexpr uint64_t invalid_u64 = std::numeric_limits<uint64_t>::max();
         constexpr uint32_t invalid_u32 = std::numeric_limits<uint32_t>::max();
 
-        bool is_member = (qres.kmer_id != sshash::constants::invalid_uint64);
+        bool is_member = (qres.kmer_id != sshash::constants::invalid_uint64) and 
+                         (qres.contig_id != sshash::constants::invalid_uint32);
 
         if (is_member) {
             qres.contig_size += m_dict.k() - 1;
+            auto ctsize = m_bct.m_ctg_offsets.size();
+            if (qres.contig_id >= ctsize) {
+              std::cerr << "\n\nctsize = " << ctsize << ", contig_id = " << qres.contig_id << "\n\n";
+              std::cerr << "kmer_id = " << qres.kmer_id << "\n";
+            }
             auto start_pos = m_bct.m_ctg_offsets.access(qres.contig_id);
             auto end_pos = m_bct.m_ctg_offsets.access(qres.contig_id + 1);
             size_t len = end_pos - start_pos;

@@ -23,6 +23,8 @@ struct simple_hit {
     }
   };
 
+  enum class MappingType : uint8_t { UNMAPPED, SINGLE_MAPPED };
+
   enum class HitDirection : uint8_t {FW, RC, BOTH};
 
   struct sketch_hit_info {
