@@ -42,25 +42,29 @@ struct streaming_query_canonical_parsing {
 
     inline void start() { m_start = true; }
 
-    lookup_result get_contig_pos(const uint64_t km, const uint64_t km_rc, 
-                                  const uint64_t query_offset) {
-      return lookup_advanced(km, km_rc, query_offset);
+    lookup_result get_contig_pos(const uint64_t km, const uint64_t km_rc,
+                                 const uint64_t query_offset) {
+        return lookup_advanced(km, km_rc, query_offset);
     }
 
-    lookup_result lookup_advanced(const uint64_t km, const uint64_t km_rc, 
+    lookup_result lookup_advanced(const uint64_t km, const uint64_t km_rc,
                                   const uint64_t query_offset) {
-      m_kmer = km;
-      m_kmer_rc = km_rc;
-     
-      // if the current query offset position is
-      // the next position after the stored query
-      // offset position, then we can apply the
-      // relevant optimizations.  Otherwise, we
-      // should consider this as basically a "new"
-      // query
-      if (!m_start) { m_start = (m_prev_query_offset + 1) != query_offset; }
-      m_prev_query_offset = query_offset;
-      return do_lookup_advanced(); 
+        m_kmer = km;
+        m_kmer_rc = km_rc;
+
+        std::cout << "== query for kmer='" << util::uint64_to_string_no_reverse(m_kmer, m_k)
+                  << "', rc='" << util::uint64_to_string_no_reverse(m_kmer_rc, m_k) << "'"
+                  << std::endl;
+
+        // if the current query offset position is
+        // the next position after the stored query
+        // offset position, then we can apply the
+        // relevant optimizations.  Otherwise, we
+        // should consider this as basically a "new"
+        // query
+        if (!m_start) { m_start = (m_prev_query_offset + 1) != query_offset; }
+        m_prev_query_offset = query_offset;
+        return do_lookup_advanced();
     }
 
     lookup_result lookup_advanced(const char* kmer) {
@@ -80,7 +84,7 @@ struct streaming_query_canonical_parsing {
             m_kmer = util::string_to_uint64_no_reverse(kmer, m_k);
         }
         m_kmer_rc = util::compute_reverse_complement(m_kmer, m_k);
-        return do_lookup_advanced(); 
+        return do_lookup_advanced();
     }
 
     lookup_result do_lookup_advanced() {
