@@ -59,14 +59,14 @@ public:
         constexpr uint64_t invalid_u64 = std::numeric_limits<uint64_t>::max();
         constexpr uint32_t invalid_u32 = std::numeric_limits<uint32_t>::max();
 
-        bool is_member = (qres.kmer_id != sshash::constants::invalid_uint64) and
-                         (qres.contig_id != sshash::constants::invalid_uint32);
+        bool is_member = (qres.kmer_id != sshash::constants::invalid_uint64);
 
-        std::cout << "kmer_id " << qres.kmer_id << '\n';
-        std::cout << "kmer_id_in_contig " << qres.kmer_id_in_contig << '\n';
-        std::cout << "kmer_orientation " << qres.kmer_orientation << '\n';
-        std::cout << "contig_id " << qres.contig_id << '\n';
-        std::cout << "contig_size " << qres.contig_size << '\n';
+        // std::cout << "== ANSWER\n";
+        // std::cout << "kmer_id " << qres.kmer_id << '\n';
+        // std::cout << "kmer_id_in_contig " << qres.kmer_id_in_contig << '\n';
+        // std::cout << "kmer_orientation " << qres.kmer_orientation << '\n';
+        // std::cout << "contig_id " << qres.contig_id << '\n';
+        // std::cout << "contig_size " << qres.contig_size << '\n';
 
         if (is_member) {
             qres.contig_size += m_dict.k() - 1;

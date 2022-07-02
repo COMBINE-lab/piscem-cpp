@@ -52,9 +52,9 @@ struct streaming_query_canonical_parsing {
         m_kmer = km;
         m_kmer_rc = km_rc;
 
-        std::cout << "== query for kmer='" << util::uint64_to_string_no_reverse(m_kmer, m_k)
-                  << "', rc='" << util::uint64_to_string_no_reverse(m_kmer_rc, m_k) << "'"
-                  << std::endl;
+        // std::cout << "== query for kmer='" << util::uint64_to_string_no_reverse(m_kmer, m_k)
+        //           << "', rc='" << util::uint64_to_string_no_reverse(m_kmer_rc, m_k) << "'"
+        //           << std::endl;
 
         // if the current query offset position is
         // the next position after the stored query
@@ -64,6 +64,7 @@ struct streaming_query_canonical_parsing {
         // query
         if (!m_start) { m_start = (m_prev_query_offset + 1) != query_offset; }
         m_prev_query_offset = query_offset;
+
         return do_lookup_advanced();
     }
 
@@ -96,8 +97,11 @@ struct streaming_query_canonical_parsing {
         m_curr_minimizer = std::min<uint64_t>(m_curr_minimizer, minimizer_rc);
 
         /* 3. compute result */
-        if (same_minimizer()) {
-            if (!m_minimizer_not_found) {
+        if (m_start) {
+            locate_bucket();
+            lookup_advanced();
+        } else if (same_minimizer()) {
+            if (minimizer_found()) {
                 if (extends()) {
                     extend();
                 } else {
@@ -105,7 +109,6 @@ struct streaming_query_canonical_parsing {
                 }
             }
         } else {
-            m_minimizer_not_found = false;
             locate_bucket();
             if (extends()) { /* Try to extend matching even when we change minimizer. */
                 extend();
@@ -118,7 +121,7 @@ struct streaming_query_canonical_parsing {
         m_prev_minimizer = m_curr_minimizer;
         m_start = false;
 
-        assert(equal_lookup_result(m_dict->lookup_advanced(kmer), m_res));
+        assert(equal_lookup_result(m_dict->lookup_uint64_canonical_parsing(m_kmer), m_res));
         return m_res;
     }
 
@@ -154,11 +157,21 @@ private:
     uint64_t m_num_extensions;
 
     inline bool same_minimizer() const { return m_curr_minimizer == m_prev_minimizer; }
+    inline bool minimizer_found() const { return !m_minimizer_not_found; }
 
     void locate_bucket() {
         uint64_t bucket_id = (m_dict->m_minimizers).lookup(m_curr_minimizer);
         std::tie(m_begin, m_end) = (m_dict->m_buckets).locate_bucket(bucket_id);
     }
+
+    // void print_res() const {
+    //     std::cout << "------------------\n";
+    //     std::cout << "kmer_id " << m_res.kmer_id << '\n';
+    //     std::cout << "kmer_id_in_contig " << m_res.kmer_id_in_contig << '\n';
+    //     std::cout << "kmer_orientation " << m_res.kmer_orientation << '\n';
+    //     std::cout << "contig_id " << m_res.contig_id << '\n';
+    //     std::cout << "contig_size " << m_res.contig_size << '\n';
+    // }
 
     void lookup_advanced() {
         bool check_minimizer = !same_minimizer();
@@ -207,6 +220,8 @@ private:
                         m_minimizer_not_found = true;
                         m_res = lookup_result();
                         return;
+                    } else {
+                        m_minimizer_not_found = false;
                     }
                 }
 
