@@ -11,6 +11,7 @@
 #include "../include/FastxParser.hpp"
 #include "../include/rad/rad_writer.hpp"
 #include "../include/rad/rad_header.hpp"
+#include "../include/rad/util.hpp"
 #include "../include/ghc/filesystem.hpp"
 #include "../include/cli11/CLI11.hpp"
 #include "FastxParser.cpp"
@@ -26,102 +27,6 @@
 #include <sstream>
 
 using namespace klibpp;
-
-void print_header(mindex::reference_index& ri, std::string& cmdline) {
-    std::cout << "@HD\tVN:1.0\tSO:unsorted\n";
-    for (uint64_t i = 0; i < ri.num_refs(); ++i) {
-        std::cout << "@SQ\tNS:" << ri.ref_name(i) << "\tLN:" << ri.ref_len(i) << "\n";
-    }
-    std::cout << "@PG\tID:mindex_map\tPN:mapper\tVN:0.0.1\t"
-              << "CL:" << cmdline << "\n";
-}
-
-size_t write_rad_header(mindex::reference_index& ri, std::ofstream& rad_file) {
-    constexpr size_t bc_length = 16;
-    constexpr size_t umi_length = 12;
-
-    rad_writer bw;
-    //  RADHeader
-    rad_header rh;
-    // right now, all formats are effectively single-end
-    rh.is_paired(false);
-    for (size_t i = 0; i < ri.num_refs(); ++i) { rh.add_refname(ri.ref_name(i)); }
-    rh.dump_to_bin(bw);
-
-    // where we will write the number of chunks when we know
-    // how many there are
-    size_t chunk_offset = bw.num_bytes() - sizeof(uint64_t);
-
-    // ### start of tags
-
-    // Tags we will have
-    // write the tag meta-information section
-
-    // File-level tag description
-    uint16_t file_level_tags{2};
-    bw << file_level_tags;
-
-    // cblen
-    uint8_t type_id{2};
-    bw << std::string("cblen");
-    bw << type_id;
-
-    bw << std::string("ulen");
-    bw << type_id;
-
-    // read-level tag description
-    uint16_t read_level_tags{2};
-    bw << read_level_tags;
-
-    // barcode
-    bw << std::string("b");
-    if (bc_length > 32) {
-        type_id = 8;
-    } else if (bc_length > 16) {
-        // 17 - 32 bases
-        type_id = 4;
-    } else {
-        // <= 16 bases
-        type_id = 3;
-    }
-    bw << type_id;
-
-    // umi
-    bw << std::string("u");
-    if (umi_length > 32) {
-        type_id = 8;
-    } else if (umi_length > 16) {
-        // 17 - 32 bases
-        type_id = 4;
-    } else {
-        // <= 16 bases
-        type_id = 3;
-    }
-    bw << type_id;
-
-    // alignment-level tag description
-    uint16_t aln_level_tags{1};
-    bw << aln_level_tags;
-    // we maintain orientation
-    // bw << std::string("orientation");
-    // type_id = 1;
-    // bw << type_id;
-
-    // and reference id
-    bw << std::string("compressed_ori_refid");
-    type_id = 3;
-    bw << type_id;
-
-    // ### end of tag definitions
-
-    // the actual file-level tags
-    bw << static_cast<uint16_t>(16);
-    bw << static_cast<uint16_t>(12);
-
-    rad_file << bw;
-    bw.clear();
-    return chunk_offset;
-}
 
 // hardcode 10x v3 for now
 class sc_protocol {
@@ -219,42 +124,6 @@ inline void write_to_rad_stream(bc_kmer_t& bck, umi_kmer_t& umi,
         ++num_reads_in_chunk;
     } else {
         unmapped_bc_map[bck.word(0)] += 1;
-    }
-}
-
-inline void write_to_sam_stream(fastx_parser::ReadSeq& record,
-                                std::vector<mapping::util::simple_hit>& accepted_hits,
-                                mindex::reference_index& ri, std::string& workstr,
-                                std::ostringstream& osstream) {
-    constexpr uint16_t is_secondary = 256;
-    constexpr uint16_t is_rc = 16;
-
-    if (!accepted_hits.empty()) {
-        bool secondary = false;
-        size_t nh = accepted_hits.size();
-        size_t hit_index = 0;
-        for (auto& ah : accepted_hits) {
-            uint16_t flag = secondary ? is_secondary : 0;
-            // flag += 2;
-            flag += ah.is_fw ? 0 : is_rc;
-            // flag += first_seg;
-
-            std::string* sptr = nullptr;
-            if (is_rc) {
-                combinelib::kmers::reverseComplement(record.seq, workstr);
-                sptr = &workstr;
-            } else {
-                sptr = &record.seq;
-            }
-            osstream << record.name << "\t" << flag << "\t" << ri.ref_name(ah.tid) << "\t"
-                     << ah.pos + 1 << "\t255\t*\t*\t0\t" << record.seq.length() << "\t" << *sptr
-                     << "\t*\tNH:i:" << nh << "\tHI:i:" << hit_index << "\n";
-            secondary = true;
-            hit_index++;
-        }
-    } else {
-        osstream << record.name << "\t" << 4 << "\t"
-                 << "*\t0\t0\t*\t*\t0\t0\t" << record.seq << "\t*\tNH:i:0\n";
     }
 }
 
@@ -649,7 +518,7 @@ int main(int argc, char** argv) {
     out_info.rad_file = std::move(rad_file);
     out_info.unmapped_bc_file = std::move(unmapped_bc_file);
 
-    size_t chunk_offset = write_rad_header(ri, out_info.rad_file);
+    size_t chunk_offset = rad::util::write_rad_header(ri, out_info.rad_file);
 
     std::atomic<uint64_t> num_chunks{0};
     std::mutex iomut;
