@@ -106,7 +106,6 @@ size_t write_rad_header(mindex::reference_index& ri, std::ofstream& rad_file) {
 inline void write_to_rad_stream(bc_kmer_t& bck, umi_kmer_t& umi,
                                 mapping::util::MappingType map_type,
                                 std::vector<mapping::util::simple_hit>& accepted_hits,
-                                mindex::reference_index& ri,
                                 phmap::flat_hash_map<uint64_t, uint32_t>& unmapped_bc_map,
                                 uint32_t& num_reads_in_chunk, rad_writer& bw) {
     constexpr uint32_t barcode_len = 16;
