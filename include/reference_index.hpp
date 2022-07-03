@@ -59,21 +59,28 @@ public:
         constexpr uint64_t invalid_u64 = std::numeric_limits<uint64_t>::max();
         constexpr uint32_t invalid_u32 = std::numeric_limits<uint32_t>::max();
 
-        bool is_member = (qres.kmer_id != sshash::constants::invalid_uint64) and 
-                         (qres.contig_id != sshash::constants::invalid_uint32);
+        bool is_member = (qres.kmer_id != sshash::constants::invalid_uint64);
+
+        // std::cout << "== ANSWER\n";
+        // std::cout << "kmer_id " << qres.kmer_id << '\n';
+        // std::cout << "kmer_id_in_contig " << qres.kmer_id_in_contig << '\n';
+        // std::cout << "kmer_orientation " << qres.kmer_orientation << '\n';
+        // std::cout << "contig_id " << qres.contig_id << '\n';
+        // std::cout << "contig_size " << qres.contig_size << '\n';
 
         if (is_member) {
             qres.contig_size += m_dict.k() - 1;
             auto ctsize = m_bct.m_ctg_offsets.size();
             if (qres.contig_id >= ctsize) {
-              std::cerr << "\n\nctsize = " << ctsize << ", contig_id = " << qres.contig_id << "\n\n";
-              std::cerr << "kmer_id = " << qres.kmer_id << "\n";
+                std::cerr << "\n\nctsize = " << ctsize << ", contig_id = " << qres.contig_id
+                          << "\n\n";
+                std::cerr << "kmer_id = " << qres.kmer_id << "\n";
             }
             auto start_pos = m_bct.m_ctg_offsets.access(qres.contig_id);
             auto end_pos = m_bct.m_ctg_offsets.access(qres.contig_id + 1);
             size_t len = end_pos - start_pos;
-            sshash::util::contig_span s{
-                m_bct.m_ctg_entries.at(start_pos), m_bct.m_ctg_entries.at(start_pos+len), len};
+            sshash::util::contig_span s{m_bct.m_ctg_entries.at(start_pos),
+                                        m_bct.m_ctg_entries.at(start_pos + len), len};
 
             uint32_t contig_id = (qres.contig_id > invalid_u32)
                                      ? invalid_u32
@@ -95,12 +102,8 @@ public:
                                   static_cast<uint32_t>(m_dict.k()),
                                   s};
         } else {
-            return {invalid_u32,
-                    invalid_u32,
-                    false,
-                    invalid_u32,
-                    invalid_u64,
-                    static_cast<uint32_t>(m_dict.k()),
+            return {invalid_u32, invalid_u32, false,
+                    invalid_u32, invalid_u64, static_cast<uint32_t>(m_dict.k()),
                     {}};
         }
     }
