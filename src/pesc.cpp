@@ -345,14 +345,6 @@ void do_map(mindex::reference_index& ri, fastx_parser::FastxParser<fastx_parser:
             std::string* read_seq =
                 protocol.extract_mappable_read(record.first.seq, record.second.seq);
 
-            /*
-            map_type = mapping::util::MappingType::UNMAPPED;
-            q.start();
-            hs.clear();
-            hit_map.clear();
-            accepted_hits.clear();
-            */
-
             bool had_early_stop = map_read(read_seq, map_cache);
             (void)had_early_stop;
 
