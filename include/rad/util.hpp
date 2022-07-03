@@ -3,12 +3,18 @@
 
 #include <fstream>
 
+#include "../include/parallel_hashmap/phmap.h"
+#include "../include/mapping_util.hpp"
+#include "../Kmer.hpp"
 #include "../reference_index.hpp"
 #include "rad_header.hpp"
 #include "rad_writer.hpp"
 
 namespace rad {
 namespace util {
+
+using umi_kmer_t = combinelib::kmers::Kmer<31, 2>;
+using bc_kmer_t = combinelib::kmers::Kmer<31, 3>;
 
 size_t write_rad_header(mindex::reference_index& ri, std::ofstream& rad_file) {
     constexpr size_t bc_length = 16;
@@ -96,6 +102,55 @@ size_t write_rad_header(mindex::reference_index& ri, std::ofstream& rad_file) {
     bw.clear();
     return chunk_offset;
 }
+
+inline void write_to_rad_stream(bc_kmer_t& bck, umi_kmer_t& umi,
+                                mapping::util::MappingType map_type,
+                                std::vector<mapping::util::simple_hit>& accepted_hits,
+                                mindex::reference_index& ri,
+                                phmap::flat_hash_map<uint64_t, uint32_t>& unmapped_bc_map,
+                                uint32_t& num_reads_in_chunk, rad_writer& bw) {
+    constexpr uint32_t barcode_len = 16;
+    constexpr uint32_t umi_len = 12;
+
+    if (map_type == mapping::util::MappingType::SINGLE_MAPPED) {
+        // number of mappings
+        bw << static_cast<uint32_t>(accepted_hits.size());
+
+        // bc
+        // if we can fit the barcode into an integer
+        if (barcode_len <= 32) {
+            if (barcode_len <= 16) {  // can use 32-bit int
+                uint32_t shortbck = static_cast<uint32_t>(0x00000000FFFFFFFF & bck.word(0));
+                bw << shortbck;
+            } else {  // must use 64-bit int
+                bw << bck.word(0);
+            }
+        } else {  // must use a string for the barcode
+            std::cerr << "should not happen\n";
+        }
+
+        // umi
+        if (umi_len <= 16) {  // if we can use 32-bit int
+            uint64_t umiint = umi.word(0);
+            uint32_t shortumi = static_cast<uint32_t>(0x00000000FFFFFFFF & umiint);
+            bw << shortumi;
+        } else if (umi_len <= 32) {  // if we can use 64-bit int
+            uint64_t umiint = umi.word(0);
+            bw << umiint;
+        } else {  // must use string
+            std::cerr << "should not happen\n";
+        }
+
+        for (auto& aln : accepted_hits) {
+            uint32_t fw_mask = aln.is_fw ? 0x80000000 : 0x00000000;
+            bw << (aln.tid | fw_mask);
+        }
+        ++num_reads_in_chunk;
+    } else {
+        unmapped_bc_map[bck.word(0)] += 1;
+    }
+}
+
 
 }  // namespace util
 }  // namespace rad

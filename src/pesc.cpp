@@ -14,6 +14,8 @@
 #include "../include/rad/util.hpp"
 #include "../include/ghc/filesystem.hpp"
 #include "../include/cli11/CLI11.hpp"
+#include "../include/sc/util.hpp"
+#include "../include/sc/sc_protocol.hpp"
 #include "FastxParser.cpp"
 #include "hit_searcher.cpp"
 #include "zlib.h"
@@ -27,34 +29,9 @@
 #include <sstream>
 
 using namespace klibpp;
-
-// hardcode 10x v3 for now
-class sc_protocol {
-public:
-    // We'd really like an std::optional<string&> here, but C++17
-    // said no to that.
-    std::string* extract_bc(std::string& r1, std::string& r2) {
-        return (r1.length() >= bc_len) ? (bc.assign(r1, 0, bc_len), &bc) : nullptr;
-    }
-
-    // We'd really like an std::optional<string&> here, but C++17
-    // said no to that.
-    std::string* extract_umi(std::string& r1, std::string& r2) {
-        return (r1.length() >= (bc_len + umi_len)) ? (umi.assign(r1, bc_len, umi_len), &umi)
-                                                   : nullptr;
-    }
-
-    std::string* extract_mappable_read(std::string& r1, std::string& r2) { return &r2; }
-
-private:
-    std::string umi;
-    std::string bc;
-    const size_t bc_len = 16;
-    const size_t umi_len = 12;
-};
-
-using umi_kmer_t = combinelib::kmers::Kmer<31, 2>;
-using bc_kmer_t = combinelib::kmers::Kmer<31, 3>;
+using BarCodeRecovered = single_cell::util::BarCodeRecovered;
+using umi_kmer_t = rad::util::umi_kmer_t;
+using bc_kmer_t = rad::util::bc_kmer_t;
 
 class output_info {
 public:
@@ -66,66 +43,6 @@ public:
     std::mutex unmapped_bc_mutex;
 };
 
-enum class BarCodeRecovered : uint8_t { OK, RECOVERED, NOT_RECOVERED };
-
-BarCodeRecovered recover_barcode(std::string& sequence) {
-    size_t pos = sequence.find_first_not_of("ACTGactg");
-    if (pos == std::string::npos) { return BarCodeRecovered::OK; }
-
-    // Randomly assigning 'A' to first base with 'N'
-    sequence[pos] = 'A';
-    size_t invalid_pos = sequence.find_first_not_of("ACTGactg", pos);
-    return (invalid_pos == std::string::npos) ? BarCodeRecovered::RECOVERED
-                                              : BarCodeRecovered::NOT_RECOVERED;
-}
-
-inline void write_to_rad_stream(bc_kmer_t& bck, umi_kmer_t& umi,
-                                mapping::util::MappingType map_type,
-                                std::vector<mapping::util::simple_hit>& accepted_hits,
-                                mindex::reference_index& ri,
-                                phmap::flat_hash_map<uint64_t, uint32_t>& unmapped_bc_map,
-                                uint32_t& num_reads_in_chunk, rad_writer& bw) {
-    constexpr uint32_t barcode_len = 16;
-    constexpr uint32_t umi_len = 12;
-
-    if (map_type == mapping::util::MappingType::SINGLE_MAPPED) {
-        // number of mappings
-        bw << static_cast<uint32_t>(accepted_hits.size());
-
-        // bc
-        // if we can fit the barcode into an integer
-        if (barcode_len <= 32) {
-            if (barcode_len <= 16) {  // can use 32-bit int
-                uint32_t shortbck = static_cast<uint32_t>(0x00000000FFFFFFFF & bck.word(0));
-                bw << shortbck;
-            } else {  // must use 64-bit int
-                bw << bck.word(0);
-            }
-        } else {  // must use a string for the barcode
-            std::cerr << "should not happen\n";
-        }
-
-        // umi
-        if (umi_len <= 16) {  // if we can use 32-bit int
-            uint64_t umiint = umi.word(0);
-            uint32_t shortumi = static_cast<uint32_t>(0x00000000FFFFFFFF & umiint);
-            bw << shortumi;
-        } else if (umi_len <= 32) {  // if we can use 64-bit int
-            uint64_t umiint = umi.word(0);
-            bw << umiint;
-        } else {  // must use string
-            std::cerr << "should not happen\n";
-        }
-
-        for (auto& aln : accepted_hits) {
-            uint32_t fw_mask = aln.is_fw ? 0x80000000 : 0x00000000;
-            bw << (aln.tid | fw_mask);
-        }
-        ++num_reads_in_chunk;
-    } else {
-        unmapped_bc_map[bck.word(0)] += 1;
-    }
-}
 
 void do_map(mindex::reference_index& ri, fastx_parser::FastxParser<fastx_parser::ReadPair>& parser,
             std::atomic<uint64_t>& global_nr, std::atomic<uint64_t>& global_nhits,
@@ -196,7 +113,7 @@ void do_map(mindex::reference_index& ri, fastx_parser::FastxParser<fastx_parser:
             if (bc == nullptr) { continue; }
 
             // correct up to one `N` in the barcode
-            auto recovered = recover_barcode(*bc);
+            auto recovered = single_cell::util::recover_barcode(*bc);
             // if we couldn't correct it with 1 `N`, then skip.
             if (recovered == BarCodeRecovered::NOT_RECOVERED) { continue; }
 
@@ -396,7 +313,7 @@ void do_map(mindex::reference_index& ri, fastx_parser::FastxParser<fastx_parser:
             }
 
             global_nhits += accepted_hits.empty() ? 0 : 1;
-            write_to_rad_stream(bc_kmer, umi_kmer, map_type, accepted_hits, ri, unmapped_bc_map,
+            rad::util::write_to_rad_stream(bc_kmer, umi_kmer, map_type, accepted_hits, ri, unmapped_bc_map,
                                 num_reads_in_chunk, rad_w);
 
             // dump buffer

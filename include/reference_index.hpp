@@ -62,6 +62,7 @@ public:
         bool is_member = (qres.kmer_id != sshash::constants::invalid_uint64);
 
         // std::cout << "== ANSWER\n";
+        // std::cout << "read position = " << kmit->second << "\n";
         // std::cout << "kmer_id " << qres.kmer_id << '\n';
         // std::cout << "kmer_id_in_contig " << qres.kmer_id_in_contig << '\n';
         // std::cout << "kmer_orientation " << qres.kmer_orientation << '\n';
