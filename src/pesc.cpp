@@ -534,3 +534,24 @@ int main(int argc, char** argv) {
 
     return 0;
 }
+
+
+/*
+Geometry <- BUR / BRU / RUB / RBU / URB / UBR
+BUR <- BarcodeDescription','UMIDescription','ReadDescription
+BRU <- BarcodeDescription','ReadDescription','UMIDescription
+RUB <- ReadDescription','UMIDescription','BarcodeDescription
+RBU <- ReadDescription','BarcodeDescription','UMIDescription
+URB <- UMIDescription','ReadDescription','BarcodeDescription
+UBR <- UMIDescription','BarcodeDescription','ReadDescription
+DescriptionList <- Description (','Description)*
+Description <- ReadNumber'['NumberRangeList']'
+BarcodeDescription <- 'B:' DescriptionList
+UMIDescription <- 'U:' DescriptionList
+ReadDescription <- 'R:' DescriptionList
+ReadNumber  <- [1,2]
+Number      <- [0-9]+
+End         <- 'end'
+NumberRange <- (Number '-' Number) / (Number '-' End)
+NumberRangeList <- NumberRange (','NumberRange)*
+*/
