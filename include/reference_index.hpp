@@ -15,22 +15,16 @@
 #include "CanonicalKmerIterator.hpp"
 #include "projected_hits.hpp"
 #include "util.hpp"
+#include "spdlog/spdlog.h"
 
-/*namespace sshash {
-    class contig_info_query_canonical_parsing;
-    class dictionary;
-}*/
 namespace mindex {
 class reference_index {
 public:
     reference_index(const std::string& basename) {
+        spdlog::info("loading index from {}", basename);
         std::string dict_name = basename + ".sshash";
-        std::cerr << "loading sequence index from " << dict_name << "\n";
         essentials::load(m_dict, dict_name.c_str());
-        std::cerr << "loaded sshash\n";
-
         std::string ctg_name = basename + ".ctab";
-        std::cerr << "loading contig table from " << ctg_name << "\n";
         essentials::load(m_bct, ctg_name.c_str());
         // based on the number of bits used to encode reference positions
         // read from the file, set the shift we have to perform on a
@@ -40,16 +34,13 @@ public:
         // based on the value of m_ref_len_bits, select the appropriate mask to use
         // when decoding a reference position from a contig table entry.
         sshash::util::_pos_mask = sshash::util::pos_masks[m_bct.m_ref_len_bits];
-        std::cerr << "loaded contig table\n";
 
         std::string ref_info = basename + ".refinfo";
-        std::cerr << "loading ref info from " << ref_info << "\n";
 
         std::fstream s{ref_info.c_str(), s.binary | s.in};
         auto state = bitsery::quickDeserialization<bitsery::InputStreamAdapter>(s, m_ref_names);
-        std::cerr << "loaded ref names\n";
         state = bitsery::quickDeserialization<bitsery::InputStreamAdapter>(s, m_ref_lens);
-        std::cerr << "loaded ref lengths\n";
+        spdlog::info("done loading index");
     }
 
     projected_hits query(pufferfish::CanonicalKmerIterator kmit,
@@ -72,11 +63,6 @@ public:
         if (is_member) {
             qres.contig_size += m_dict.k() - 1;
             auto ctsize = m_bct.m_ctg_offsets.size();
-            if (qres.contig_id >= ctsize) {
-                std::cerr << "\n\nctsize = " << ctsize << ", contig_id = " << qres.contig_id
-                          << "\n\n";
-                std::cerr << "kmer_id = " << qres.kmer_id << "\n";
-            }
             auto start_pos = m_bct.m_ctg_offsets.access(qres.contig_id);
             auto end_pos = m_bct.m_ctg_offsets.access(qres.contig_id + 1);
             size_t len = end_pos - start_pos;

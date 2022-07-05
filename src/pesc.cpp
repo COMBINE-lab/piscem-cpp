@@ -2,7 +2,6 @@
 #include "../include/reference_index.hpp"
 #include "../include/CanonicalKmerIterator.hpp"
 #include "../include/Kmer.hpp"
-//#include "../include/query/contig_info_query_canonical_parsing.cpp"
 #include "../include/query/streaming_query_canonical_parsing.hpp"
 #include "../include/projected_hits.hpp"
 #include "../include/util.hpp"
@@ -15,6 +14,7 @@
 #include "../include/ghc/filesystem.hpp"
 #include "../include/cli11/CLI11.hpp"
 #include "../include/sc/util.hpp"
+#include "../include/spdlog/spdlog.h"
 #include "FastxParser.cpp"
 #include "hit_searcher.cpp"
 #include "zlib.h"
@@ -280,6 +280,34 @@ template <typename Protocol>
 void do_map(mindex::reference_index& ri, fastx_parser::FastxParser<fastx_parser::ReadPair>& parser,
             const Protocol& p, std::atomic<uint64_t>& global_nr,
             std::atomic<uint64_t>& global_nhits, output_info& out_info, std::mutex& iomut) {
+    auto log_level = spdlog::get_level();
+    auto write_mapping_rate = false;
+    switch (log_level) {
+        case spdlog::level::level_enum::trace:
+            write_mapping_rate = true;
+            break;
+        case spdlog::level::level_enum::debug:
+            write_mapping_rate = true;
+            break;
+        case spdlog::level::level_enum::info:
+            write_mapping_rate = true;
+            break;
+        case spdlog::level::level_enum::warn:
+            write_mapping_rate = false;
+            break;
+        case spdlog::level::level_enum::err:
+            write_mapping_rate = false;
+            break;
+        case spdlog::level::level_enum::critical:
+            write_mapping_rate = false;
+            break;
+        case spdlog::level::level_enum::off:
+            write_mapping_rate = false;
+            break;
+        default:
+            write_mapping_rate = false;
+    }
+
     // put these in struct
     size_t num_short_umi{0};
     size_t num_ambig_umi{0};
@@ -307,9 +335,10 @@ void do_map(mindex::reference_index& ri, fastx_parser::FastxParser<fastx_parser:
             ++global_nr;
             auto rctr = global_nr.load();
             auto hctr = global_nhits.load();
-            if (rctr % 500000 == 0) {
+
+            if (write_mapping_rate and (rctr % 500000 == 0)){
                 iomut.lock();
-                std::cerr << "\rreadnum : " << rctr << ", num_hits : " << hctr;
+                std::cerr << "\rprocessed (" << rctr << ") reads; (" << hctr << ") had mappings.";
                 iomut.unlock();
             }
 
@@ -455,15 +484,15 @@ int main(int argc, char** argv) {
         bc_kmer_t::k(16);
         pt = protocol_t::CHROM_V3;
     } else {
-      std::unique_ptr<custom_protocol> opt_cp = single_cell::util::parse_custom_geometry(library_geometry);
+        std::unique_ptr<custom_protocol> opt_cp =
+            single_cell::util::parse_custom_geometry(library_geometry);
         if (opt_cp) {
-          p.swap(opt_cp);
+            p.swap(opt_cp);
             umi_kmer_t::k(p->get_umi_len());
             bc_kmer_t::k(p->get_bc_len());
             pt = protocol_t::CUSTOM;
         } else {
-            std::cerr << "could not parse custom geometry description [" << library_geometry
-                      << "]\n";
+            spdlog::critical("could not parse custom geometry description [{}]", library_geometry); 
             return 1;
         }
     }
@@ -474,8 +503,6 @@ int main(int argc, char** argv) {
 
     ghc::filesystem::path rad_file_path = output_path / "map.rad";
     ghc::filesystem::path unmapped_bc_file_path = output_path / "unmapped_bc_count.bin";
-
-    std::cerr << "thread: " << nthread << "\n";
 
     mindex::reference_index ri(input_filename);
 
@@ -558,7 +585,8 @@ int main(int argc, char** argv) {
 
     for (auto& w : workers) { w.join(); }
     rparser.stop();
-    std::cerr << "\n";
+
+    spdlog::info("finished mapping.");
 
     out_info.rad_file.seekp(chunk_offset);
     uint64_t nc = out_info.num_chunks.load();
@@ -574,11 +602,12 @@ int main(int argc, char** argv) {
     // expected. see :
     // https://stackoverflow.com/questions/28342660/error-handling-in-stdofstream-while-writing-data
     if (!out_info.rad_file) {
-        std::cerr << "The RAD file stream had an invalid status after "
-                     "close; so some operation(s) may"
-                  << "have failed!\nA common cause for this is lack "
-                     "of output disk space.\n"
-                  << "Consequently, the output may be corrupted.\n\n";
+      spdlog::critical(
+        "The RAD file stream had an invalid status after "
+        "close; so some operation(s) may"
+        "have failed!\nA common cause for this is lack "
+        "of output disk space.\n"
+        "Consequently, the output may be corrupted.\n\n");
         return 1;
     }
 
@@ -586,23 +615,3 @@ int main(int argc, char** argv) {
 
     return 0;
 }
-
-/*
-Geometry <- BUR / BRU / RUB / RBU / URB / UBR
-BUR <- BarcodeDescription','UMIDescription','ReadDescription
-BRU <- BarcodeDescription','ReadDescription','UMIDescription
-RUB <- ReadDescription','UMIDescription','BarcodeDescription
-RBU <- ReadDescription','BarcodeDescription','UMIDescription
-URB <- UMIDescription','ReadDescription','BarcodeDescription
-UBR <- UMIDescription','BarcodeDescription','ReadDescription
-DescriptionList <- Description (','Description)*
-Description <- ReadNumber'['NumberRangeList']'
-BarcodeDescription <- 'B:' DescriptionList
-UMIDescription <- 'U:' DescriptionList
-ReadDescription <- 'R:' DescriptionList
-ReadNumber  <- [1,2]
-Number      <- [0-9]+
-End         <- 'end'
-NumberRange <- (Number '-' Number) / (Number '-' End)
-NumberRangeList <- NumberRange (','NumberRange)*
-*/
