@@ -16,10 +16,8 @@ namespace util {
 using umi_kmer_t = combinelib::kmers::Kmer<31, 2>;
 using bc_kmer_t = combinelib::kmers::Kmer<31, 3>;
 
-size_t write_rad_header(mindex::reference_index& ri, std::ofstream& rad_file) {
-    constexpr size_t bc_length = 16;
-    constexpr size_t umi_length = 12;
-
+size_t write_rad_header(mindex::reference_index& ri, size_t bc_length, size_t umi_length,
+                        std::ofstream& rad_file) {
     rad_writer bw;
     //  RADHeader
     rad_header rh;
@@ -108,8 +106,8 @@ inline void write_to_rad_stream(bc_kmer_t& bck, umi_kmer_t& umi,
                                 std::vector<mapping::util::simple_hit>& accepted_hits,
                                 phmap::flat_hash_map<uint64_t, uint32_t>& unmapped_bc_map,
                                 uint32_t& num_reads_in_chunk, rad_writer& bw) {
-    constexpr uint32_t barcode_len = 16;
-    constexpr uint32_t umi_len = 12;
+    const uint32_t barcode_len = bc_kmer_t::k();
+    const uint32_t umi_len = umi_kmer_t::k();
 
     if (map_type == mapping::util::MappingType::SINGLE_MAPPED) {
         // number of mappings
@@ -149,7 +147,6 @@ inline void write_to_rad_stream(bc_kmer_t& bck, umi_kmer_t& umi,
         unmapped_bc_map[bck.word(0)] += 1;
     }
 }
-
 
 }  // namespace util
 }  // namespace rad

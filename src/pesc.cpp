@@ -15,7 +15,6 @@
 #include "../include/ghc/filesystem.hpp"
 #include "../include/cli11/CLI11.hpp"
 #include "../include/sc/util.hpp"
-#include "../include/sc/sc_protocol.hpp"
 #include "FastxParser.cpp"
 #include "hit_searcher.cpp"
 #include "zlib.h"
@@ -23,7 +22,9 @@
 #include <atomic>
 #include <iostream>
 #include <vector>
+#include <memory>
 #include <numeric>
+#include <optional>
 #include <cstdio>
 #include <thread>
 #include <sstream>
@@ -275,9 +276,10 @@ inline bool map_read(std::string* read_seq, mapping_cache_info& map_cache) {
     return early_stop;
 }
 
+template <typename Protocol>
 void do_map(mindex::reference_index& ri, fastx_parser::FastxParser<fastx_parser::ReadPair>& parser,
-            std::atomic<uint64_t>& global_nr, std::atomic<uint64_t>& global_nhits,
-            output_info& out_info, std::mutex& iomut) {
+            const Protocol& p, std::atomic<uint64_t>& global_nr,
+            std::atomic<uint64_t>& global_nhits, output_info& out_info, std::mutex& iomut) {
     // put these in struct
     size_t num_short_umi{0};
     size_t num_ambig_umi{0};
@@ -289,7 +291,7 @@ void do_map(mindex::reference_index& ri, fastx_parser::FastxParser<fastx_parser:
     // communicate with the parser (*once per-thread*)
     auto rg = parser.getReadGroup();
 
-    sc_protocol protocol;
+    Protocol protocol(p);
     rad_writer rad_w;
     // reserve the space to later write
     // down the number of reads in the
@@ -409,6 +411,7 @@ int main(int argc, char** argv) {
     std::vector<std::string> filenames1;
     std::vector<std::string> filenames2;
     std::string output_dirname;
+    std::string library_geometry;
     size_t nthread;
     CLI::App app{"PESC — single-cell RNA-seq mapper for alevin-fry"};
     app.add_option("-i,--index", input_filename, "input index prefix")->required();
@@ -419,6 +422,8 @@ int main(int argc, char** argv) {
         ->required()
         ->delimiter(',');
     app.add_option("-o,--output", output_dirname, "path to output directory")->required();
+    app.add_option("-g,--geometry", library_geometry, "geometry of barcode, umi and read")
+        ->required();
     app.add_option("-t,--threads", nthread,
                    "An integer that specifies the number of threads to use")
         ->default_val(16);
@@ -437,9 +442,31 @@ int main(int argc, char** argv) {
     // parser.add("reads", "read filename.");
     if (!parser.parse()) return 1;
     */
+    enum class protocol_t : uint8_t { CHROM_V2, CHROM_V3, CUSTOM };
 
-    umi_kmer_t::k(12);
-    bc_kmer_t::k(16);
+    protocol_t pt{protocol_t::CUSTOM};
+    std::unique_ptr<custom_protocol> p{nullptr};
+    if (library_geometry == "chromium_v2") {
+        umi_kmer_t::k(10);
+        bc_kmer_t::k(16);
+        pt = protocol_t::CHROM_V2;
+    } else if (library_geometry == "chromium_v3") {
+        umi_kmer_t::k(12);
+        bc_kmer_t::k(16);
+        pt = protocol_t::CHROM_V3;
+    } else {
+      std::unique_ptr<custom_protocol> opt_cp = single_cell::util::parse_custom_geometry(library_geometry);
+        if (opt_cp) {
+          p.swap(opt_cp);
+            umi_kmer_t::k(p->get_umi_len());
+            bc_kmer_t::k(p->get_bc_len());
+            pt = protocol_t::CUSTOM;
+        } else {
+            std::cerr << "could not parse custom geometry description [" << library_geometry
+                      << "]\n";
+            return 1;
+        }
+    }
 
     // RAD file path
     ghc::filesystem::path output_path(output_dirname);
@@ -478,7 +505,9 @@ int main(int argc, char** argv) {
     out_info.rad_file = std::move(rad_file);
     out_info.unmapped_bc_file = std::move(unmapped_bc_file);
 
-    size_t chunk_offset = rad::util::write_rad_header(ri, out_info.rad_file);
+    size_t bc_length = bc_kmer_t::k();
+    size_t umi_length = umi_kmer_t::k();
+    size_t chunk_offset = rad::util::write_rad_header(ri, bc_length, umi_length, out_info.rad_file);
 
     std::atomic<uint64_t> num_chunks{0};
     std::mutex iomut;
@@ -500,9 +529,31 @@ int main(int argc, char** argv) {
     std::atomic<uint64_t> global_nh{0};
     std::vector<std::thread> workers;
     for (size_t i = 0; i < nthread; ++i) {
-        workers.push_back(std::thread([&ri, &rparser, &global_nr, &global_nh, &iomut, &out_info]() {
-            do_map(ri, rparser, global_nr, global_nh, out_info, iomut);
-        }));
+        switch (pt) {
+            case protocol_t::CHROM_V2: {
+                chromium_v2 prot;
+                workers.push_back(std::thread(
+                    [&ri, &rparser, &prot, &global_nr, &global_nh, &iomut, &out_info]() {
+                        do_map(ri, rparser, prot, global_nr, global_nh, out_info, iomut);
+                    }));
+                break;
+            }
+            case protocol_t::CHROM_V3: {
+                chromium_v3 prot;
+                workers.push_back(std::thread(
+                    [&ri, &rparser, &prot, &global_nr, &global_nh, &iomut, &out_info]() {
+                        do_map(ri, rparser, prot, global_nr, global_nh, out_info, iomut);
+                    }));
+                break;
+            }
+            case protocol_t::CUSTOM: {
+                workers.push_back(
+                    std::thread([&ri, &rparser, &p, &global_nr, &global_nh, &iomut, &out_info]() {
+                        do_map(ri, rparser, *p, global_nr, global_nh, out_info, iomut);
+                    }));
+                break;
+            }
+        }
     }
 
     for (auto& w : workers) { w.join(); }
@@ -515,18 +566,19 @@ int main(int argc, char** argv) {
 
     out_info.rad_file.close();
 
-    // We want to check if the RAD file stream was written to properly.
-    // While we likely would have caught this earlier, it is possible the
-    // badbit may not be set until the stream actually flushes (perhaps even
-    // at close), so we check here one final time that the status of the
-    // stream is as expected.
-    // see :
+    // We want to check if the RAD file stream was written to
+    // properly. While we likely would have caught this earlier,
+    // it is possible the badbit may not be set until the stream
+    // actually flushes (perhaps even at close), so we check here
+    // one final time that the status of the stream is as
+    // expected. see :
     // https://stackoverflow.com/questions/28342660/error-handling-in-stdofstream-while-writing-data
     if (!out_info.rad_file) {
-        std::cerr
-            << "The RAD file stream had an invalid status after close; so some operation(s) may"
-            << "have failed!\nA common cause for this is lack of output disk space.\n"
-            << "Consequently, the output may be corrupted.\n\n";
+        std::cerr << "The RAD file stream had an invalid status after "
+                     "close; so some operation(s) may"
+                  << "have failed!\nA common cause for this is lack "
+                     "of output disk space.\n"
+                  << "Consequently, the output may be corrupted.\n\n";
         return 1;
     }
 
@@ -534,7 +586,6 @@ int main(int argc, char** argv) {
 
     return 0;
 }
-
 
 /*
 Geometry <- BUR / BRU / RUB / RBU / URB / UBR

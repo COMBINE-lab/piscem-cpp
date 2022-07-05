@@ -40,9 +40,6 @@ std::ostream& operator<<(std::ostream& os, const geo_part& gp) {
 
 struct protocol_state {
     geo_tag_type curr_geo_type{geo_tag_type::DISCARD};
-    size_t current_read{0};
-    std::pair<int64_t, int64_t> length_range;
-    std::vector<int64_t> lengths;
     std::vector<geo_part> geo_parts;
     std::vector<geo_part> geo_parts_r1;
     std::vector<geo_part> geo_parts_r2;
@@ -84,11 +81,11 @@ public:
         // bc and umi lengths must be
         // bounded in parsing, so we can
         // accumulate them this way
-        int64_t bc_len{0};
+        bc_len = 0;
         for (auto& p : bc_slices_r1) { bc_len += p.len; }
         for (auto& p : bc_slices_r2) { bc_len += p.len; }
 
-        int64_t umi_len{0};
+        umi_len = 0;
         for (auto& p : umi_slices_r1) { umi_len += p.len; }
         for (auto& p : umi_slices_r2) { umi_len += p.len; }
 
@@ -115,10 +112,16 @@ public:
                   << ", read_len = " << read_len << "\n";
     }
 
-    bool validate() {
+    const size_t get_bc_len() const { return bc_len; }
+    const size_t get_umi_len() const { return umi_len; }
+
+    bool validate() const {
         bool valid = has_barcode;
         valid = (valid and has_umi);
         valid = (valid and has_biological_read);
+        valid = (valid and (bc_len <= 32));
+        valid = (valid and (umi_len <= 32));
+        return valid;
     }
 
     // We'd really like an std::optional<string&> here, but C++17
@@ -127,11 +130,17 @@ public:
         bc_buffer.clear();
         const auto r1_len = r1.size();
         const auto r2_len = r2.size();
+        // first, gather any barcode pieces from r1
         for (auto& bp : bc_slices_r1) {
+            // if the read isn't long enough to collect
+            // what we want, then return the null pointer.
             if (bp.offset + bp.len > r1_len) { return nullptr; }
             bc_buffer.append(r1, bp.offset, bp.len);
         }
+        // then, gather any umi pieces from r2
         for (auto& bp : bc_slices_r2) {
+            // if the read isn't long enough to collect
+            // what we want, then return the null pointer.
             if (bp.offset + bp.len > r2_len) { return nullptr; }
             bc_buffer.append(r2, bp.offset, bp.len);
         }
@@ -144,71 +153,63 @@ public:
         umi_buffer.clear();
         const auto r1_len = r1.size();
         const auto r2_len = r2.size();
+        // first, gather any umi pieces from r1
         for (auto& up : umi_slices_r1) {
+            // if the read isn't long enough to collect
+            // what we want, then return the null pointer.
             if (up.offset + up.len > r1_len) { return nullptr; }
             umi_buffer.append(r1, up.offset, up.len);
         }
+        // then, gather any umi pieces from r2
         for (auto& up : umi_slices_r2) {
+            // if the read isn't long enough to collect
+            // what we want, then return the null pointer.
             if (up.offset + up.len > r2_len) { return nullptr; }
             umi_buffer.append(r2, up.offset, up.len);
         }
         return &umi_buffer;
     }
 
-    std::string* extract_mappable_read(std::string& r1, std::string& r2) { 
-      bool uses_r2 = !read_slices_r2.empty();
-      bool uses_r1 = !read_slices_r1.empty();
-      if ( uses_r2 and read_slices_r2[0].len == -1) {
-        return &r2;
-      } else if ( uses_r1 and read_slices_r1[0].len == -1) {
-        return &r1;
-      } else if ( uses_r2 ) {
-        read_buffer.clear();
-        size_t r2_len = r2.size();
-        for (auto& up : read_slices_r2) {
-            if (up.offset + up.len > r2_len) { return nullptr; }
-            size_t len = (up.len == -1) ? std::string::npos : up.len;
-            umi_buffer.append(r2, up.offset, len);
+    std::string* extract_mappable_read(std::string& r1, std::string& r2) {
+        // currently, we make the assumption that the read is either
+        // all of r1 or all of r2 or uses only r1 or r2.  This is
+        // because we return a string pointer from here. If the read can
+        // return sequence from both r1 and r2, then we should return a
+        // pair of string pointers.
+        bool uses_r2 = !read_slices_r2.empty();
+        bool uses_r1 = !read_slices_r1.empty();
+        if (uses_r2 and read_slices_r2[0].len == -1) {
+            return &r2;
+        } else if (uses_r1 and read_slices_r1[0].len == -1) {
+            return &r1;
+        } else if (uses_r2) {
+            read_buffer.clear();
+            size_t r2_len = r2.size();
+            for (auto& up : read_slices_r2) {
+                if (up.offset + up.len > r2_len) { return nullptr; }
+                size_t len = (up.len == -1) ? std::string::npos : up.len;
+                umi_buffer.append(r2, up.offset, len);
+            }
+        } else if (uses_r1) {
+            read_buffer.clear();
+            size_t r1_len = r1.size();
+            for (auto& up : read_slices_r1) {
+                if (up.offset + up.len > r1_len) { return nullptr; }
+                size_t len = (up.len == -1) ? std::string::npos : up.len;
+                umi_buffer.append(r1, up.offset, len);
+            }
         }
-      } else if ( uses_r1 ) {
-        read_buffer.clear();
-        size_t r1_len = r1.size();
-        for (auto& up : read_slices_r1) {
-            if (up.offset + up.len > r1_len) { return nullptr; }
-            size_t len = (up.len == -1) ? std::string::npos : up.len;
-            umi_buffer.append(r1, up.offset, len);
-        }
-      }
-      return &read_buffer;
+        return &read_buffer;
     }
 
-    void print() {
-        std::cerr << "barcode:\n";
-        if (!bc_slices_r1.empty()) { std::cerr << "\t1 "; }
-        for (auto& s : bc_slices_r1) { std::cerr << s.offset << ":" << s.len << " "; }
-        std::cerr << "\n";
-        if (!bc_slices_r2.empty()) { std::cerr << "\t2 "; }
-        for (auto& s : bc_slices_r2) { std::cerr << s.offset << ":" << s.len << " "; }
-
-        std::cerr << "umi:\n";
-        if (!umi_slices_r1.empty()) { std::cerr << "\t1 "; }
-        for (auto& s : umi_slices_r1) { std::cerr << s.offset << ":" << s.len << " "; }
-        std::cerr << "\n";
-        if (!umi_slices_r2.empty()) { std::cerr << "\t2 "; }
-        for (auto& s : umi_slices_r2) { std::cerr << s.offset << ":" << s.len << " "; }
-
-        std::cerr << "read:\n";
-        if (!read_slices_r1.empty()) { std::cerr << "\t1 "; }
-        for (auto& s : read_slices_r1) { std::cerr << s.offset << ":" << s.len << " "; }
-        std::cerr << "\n";
-        if (!read_slices_r2.empty()) { std::cerr << "\t2 "; }
-        for (auto& s : read_slices_r2) { std::cerr << s.offset << ":" << s.len << " "; }
-    }
+    friend std::ostream& operator<<(std::ostream& os, const protocol& p);
 
 private:
     bool has_biological_read{false};
     bool has_umi{false};
     bool has_barcode{false};
+    size_t umi_len{0};
+    size_t bc_len{0};
     std::string bc_buffer;
     std::string umi_buffer;
     std::string read_buffer;
@@ -221,6 +222,30 @@ private:
     itlib::small_vector<str_slice, 8> umi_slices_r2;
     itlib::small_vector<str_slice, 8> read_slices_r2;
 };
+
+std::ostream& operator<<(std::ostream& os, const protocol& p) {
+    os << "barcode:\n";
+    if (!p.bc_slices_r1.empty()) { os << "\t1 "; }
+    for (auto& s : p.bc_slices_r1) { os << s.offset << ":" << s.len << " "; }
+    os << "\n";
+    if (!p.bc_slices_r2.empty()) { os << "\t2 "; }
+    for (auto& s : p.bc_slices_r2) { os << s.offset << ":" << s.len << " "; }
+
+    os << "umi:\n";
+    if (!p.umi_slices_r1.empty()) { os << "\t1 "; }
+    for (auto& s : p.umi_slices_r1) { os << s.offset << ":" << s.len << " "; }
+    os << "\n";
+    if (!p.umi_slices_r2.empty()) { os << "\t2 "; }
+    for (auto& s : p.umi_slices_r2) { os << s.offset << ":" << s.len << " "; }
+
+    os << "read:\n";
+    if (!p.read_slices_r1.empty()) { os << "\t1 "; }
+    for (auto& s : p.read_slices_r1) { os << s.offset << ":" << s.len << " "; }
+    os << "\n";
+    if (!p.read_slices_r2.empty()) { os << "\t2 "; }
+    for (auto& s : p.read_slices_r2) { os << s.offset << ":" << s.len << " "; }
+    return os;
+}
 
 int main(int argc, char* argv[]) {
     std::string geom_string;
@@ -358,7 +383,38 @@ Length <- [1-9][0-9]*
         for (auto& gp : ps.geo_parts_r2) { std::cerr << gp << ", "; }
         std::cerr << "\n";
         protocol p(ps);
-        p.print();
+        std::cerr << p << "\n";
+
+        std::string r11 =
+            "CAAAAATCAAAGCTATTCCTCAGCTCCAGGGCTACCTGCGATCTGTGTTTGCTCTGACGAATGGAATTTATCCTCACAAATTGGTG"
+            "TTCTA";
+        std::string r21 =
+            "CAAAAATCAAAGCTATTCCTCAGCTCCAGGGCTACCTGCGATCTGTGTTTGCTCTGACGAATGGAATTTATCCTCACAAATT"
+            "GGTGTTCTA";
+
+        std::string r12 = "CAAAAATCAAAGCTATTCCTCAGCTCC";
+        std::string r22 =
+            "CAAAAATCAAAGCTATTCCTCAGCTCCAGGGCTACCTGCGATCTGTGTTTGCTCTGACGAATGGAATTTATCCTCACAAATT"
+            "GGTGTTCTA";
+
+        {
+            std::string* b = p.extract_bc(r11, r21);
+            std::string* u = p.extract_umi(r11, r21);
+            std::string* r = p.extract_mappable_read(r11, r21);
+            std::cerr << "bc : " << *b << "\n";
+            std::cerr << "umi : " << *u << "\n";
+            std::cerr << "read : " << *r << "\n";
+        }
+
+        {
+            std::string* b = p.extract_bc(r12, r22);
+            std::string* u = p.extract_umi(r12, r22);
+            std::string* r = p.extract_mappable_read(r12, r22);
+            std::cerr << "bc : " << ((b != nullptr) ? *b : "empty") << "\n";
+            std::cerr << "umi : " << ((u != nullptr) ? *u : "empty") << "\n";
+            std::cerr << "read : " << *r << "\n";
+        }
+
     } else {
         std::cerr << "description invalid!\n";
     }
