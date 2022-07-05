@@ -62,7 +62,6 @@ public:
 
         if (is_member) {
             qres.contig_size += m_dict.k() - 1;
-            auto ctsize = m_bct.m_ctg_offsets.size();
             auto start_pos = m_bct.m_ctg_offsets.access(qres.contig_id);
             auto end_pos = m_bct.m_ctg_offsets.access(qres.contig_id + 1);
             size_t len = end_pos - start_pos;

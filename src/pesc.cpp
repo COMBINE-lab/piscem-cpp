@@ -15,11 +15,13 @@
 #include "../include/cli11/CLI11.hpp"
 #include "../include/sc/util.hpp"
 #include "../include/spdlog/spdlog.h"
+#include "../include/json.hpp"
 #include "FastxParser.cpp"
 #include "hit_searcher.cpp"
 #include "zlib.h"
 
 #include <atomic>
+#include <chrono>
 #include <iostream>
 #include <vector>
 #include <memory>
@@ -336,7 +338,7 @@ void do_map(mindex::reference_index& ri, fastx_parser::FastxParser<fastx_parser:
             auto rctr = global_nr.load();
             auto hctr = global_nhits.load();
 
-            if (write_mapping_rate and (rctr % 500000 == 0)){
+            if (write_mapping_rate and (rctr % 500000 == 0)) {
                 iomut.lock();
                 std::cerr << "\rprocessed (" << rctr << ") reads; (" << hctr << ") had mappings.";
                 iomut.unlock();
@@ -430,6 +432,75 @@ void do_map(mindex::reference_index& ri, fastx_parser::FastxParser<fastx_parser:
     }
 }
 
+enum class protocol_t : uint8_t { CHROM_V2, CHROM_V3, CUSTOM };
+
+bool set_geometry(std::string& library_geometry, protocol_t& pt,
+                  std::unique_ptr<custom_protocol>& p) {
+    if (library_geometry == "chromium_v2") {
+        umi_kmer_t::k(10);
+        bc_kmer_t::k(16);
+        pt = protocol_t::CHROM_V2;
+    } else if (library_geometry == "chromium_v3") {
+        umi_kmer_t::k(12);
+        bc_kmer_t::k(16);
+        pt = protocol_t::CHROM_V3;
+    } else {
+        std::unique_ptr<custom_protocol> opt_cp =
+            single_cell::util::parse_custom_geometry(library_geometry);
+        if (opt_cp) {
+            p.swap(opt_cp);
+            umi_kmer_t::k(p->get_umi_len());
+            bc_kmer_t::k(p->get_bc_len());
+            pt = protocol_t::CUSTOM;
+        } else {
+            spdlog::critical("could not parse custom geometry description [{}]", library_geometry);
+            return false;
+        }
+    }
+    return true;
+}
+
+class run_stats {
+public:
+    run_stats() = default;
+    void cmd_line(std::string& cmd_line_in) { cmd_line_ = cmd_line_in; }
+    void num_reads(uint64_t num_reads_in) { num_reads_ = num_reads_in; }
+    void num_hits(uint64_t num_hits_in) { num_hits_ = num_hits_in; }
+    void num_seconds(double num_sec) { num_seconds_ = num_sec; }
+
+    std::string cmd_line() const { return cmd_line_; }
+    uint64_t num_reads() const { return num_reads_; }
+    uint64_t num_hits() const { return num_hits_; }
+    double num_seconds() const { return num_seconds_; }
+
+private:
+    std::string cmd_line_{""};
+    uint64_t num_reads_{0};
+    uint64_t num_hits_{0};
+    double num_seconds_{0};
+};
+
+bool write_map_info(run_stats& rs, ghc::filesystem::path& map_info_file_path) {
+    using json = nlohmann::json;
+
+    json j;
+    j["cmdline"] = rs.cmd_line();
+    j["num_reads"] = rs.num_reads();
+    j["num_mapped"] = rs.num_hits();
+    double percent_mapped = (100.0 * static_cast<double>(rs.num_hits())) / rs.num_reads();
+    j["percent_mapped"] = percent_mapped;
+    j["runtime_seconds"] = rs.num_seconds();
+    // write prettified JSON to another file
+    std::ofstream o(map_info_file_path.string());
+
+    if (!o.good()) { return false; }
+
+    o << std::setw(4) << j << std::endl;
+
+    if (!o) { return false; }
+    return true;
+}
+
 int main(int argc, char** argv) {
     /**
      * PESC : Pseudoalignment Enhanced with Structural Constraints
@@ -458,43 +529,16 @@ int main(int argc, char** argv) {
         ->default_val(16);
     CLI11_PARSE(app, argc, argv);
 
-    /*
-    cmd_line_parser::parser parser(argc, argv);
-
-    size_t nthread = 16;
-    // mandatory arguments
-    parser.add("input_filename", "input index prefix.");
-    parser.add("read1", "read 1 filename.");
-    parser.add("read2", "read 2 filename.");
-    parser.add("output", "output directory.");
-    parser.add("t", "A (integer) that specifies the number of threads to use.", "-t", false);
-    // parser.add("reads", "read filename.");
-    if (!parser.parse()) return 1;
-    */
-    enum class protocol_t : uint8_t { CHROM_V2, CHROM_V3, CUSTOM };
+    // start the timer
+    auto start_t = std::chrono::high_resolution_clock::now();
 
     protocol_t pt{protocol_t::CUSTOM};
     std::unique_ptr<custom_protocol> p{nullptr};
-    if (library_geometry == "chromium_v2") {
-        umi_kmer_t::k(10);
-        bc_kmer_t::k(16);
-        pt = protocol_t::CHROM_V2;
-    } else if (library_geometry == "chromium_v3") {
-        umi_kmer_t::k(12);
-        bc_kmer_t::k(16);
-        pt = protocol_t::CHROM_V3;
-    } else {
-        std::unique_ptr<custom_protocol> opt_cp =
-            single_cell::util::parse_custom_geometry(library_geometry);
-        if (opt_cp) {
-            p.swap(opt_cp);
-            umi_kmer_t::k(p->get_umi_len());
-            bc_kmer_t::k(p->get_bc_len());
-            pt = protocol_t::CUSTOM;
-        } else {
-            spdlog::critical("could not parse custom geometry description [{}]", library_geometry); 
-            return 1;
-        }
+
+    bool geom_ok = set_geometry(library_geometry, pt, p);
+    if (!geom_ok) {
+        spdlog::critical("could not set the library geometry properly.");
+        return 1;
     }
 
     // RAD file path
@@ -513,21 +557,20 @@ int main(int argc, char** argv) {
         cmdline.push_back(' ');
     }
     cmdline.pop_back();
-    // print_header(ri, cmdline);
 
     std::ofstream rad_file(rad_file_path.string());
     std::ofstream unmapped_bc_file(unmapped_bc_file_path.string());
 
     if (!rad_file.good()) {
-        // alevinOpts.jointLog->error("Could not open {} for writing.", rad_file_path.string());
+        spdlog::critical("Could not open {} for writing.", rad_file_path.string());
         throw std::runtime_error("error creating output file.");
     }
 
     if (!unmapped_bc_file.good()) {
-        // alevinOpts.jointLog->error("Could not open {} for writing.",
-        // unmapped_bc_file_path.string());
+        spdlog::critical("Could not open {} for writing.", unmapped_bc_file_path.string());
         throw std::runtime_error("error creating output file.");
     }
+
     output_info out_info;
     out_info.rad_file = std::move(rad_file);
     out_info.unmapped_bc_file = std::move(unmapped_bc_file);
@@ -602,16 +645,28 @@ int main(int argc, char** argv) {
     // expected. see :
     // https://stackoverflow.com/questions/28342660/error-handling-in-stdofstream-while-writing-data
     if (!out_info.rad_file) {
-      spdlog::critical(
-        "The RAD file stream had an invalid status after "
-        "close; so some operation(s) may"
-        "have failed!\nA common cause for this is lack "
-        "of output disk space.\n"
-        "Consequently, the output may be corrupted.\n\n");
+        spdlog::critical(
+            "The RAD file stream had an invalid status after "
+            "close; so some operation(s) may"
+            "have failed!\nA common cause for this is lack "
+            "of output disk space.\n"
+            "Consequently, the output may be corrupted.\n\n");
         return 1;
     }
 
     out_info.unmapped_bc_file.close();
+
+    auto end_t = std::chrono::high_resolution_clock::now();
+    auto num_sec = std::chrono::duration_cast<std::chrono::seconds>(end_t - start_t);
+    run_stats rs;
+    rs.cmd_line(cmdline);
+    rs.num_reads(global_nr.load());
+    rs.num_hits(global_nh.load());
+    rs.num_seconds(num_sec.count());
+
+    ghc::filesystem::path map_info_file_path = output_path / "map_info.json";
+    bool info_ok = write_map_info(rs, map_info_file_path);
+    if (!info_ok) { spdlog::critical("failed to write map_info.json file"); }
 
     return 0;
 }
