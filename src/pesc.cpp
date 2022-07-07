@@ -501,30 +501,36 @@ bool write_map_info(run_stats& rs, ghc::filesystem::path& map_info_file_path) {
     return true;
 }
 
+struct pesc_options {
+  std::string index_basename;
+  std::vector<std::string> left_read_filenames;
+  std::vector<std::string> right_read_filenames;
+  std::string output_dirname;
+  std::string library_geometry;
+  protocol_t pt{protocol_t::CUSTOM};
+  std::unique_ptr<custom_protocol> p{nullptr};
+  size_t nthread;
+};
+
 int main(int argc, char** argv) {
     /**
      * PESC : Pseudoalignment Enhanced with Structural Constraints
      **/
     std::ios_base::sync_with_stdio(false);
 
-    std::string input_filename;
-    std::vector<std::string> filenames1;
-    std::vector<std::string> filenames2;
-    std::string output_dirname;
-    std::string library_geometry;
-    size_t nthread;
+    pesc_options po;
     CLI::App app{"PESC — single-cell RNA-seq mapper for alevin-fry"};
-    app.add_option("-i,--index", input_filename, "input index prefix")->required();
-    app.add_option("-1,--read1", filenames1, "path to list of read 1 files")
+    app.add_option("-i,--index", po.index_basename, "input index prefix")->required();
+    app.add_option("-1,--read1", po.left_read_filenames, "path to list of read 1 files")
         ->required()
         ->delimiter(',');
-    app.add_option("-2,--read2", filenames2, "path to list of read 2 files")
+    app.add_option("-2,--read2", po.right_read_filenames, "path to list of read 2 files")
         ->required()
         ->delimiter(',');
-    app.add_option("-o,--output", output_dirname, "path to output directory")->required();
-    app.add_option("-g,--geometry", library_geometry, "geometry of barcode, umi and read")
+    app.add_option("-o,--output", po.output_dirname, "path to output directory")->required();
+    app.add_option("-g,--geometry", po.library_geometry, "geometry of barcode, umi and read")
         ->required();
-    app.add_option("-t,--threads", nthread,
+    app.add_option("-t,--threads", po.nthread,
                    "An integer that specifies the number of threads to use")
         ->default_val(16);
     CLI11_PARSE(app, argc, argv);
@@ -532,23 +538,20 @@ int main(int argc, char** argv) {
     // start the timer
     auto start_t = std::chrono::high_resolution_clock::now();
 
-    protocol_t pt{protocol_t::CUSTOM};
-    std::unique_ptr<custom_protocol> p{nullptr};
-
-    bool geom_ok = set_geometry(library_geometry, pt, p);
+    bool geom_ok = set_geometry(po.library_geometry, po.pt, po.p);
     if (!geom_ok) {
         spdlog::critical("could not set the library geometry properly.");
         return 1;
     }
 
     // RAD file path
-    ghc::filesystem::path output_path(output_dirname);
+    ghc::filesystem::path output_path(po.output_dirname);
     ghc::filesystem::create_directories(output_path);
 
     ghc::filesystem::path rad_file_path = output_path / "map.rad";
     ghc::filesystem::path unmapped_bc_file_path = output_path / "unmapped_bc_count.bin";
 
-    mindex::reference_index ri(input_filename);
+    mindex::reference_index ri(po.index_basename);
 
     std::string cmdline;
     size_t narg = static_cast<size_t>(argc);
@@ -583,12 +586,12 @@ int main(int argc, char** argv) {
     std::mutex iomut;
 
     uint32_t np = 1;
-    if ((filenames1.size() > 1) and (nthread >= 6)) {
+    if ((po.left_read_filenames.size() > 1) and (po.nthread >= 6)) {
         np += 1;
-        nthread -= 1;
+        po.nthread -= 1;
     }
 
-    fastx_parser::FastxParser<fastx_parser::ReadPair> rparser(filenames1, filenames2, nthread, np);
+    fastx_parser::FastxParser<fastx_parser::ReadPair> rparser(po.left_read_filenames, po.right_read_filenames, po.nthread, np);
     rparser.start();
 
     // set the k-mer size for the
@@ -598,8 +601,8 @@ int main(int argc, char** argv) {
     std::atomic<uint64_t> global_nr{0};
     std::atomic<uint64_t> global_nh{0};
     std::vector<std::thread> workers;
-    for (size_t i = 0; i < nthread; ++i) {
-        switch (pt) {
+    for (size_t i = 0; i < po.nthread; ++i) {
+        switch (po.pt) {
             case protocol_t::CHROM_V2: {
                 chromium_v2 prot;
                 workers.push_back(std::thread(
@@ -618,8 +621,8 @@ int main(int argc, char** argv) {
             }
             case protocol_t::CUSTOM: {
                 workers.push_back(
-                    std::thread([&ri, &rparser, &p, &global_nr, &global_nh, &iomut, &out_info]() {
-                        do_map(ri, rparser, *p, global_nr, global_nh, out_info, iomut);
+                    std::thread([&ri, &rparser, &po, &global_nr, &global_nh, &iomut, &out_info]() {
+                        do_map(ri, rparser, *(po.p), global_nr, global_nh, out_info, iomut);
                     }));
                 break;
             }
