@@ -68,6 +68,25 @@ struct protocol_state {
 };
 
 std::unique_ptr<custom_protocol> parse_custom_geometry(std::string& geom) {
+  /*
+   // definition using parser combinators (seemingly *not* faster to compile)
+  using namespace peg;
+  Definition SPECIFICATION, R1_DESC, R2_DESC, BOUNDED_DESC, UNBOUNDED_DESC, BARCODE, UMI, DISCARD, FIXED, READ, SEQUENCE, LENGTHS, LENGTH;
+  SPECIFICATION <= seq(R1_DESC, R2_DESC);
+  R1_DESC <= seq(liti("1{"), cho( UNBOUNDED_DESC, seq(rep(BOUNDED_DESC, 1, 10), rep(UNBOUNDED_DESC, 0, 1)) ), liti("}"));
+  R2_DESC <= seq(liti("2{"), cho( UNBOUNDED_DESC, seq(rep(BOUNDED_DESC, 1, 10), rep(UNBOUNDED_DESC, 0, 1)) ), liti("}"));
+  BOUNDED_DESC <= cho( seq(BARCODE, chr('['), LENGTHS, chr(']')), seq(UMI, chr('['), LENGTHS, chr(']')), seq(FIXED, chr('['), LENGTHS, chr(']')), seq(DISCARD, chr('['), LENGTHS, chr(']')), seq(READ, chr('['), LENGTHS, chr(']')) ); 
+  UNBOUNDED_DESC <= cho( seq(DISCARD, chr(':')), seq(READ, chr(':')) );
+  BARCODE <= chr('b');
+  UMI <= chr('u');
+  DISCARD <= chr('x');
+  FIXED <= chr('f');
+  READ <= chr('r');
+  SEQUENCE <= oom(cls("ATGC"));
+  LENGTHS <= cho( seq(LENGTH, chr('-'), LENGTH), LENGTH );
+  LENGTH <= seq( cls("123456789"), zom(cls("0123456789")) );
+  */
+
     peg::parser parser(R"(
 Specification <- Read1Description Read2Description
 Read1Description <- '1{' (UnboundedDescription / (BoundedDescription{1,10} UnboundedDescription{0,1})) '}'

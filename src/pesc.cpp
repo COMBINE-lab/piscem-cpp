@@ -40,7 +40,7 @@ using bc_kmer_t = rad::util::bc_kmer_t;
 // need access to when writing output within each thread
 // as well as information we'll need to update for the
 // caller.
-class output_info {
+class pesc_output_info {
 public:
     // will keep track of the total number
     // of chunks written to rad_file
@@ -281,7 +281,7 @@ inline bool map_read(std::string* read_seq, mapping_cache_info& map_cache) {
 template <typename Protocol>
 void do_map(mindex::reference_index& ri, fastx_parser::FastxParser<fastx_parser::ReadPair>& parser,
             const Protocol& p, std::atomic<uint64_t>& global_nr,
-            std::atomic<uint64_t>& global_nhits, output_info& out_info, std::mutex& iomut) {
+            std::atomic<uint64_t>& global_nhits, pesc_output_info& out_info, std::mutex& iomut) {
     auto log_level = spdlog::get_level();
     auto write_mapping_rate = false;
     switch (log_level) {
@@ -571,7 +571,7 @@ int main(int argc, char** argv) {
         throw std::runtime_error("error creating output file.");
     }
 
-    output_info out_info;
+    pesc_output_info out_info;
     out_info.rad_file = std::move(rad_file);
     out_info.unmapped_bc_file = std::move(unmapped_bc_file);
 
@@ -630,7 +630,9 @@ int main(int argc, char** argv) {
     rparser.stop();
 
     spdlog::info("finished mapping.");
-
+    
+    // rewind to the start of the file and write the number of 
+    // chunks that we actually produced.
     out_info.rad_file.seekp(chunk_offset);
     uint64_t nc = out_info.num_chunks.load();
     out_info.rad_file.write(reinterpret_cast<char*>(&nc), sizeof(nc));
