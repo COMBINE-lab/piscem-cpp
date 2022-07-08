@@ -1,6 +1,9 @@
 cmake_minimum_required(VERSION 3.5)
 project(SSHASH)
 
+# Set path for modules required to search for existing packages in the system.
+set(CMAKE_MODULE_PATH ${CMAKE_MODULE_PATH} "${CMAKE_SOURCE_DIR}/cmake/Modules/")
+
 set(CMAKE_CXX_STANDARD 17)
 if (NOT CMAKE_BUILD_TYPE)
     set(CMAKE_BUILD_TYPE "Release")
@@ -35,6 +38,18 @@ endif()
 find_package(ZLIB REQUIRED)
 find_package(Threads REQUIRED)
 
+# Prepare the `jemalloc` library. It provides scalable concurrency support and better avoidance
+# of fragmentation.
+set(MALLOC_LIB "")
+set(JEMALLOC_MIN_VERSION "5.2.1")
+find_package(Jemalloc ${JEMALLOC_MIN_VERSION})
+if(JEMALLOC_FOUND)
+    message("Found jemalloc (v${JEMALLOC_VERSION}) in the system")
+    set(MALLOC_LIB ${JEMALLOC_LIBRARIES})
+else()
+  message("Could not find jemalloc (>= v${JEMALLOC_MIN_VERSION}). Please consider installing this.")
+endif()
+
 set(Z_LIB_SOURCES
   include/gz/zip_stream.cpp
 )
@@ -50,10 +65,11 @@ add_library(sshash_static STATIC
   ${SSHASH_SOURCES}
   include/builder/build.cpp
 )
-
+target_include_directories(sshash_static PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/include)
 
 add_executable(build src/build.cpp)
-target_link_libraries(build sshash_static z)
+target_link_libraries(build sshash_static z ${MALLOC_LIB})
+target_include_directories(build PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/include)
 
 add_executable(bench src/bench.cpp ${SSHASH_SOURCES})
 
@@ -73,7 +89,7 @@ target_link_libraries(test_load ZLIB::ZLIB sshash_static)
 
 add_executable(pesc src/pesc.cpp) 
 target_include_directories(pesc PUBLIC ${CMAKE_SOURCE_DIR}/include ${ZLIB_INCLUDE_DIRS})
-target_link_libraries(pesc ZLIB::ZLIB Threads::Threads sshash_static) 
+target_link_libraries(pesc ZLIB::ZLIB Threads::Threads sshash_static ${MALLOC_LIB}) 
 
 add_executable(evaluator src/index_evaluator.cpp) 
 target_include_directories(evaluator PUBLIC ${CMAKE_SOURCE_DIR}/include ${ZLIB_INCLUDE_DIRS})

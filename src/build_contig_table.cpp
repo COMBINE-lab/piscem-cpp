@@ -11,6 +11,8 @@
 #include "../include/bitsery/adapter/stream.h"
 #include "../include/bitsery/brief_syntax/vector.h"
 #include "../include/bitsery/brief_syntax/string.h"
+#include "../include/spdlog/spdlog.h"
+#include "../include/json.hpp"
 
 using namespace sshash;
 using phmap::flat_hash_map;
@@ -32,7 +34,6 @@ bool build_contig_table(const std::string& input_filename, uint64_t k,
     std::fstream s{out_refinfo.c_str(), s.binary | s.trunc | s.out};
     bitsery::Serializer<bitsery::OutputBufferedStreamAdapter> ser{s};
 
-
     std::vector<uint64_t> segment_order;
     {
         // First, we will pass over the segment file to collect the
@@ -46,14 +47,12 @@ bool build_contig_table(const std::string& input_filename, uint64_t k,
             while (seg_file >> seg_id >> seg) {
                 segment_order.push_back(seg_id);
                 seg_len = seg.length();
-                id_to_rank[seg_id] = { idx, seg_len, 0 };
+                id_to_rank[seg_id] = {idx, seg_len, 0};
                 ++idx;
             }
         }
-        std::cerr << "computed all segment lengths.\n";
+        spdlog::info("computed all segment lengts");
     }
-
-
 
     size_t num_refs = 0;
     size_t max_ref_len = 0;
@@ -61,14 +60,13 @@ bool build_contig_table(const std::string& input_filename, uint64_t k,
         // In the first pass over the cf_seq file we
         // will assign each segment an ID based on the
         // order of its first appearance (rank),
-        // will count how many times each segment occurs, and 
-        // will compute the lengths of all reference 
+        // will count how many times each segment occurs, and
+        // will compute the lengths of all reference
         // sequences.
         std::ifstream ifile(input_filename + ".cf_seq");
 
         uint64_t refctr = 0;
         bool first = true;
-        uint64_t next_rank = 0;
         uint64_t current_offset = 0;
         std::vector<std::string> ref_names;
         std::vector<uint64_t> ref_lens;
@@ -83,13 +81,17 @@ bool build_contig_table(const std::string& input_filename, uint64_t k,
 
                     if (!first) {
                         if (ref_names.empty()) {
-                            std::cerr << "ref_names is empty, but first is false; should not happen!\n";
+                            spdlog::error(
+                                "ref_names is empty, but first is false; should not happen!");
                         }
                         auto rn = ref_names.back();
                         uint64_t len = current_offset + (k - 1);
                         ref_lens.push_back(len);
                         max_ref_len = std::max(max_ref_len, len);
-                        std::cerr << "finished processing reference #" << refctr << " : " << rn << ", len : " << len << "\n";
+                        if (refctr % 10000 == 0) {
+                            spdlog::info("finished processing reference #{} : {}, len : {}", refctr,
+                                         rn, len);
+                        }
                         ++refctr;
                     }
 
@@ -101,18 +103,21 @@ bool build_contig_table(const std::string& input_filename, uint64_t k,
                 } else {  // this should be a segment entry
 
                     if (!((tok.back() == '-') or (tok.back() == '+'))) {
-                        std::cerr << "unexpected last character of tiling entry [" << tok.back()
-                                  << "\n";
+                        spdlog::critical("unexpected last character of tiling entry [{}]",
+                                         tok.back());
                         std::exit(1);
                     }
 
                     tok.pop_back();
                     uint64_t id = std::stoul(tok, nullptr, 0);
-                    
+
                     auto rit = id_to_rank.find(id);
                     if (rit == id_to_rank.end()) {
-                        std::cerr << "encountered segment " << id << " that was not found in "
-                        << "the id_to_rank dictionary!\n";
+                        spdlog::critical(
+                            "encountered segment {} that was not found in the id_to_rank "
+                            "dictionary!",
+                            id);
+                        std::exit(1);
                     } else {
                         rit->second.count += 1;
                         // then we increment the current offset
@@ -122,14 +127,36 @@ bool build_contig_table(const std::string& input_filename, uint64_t k,
             }
         }
         if (ref_names.empty()) {
-            std::cerr << "ref_names is empty, but first is false; should not happen!\n";
+            spdlog::critical("ref_names is empty, but first is false; should not happen!");
+            std::exit(1);
         }
         auto rn = ref_names.back();
         // for the last reference
         uint64_t len = current_offset + (k - 1);
         ref_lens.push_back(len);
         max_ref_len = std::max(max_ref_len, len);
-        std::cerr << "finished processing reference #" << refctr << " : " << rn << ", len : " << len << "\n";
+
+        // from the json file we will get info about any
+        // short references
+        {
+            using short_refs_t = std::vector<std::pair<std::string, size_t>>;
+            nlohmann::json dbg_info;
+            std::ifstream json_file(input_filename + ".json");
+            json_file >> dbg_info;
+            if (dbg_info.contains("short refs")) {
+                short_refs_t short_refs_info = dbg_info["short refs"].get<short_refs_t>();
+                for (auto& p : short_refs_info) {
+                    ref_names.push_back(p.first);
+                    ref_lens.push_back(static_cast<uint64_t>(p.second));
+                    max_ref_len = std::max(max_ref_len, len);
+                }
+            }
+        }
+
+        if (refctr % 10000 == 0) {
+            spdlog::info("finished processing reference #{} : {}, len : {}", refctr, rn, len);
+        }
+
         num_refs = ref_lens.size();
 
         {
@@ -151,23 +178,22 @@ bool build_contig_table(const std::string& input_filename, uint64_t k,
 
     uint64_t ref_len_bits = std::ceil(std::log2(max_ref_len + 1));
     uint64_t num_ref_bits = std::ceil(std::log2(num_refs + 1));
-    uint64_t total_ctg_bits = ref_len_bits + num_ref_bits + 1; 
+    uint64_t total_ctg_bits = ref_len_bits + num_ref_bits + 1;
 
     // to get to the ref we shift ref_len_bits + 1 (orientation bit)
     sshash::util::_ref_shift = ref_len_bits + 1;
     sshash::util::_pos_mask = sshash::util::pos_masks[ref_len_bits];
 
-    std::cerr << "completed first pass over paths.\n";
-    std::cerr << "there were " << id_to_rank.size() << " segments\n";
-    std::cerr << "max ref len = " << max_ref_len << ", requires " << ref_len_bits << " bits\n";
-    std::cerr << "num refs = " << num_refs << ", requires " << num_ref_bits << " bits\n";
+    spdlog::info("completed first pass over paths.");
+    spdlog::info("there were {} segments.", id_to_rank.size());
+    spdlog::info("max ref len = {}, requires {} bits.", max_ref_len, ref_len_bits);
+    spdlog::info("max refs = {}, requires {} bits.", num_refs, num_ref_bits);
 
     uint64_t tot_seg_occ = 0;
     for (auto& kv : id_to_rank) { tot_seg_occ += kv.second.count; }
 
-    std::cerr << "there were " << tot_seg_occ << " total segment occurrences\n";
-
-    std::cerr << "computing cumulative offset vector.\n";
+    spdlog::info("there were {} total segment occurrences", tot_seg_occ);
+    spdlog::info("computing cumulative offset vector.");
 
     basic_contig_table bct;
     bct.m_ref_len_bits = ref_len_bits;
@@ -188,33 +214,35 @@ bool build_contig_table(const std::string& input_filename, uint64_t k,
             contig_offsets.push_back(total_occ);
         }
 
-        std::cerr << "converting segment counts to offsets.\n";
+        spdlog::info("converting segment coutns to offsets.");
         // now convert each `count` entry for each contig to
         // the current offset where its next entry will be written
         for (size_t i = 0; i < segment_order.size(); ++i) {
             auto seg_id = segment_order[i];
             id_to_rank[seg_id].count = contig_offsets[i];
             if (id_to_rank[seg_id].rank != i) {
-                std::cerr << "expected segment " << seg_id << " to have "
-                << "rank " << i << ", but it had rank " << id_to_rank[seg_id].rank << "\n";
+                spdlog::critical("expected segment {} to have rank {}, but it had rank {}", seg_id,
+                                 i, id_to_rank[seg_id].rank);
+                std::exit(1);
             }
         }
         // since the contig offset vector is a monotonic sequence
         // it is amenable to Elias-Fano compression, so compress it
         // as such and write it.
         // ef_sequence efo;
-        bct.m_ctg_offsets.encode(contig_offsets.begin(), contig_offsets.size(), contig_offsets.back());
+        bct.m_ctg_offsets.encode(contig_offsets.begin(), contig_offsets.size(),
+                                 contig_offsets.back());
         // std::string cto_fname = output_filename+"_coff.bin";
         // essentials::save(efo, cto_fname.c_str());
     }
 
-    std::cerr << "second pass over seq file to fill in contig entires.\n";
+    spdlog::info("second pass over seq file to fill in contig entries.");
     {
         // Finally, we'll go over the sequences of segments again
         // and build the final table.
         auto seg_table_builder = pthash::compact_vector::builder(tot_seg_occ, total_ctg_bits);
-        //auto& seg_table = bct.m_ctg_entries;
-        //seg_table.resize(tot_seg_occ);
+        // auto& seg_table = bct.m_ctg_entries;
+        // seg_table.resize(tot_seg_occ);
         std::ifstream ifile(input_filename + ".cf_seq");
 
         uint64_t refctr = 0;
@@ -226,10 +254,8 @@ bool build_contig_table(const std::string& input_filename, uint64_t k,
             while (ifile >> tok) {
                 // this is a new reference
                 if (tok.compare(0, hlen, refstr) == 0) {
-                    if (!first) {
-                        ++refctr;
-                    }
-                    std::cerr << "processing reference #" << refctr << "\n";
+                    if (!first) { ++refctr; }
+                    if (refctr % 10000 == 0) { spdlog::info("processing reference #{}", refctr); }
                     first = false;
                     current_offset = 0;
                 } else {  // this should be a segment entry
@@ -239,8 +265,8 @@ bool build_contig_table(const std::string& input_filename, uint64_t k,
                     } else if (tok.back() == '+') {
                         is_fw = true;
                     } else {
-                        std::cerr << "unexpected last character of tiling entry [" << tok.back()
-                                  << "\n";
+                        spdlog::critical("unexpected last character of tiling entry [{}]",
+                                         tok.back());
                         std::exit(1);
                     }
                     tok.pop_back();
@@ -251,7 +277,8 @@ bool build_contig_table(const std::string& input_filename, uint64_t k,
                     // insert the next entry for this segment
                     // at the index given by v.count.
                     auto entry_idx = v.count;
-                    uint64_t encoded_entry = sshash::util::encode_contig_entry(refctr, current_offset, is_fw);
+                    uint64_t encoded_entry =
+                        sshash::util::encode_contig_entry(refctr, current_offset, is_fw);
                     //[entry_idx].update(refctr, current_offset, is_fw);
                     seg_table_builder.set(entry_idx, encoded_entry);
                     // then we increment entry_idx for next time
@@ -302,7 +329,7 @@ int build_contig_table_main(const std::string& input_filename, uint64_t k,
                             const std::string& output_filename) {
     bool success = build_contig_table(input_filename, k, output_filename);
     if (!success) {
-        std::cerr << "failed to build contig table.\n";
+        spdlog::critical("failed to build contig table.");
         return 1;
     }
     return 0;

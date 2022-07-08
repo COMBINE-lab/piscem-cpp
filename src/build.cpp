@@ -2,6 +2,7 @@
 
 #include "../external/pthash/external/cmd_line_parser/include/parser.hpp"
 #include "../include/dictionary.hpp"
+#include "../include/spdlog/spdlog.h"
 #include "bench_utils.hpp"
 #include "check_utils.hpp"
 #include "build_contig_table.cpp"
@@ -21,6 +22,7 @@ int main(int argc, char** argv) {
     parser.add("m", "Minimizer length (must be < k).");
 
     /* optional arguments */
+    parser.add("quiet", "Only write errors or critical messages to the log", "--quiet", true);
     parser.add("seed",
                "Seed for construction (default is " + std::to_string(constants::seed) + ").", "-s",
                false);
@@ -64,6 +66,12 @@ int main(int argc, char** argv) {
     if (parser.parsed("seed")) build_config.seed = parser.get<uint64_t>("seed");
     if (parser.parsed("l")) build_config.l = parser.get<double>("l");
     if (parser.parsed("c")) build_config.c = parser.get<double>("c");
+
+    bool quiet = parser.get<bool>("quiet");
+    if (quiet) {
+      spdlog::set_level(spdlog::level::warn);
+    }
+
     build_config.canonical_parsing = parser.get<bool>("canonical_parsing");
     build_config.weighted = parser.get<bool>("weighted");
     build_config.verbose = parser.get<bool>("verbose");
@@ -71,10 +79,10 @@ int main(int argc, char** argv) {
         build_config.tmp_dirname = parser.get<std::string>("tmp_dirname");
         essentials::create_directory(build_config.tmp_dirname);
     }
-    build_config.print();
+    if (!quiet) { build_config.print(); }
 
     if (!parser.parsed("output_filename")) {
-        essentials::logger("output filename is required but missing!\n");
+        spdlog::critical("output filename is required but missing!\n");
         return 1;
     }
     auto output_filename = parser.get<std::string>("output_filename");
@@ -88,9 +96,9 @@ int main(int argc, char** argv) {
         dict.build(input_seq, build_config);
         assert(dict.k() == k);
         auto output_seqidx = output_filename + ".sshash";
-        essentials::logger("saving data structure to disk...");
+        spdlog::info("saving data structure to disk...");
         essentials::save(dict, output_seqidx.c_str());
-        essentials::logger("DONE");
+        spdlog::info("DONE");
 
         bool check = parser.get<bool>("check");
         if (check) {

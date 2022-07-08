@@ -1,5 +1,6 @@
 #pragma once
 
+#include "../spdlog/spdlog.h"
 #include "../gz/zip_stream.hpp"
 
 namespace sshash {
@@ -12,7 +13,8 @@ struct parse_data {
     weights::builder weights_builder;
 };
 
-void parse_file_from_cuttlefish(std::istream& is, parse_data& data, build_configuration const& build_config) {
+void parse_file_from_cuttlefish(std::istream& is, parse_data& data,
+                                build_configuration const& build_config) {
     uint64_t k = build_config.k;
     uint64_t m = build_config.m;
     uint64_t seed = build_config.seed;
@@ -77,72 +79,15 @@ void parse_file_from_cuttlefish(std::istream& is, parse_data& data, build_config
     uint64_t weight_value = constants::invalid_uint64;
     uint64_t weight_length = 0;
 
-    auto parse_header = [&]() {
-        if (sequence.empty()) return;
-
-        /*
-            Heder format:
-            >[id] LN:i:[seq_len] ab:Z:[weight_seq]
-            where [weight_seq] is a space-separated sequence of integer counters (the weights),
-            whose length is equal to [seq_len]-k+1
-        */
-
-        // example header: '>12 LN:i:41 ab:Z:2 2 2 2 2 2 2 2 2 2 2'
-
-        expect(sequence[0], '>');
-        uint64_t i = 0;
-        i = sequence.find_first_of(' ', i);
-        if (i == std::string::npos) throw parse_runtime_error();
-
-        i += 1;
-        expect(sequence[i + 0], 'L');
-        expect(sequence[i + 1], 'N');
-        expect(sequence[i + 2], ':');
-        expect(sequence[i + 3], 'i');
-        expect(sequence[i + 4], ':');
-        i += 5;
-        uint64_t j = sequence.find_first_of(' ', i);
-        if (j == std::string::npos) throw parse_runtime_error();
-
-        seq_len = std::strtoull(sequence.data() + i, nullptr, 10);
-        i = j + 1;
-        expect(sequence[i + 0], 'a');
-        expect(sequence[i + 1], 'b');
-        expect(sequence[i + 2], ':');
-        expect(sequence[i + 3], 'Z');
-        expect(sequence[i + 4], ':');
-        i += 5;
-
-        for (uint64_t j = 0; j != seq_len - k + 1; ++j) {
-            uint64_t weight = std::strtoull(sequence.data() + i, nullptr, 10);
-            i = sequence.find_first_of(' ', i) + 1;
-
-            data.weights_builder.eat(weight);
-            sum_of_weights += weight;
-
-            if (weight == weight_value) {
-                weight_length += 1;
-            } else {
-                if (weight_value != constants::invalid_uint64) {
-                    data.weights_builder.push_weight_interval(weight_value, weight_length);
-                }
-                weight_value = weight;
-                weight_length = 1;
-            }
-        }
-    };
-
     while (!is.eof()) {
         std::getline(is, sequence);  // header sequence
-        //if (build_config.weighted) parse_header();
         auto tsep = sequence.find('\t');
-        //std::getline(is, sequence);  // DNA sequence
         sequence = sequence.substr(tsep + 1);
         if (sequence.size() < k) continue;
 
         if (++num_sequences % 100000 == 0) {
-            std::cout << "read " << num_sequences << " sequences, " << num_bases << " bases, "
-                      << data.num_kmers << " kmers" << std::endl;
+            spdlog::info("read {} sequences, {} bases, {}, kmers", num_sequences, num_bases,
+                         data.num_kmers);
         }
 
         begin = 0;
@@ -152,8 +97,8 @@ void parse_file_from_cuttlefish(std::istream& is, parse_data& data, build_config
         num_bases += sequence.size();
 
         if (build_config.weighted and seq_len != sequence.size()) {
-            std::cout << "ERROR: expected a sequence of length " << seq_len
-                      << " but got one of length " << sequence.size() << std::endl;
+            spdlog::critical("expected a sequence of length {}, but got one of length {}.", seq_len,
+                             sequence.length());
             throw std::runtime_error("file is malformed");
         }
 
@@ -188,17 +133,16 @@ void parse_file_from_cuttlefish(std::istream& is, parse_data& data, build_config
     builder.finalize();
     builder.build(data.strings);
 
-    std::cout << "read " << num_sequences << " sequences, " << num_bases << " bases, "
-              << data.num_kmers << " kmers" << std::endl;
-    std::cout << "num_kmers " << data.num_kmers << std::endl;
-    std::cout << "num_super_kmers " << data.strings.num_super_kmers() << std::endl;
-    std::cout << "num_pieces " << data.strings.pieces.size() << " (+"
-              << (2.0 * data.strings.pieces.size() * (k - 1)) / data.num_kmers << " [bits/kmer])"
-              << std::endl;
+    spdlog::info("read {} sequences, {} bases, {} kmers.", num_sequences, num_bases,
+                 data.num_kmers);
+    spdlog::info("num_super_kmers {}", data.strings.num_super_kmers());
+    spdlog::info("num_pieces {} (+{} [bits/kmer])", data.strings.pieces.size(),
+                 (2.0 * data.strings.pieces.size() * (k - 1)) / data.num_kmers);
+
     assert(data.strings.pieces.size() == num_sequences + 1);
 
     if (build_config.weighted) {
-        std::cout << "sum_of_weights " << sum_of_weights << std::endl;
+        spdlog::info("sum_of_weights {}", sum_of_weights);
         data.weights_builder.push_weight_interval(weight_value, weight_length);
         data.weights_builder.finalize(data.num_kmers);
     }
@@ -207,7 +151,7 @@ void parse_file_from_cuttlefish(std::istream& is, parse_data& data, build_config
 parse_data parse_file(std::string const& filename, build_configuration const& build_config) {
     std::ifstream is(filename.c_str());
     if (!is.good()) throw std::runtime_error("error in opening the file '" + filename + "'");
-    std::cout << "reading file '" << filename << "'..." << std::endl;
+    spdlog::info("reading file '{}'...", filename);
     parse_data data(build_config.tmp_dirname);
     if (util::ends_with(filename, ".gz")) {
         zip_istream zis(is);

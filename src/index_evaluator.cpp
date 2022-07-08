@@ -38,7 +38,6 @@ int main(int argc, char* argv[]) {
 	std::ios_base::sync_with_stdio(false);
     cmd_line_parser::parser parser(argc, argv);
 
-    size_t nthread = 16;
     /* mandatory arguments */
     parser.add("input_filename",
                "input index prefix.");

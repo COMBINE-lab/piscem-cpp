@@ -22,9 +22,8 @@ void check_index(mindex::reference_index& ri, const std::string& ref_fname ){
     sshash::streaming_query_canonical_parsing q(ri.get_dict());
     uint64_t refnum = 0;
     uint64_t global_idx = 0;
-    bool first = true;
+
     while (ks >> record) {
-        //if (first) { ++refnum; first = false; continue; }
         q.start();
         pufferfish::CanonicalKmerIterator kit(record.seq);
         while (kit != kend) {

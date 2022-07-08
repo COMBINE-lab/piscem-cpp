@@ -1,12 +1,12 @@
 #pragma once
 
+#include "../spdlog/spdlog.h"
 #include "file_merging_iterator.hpp"
 
 namespace sshash {
 
 void print_time(double time, uint64_t num_kmers, std::string const& message) {
-    std::cout << "=== " << message << " " << time / 1000000 << " [sec] ("
-              << (time * 1000) / num_kmers << " [ns/kmer])" << std::endl;
+    spdlog::info("=== {} {} [sec] ({} [ns/kmer])", message, time / 1000000, (time * 1000) / num_kmers); 
 }
 
 struct empty_bucket_runtime_error : public std::runtime_error {
@@ -20,7 +20,7 @@ struct parse_runtime_error : public std::runtime_error {
 
 void expect(char got, char expected) {
     if (got != expected) {
-        std::cout << "got '" << got << "' but expected '" << expected << "'" << std::endl;
+        spdlog::critical("got '{}' but expected '{}'", got, expected);
         throw parse_runtime_error();
     }
 }
@@ -205,7 +205,7 @@ struct minimizers_tuples {
         , m_run_identifier(pthash::clock_type::now().time_since_epoch().count())
         , m_tmp_dirname(tmp_dirname) {
         m_buffer_size = ram_limit / sizeof(minimizer_tuple);
-        std::cout << "m_buffer_size " << m_buffer_size << std::endl;
+        spdlog::info("m_buffer_size {}", m_buffer_size); 
     }
 
     void emplace_back(uint64_t minimizer, uint64_t offset, uint64_t num_kmers_in_super_kmer) {
@@ -216,7 +216,7 @@ struct minimizers_tuples {
     minimizer_tuple& back() { return m_buffer.back(); }
 
     void sort_and_flush() {
-        std::cout << "sorting buffer..." << std::endl;
+        spdlog::info("sorting buffer...");
         std::sort(m_buffer.begin(), m_buffer.end(),
                   [](minimizer_tuple const& x, minimizer_tuple const& y) {
                       return (x.minimizer < y.minimizer) or
@@ -224,7 +224,7 @@ struct minimizers_tuples {
                   });
 
         auto tmp_output_filename = get_tmp_output_filename(m_num_files_to_merge);
-        std::cout << "saving to file '" << tmp_output_filename << "'..." << std::endl;
+        spdlog::info("saving to file '{}'...", tmp_output_filename);
         std::ofstream out(tmp_output_filename.c_str(), std::ofstream::binary);
         if (!out.is_open()) throw std::runtime_error("cannot open file");
         out.write(reinterpret_cast<char const*>(m_buffer.data()),
@@ -274,8 +274,8 @@ struct minimizers_tuples {
             input.close();
             return;
         }
-
-        std::cout << " == files to merge = " << m_num_files_to_merge << std::endl;
+        
+        spdlog::info(" == files to merge = {}", m_num_files_to_merge); 
 
         assert(m_num_files_to_merge > 1);
         typedef bytes_iterator<minimizer_tuple> bytes_iterator_type;
@@ -297,11 +297,11 @@ struct minimizers_tuples {
                 ++m_num_minimizers;
             }
             if (num_written_tuples % 50000000 == 0) {
-                std::cout << "num_written_tuples = " << num_written_tuples << std::endl;
+              spdlog::info("num_written_tuples = {}", num_written_tuples);
             }
             fm_iterator.next();
         }
-        std::cout << "num_written_tuples = " << num_written_tuples << std::endl;
+        spdlog::info("num_written_tuples = {}", num_written_tuples);
 
         out.close();
         fm_iterator.close();

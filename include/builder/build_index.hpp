@@ -1,5 +1,6 @@
 #pragma once
 
+#include "../spdlog/spdlog.h"
 #include "file_merging_iterator.hpp"
 
 namespace sshash {
@@ -48,7 +49,7 @@ struct bucket_pairs {
         , m_run_identifier(pthash::clock_type::now().time_since_epoch().count())
         , m_tmp_dirname(tmp_dirname) {
         m_buffer_size = ram_limit / sizeof(bucket_pair);
-        std::cout << "m_buffer_size " << m_buffer_size << std::endl;
+        spdlog::info("m_buffer_size {}", m_buffer_size);
     }
 
     void emplace_back(uint64_t id, uint32_t size) {
@@ -57,12 +58,12 @@ struct bucket_pairs {
     }
 
     void sort_and_flush() {
-        std::cout << "sorting buffer..." << std::endl;
+      spdlog::info("sorting buffer...");
         std::sort(m_buffer.begin(), m_buffer.end(),
                   [](bucket_pair const& x, bucket_pair const& y) { return x.id < y.id; });
 
         auto tmp_output_filename = get_tmp_output_filename(m_num_files_to_merge);
-        std::cout << "saving to file '" << tmp_output_filename << "'..." << std::endl;
+        spdlog::info("saving to file '{}'...", tmp_output_filename); 
         std::ofstream out(tmp_output_filename.c_str(), std::ofstream::binary);
         if (!out.is_open()) throw std::runtime_error("cannot open file");
         out.write(reinterpret_cast<char const*>(m_buffer.data()),
@@ -102,7 +103,7 @@ struct bucket_pairs {
         if (m_num_files_to_merge <= 1) return;
         assert(m_num_files_to_merge > 1);
 
-        std::cout << " == files to merge = " << m_num_files_to_merge << std::endl;
+        spdlog::info(" == files to merge = {}", m_num_files_to_merge);
 
         typedef bytes_iterator<bucket_pair> bytes_iterator_type;
         file_merging_iterator<bytes_iterator_type> fm_iterator(files_name_iterator_begin(),
@@ -118,11 +119,11 @@ struct bucket_pairs {
             out.write(reinterpret_cast<char const*>(&val), sizeof(bucket_pair));
             num_written_pairs += 1;
             if (num_written_pairs % 50000000 == 0) {
-                std::cout << "num_written_pairs = " << num_written_pairs << std::endl;
+              spdlog::info("num_written_pairs = {}", num_written_pairs);
             }
             fm_iterator.next();
         }
-        std::cout << "num_written_pairs = " << num_written_pairs << std::endl;
+        spdlog::info("num_written_pairs = {}", num_written_pairs);
 
         out.close();
         fm_iterator.close();
@@ -163,8 +164,7 @@ buckets_statistics build_index(parse_data& data, minimizers const& m_minimizers,
     pthash::compact_vector::builder offsets;
     offsets.resize(num_super_kmers, std::ceil(std::log2(data.strings.num_bits() / 2)));
 
-    std::cout << "bits_per_offset = ceil(log2(" << data.strings.num_bits() / 2
-              << ")) = " << std::ceil(std::log2(data.strings.num_bits() / 2)) << std::endl;
+    spdlog::info("bits_per_offset = ceil(log2({})) = {}", data.strings.num_bits() / 2, std::ceil(std::log2(data.strings.num_bits() / 2)));
 
     mm::file_source<minimizer_tuple> input(data.minimizers.get_minimizers_filename(),
                                            mm::advice::sequential);
@@ -184,8 +184,7 @@ buckets_statistics build_index(parse_data& data, minimizers const& m_minimizers,
     }
     bucket_pairs_manager.finalize();
 
-    std::cout << "num_singletons " << num_singletons << "/" << num_buckets << " ("
-              << (num_singletons * 100.0) / num_buckets << "%)" << std::endl;
+    spdlog::info("num_singletons {} / {} ({}%)", num_singletons, num_buckets, (num_singletons * 100.0) / num_buckets); 
 
     if (bucket_pairs_manager.num_files_to_merge() > 0) {
         bucket_pairs_manager.merge();
