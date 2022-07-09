@@ -67,6 +67,12 @@ add_library(sshash_static STATIC
 )
 target_include_directories(sshash_static PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/include)
 
+add_library(pesc_static STATIC
+  src/pesc.cpp
+)
+target_include_directories(pesc_static PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/include ${ZLIB_INCLUDE_DIRS})
+
+
 add_executable(build src/build.cpp)
 target_link_libraries(build sshash_static z ${MALLOC_LIB})
 target_include_directories(build PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/include)
@@ -90,13 +96,33 @@ add_executable(test_load src/test_load.cpp)
 target_include_directories(test_load PUBLIC ${CMAKE_SOURCE_DIR}/include ${ZLIB_INCLUDE_DIRS})
 target_link_libraries(test_load ZLIB::ZLIB sshash_static)
 
-add_executable(pesc src/pesc.cpp) 
+add_executable(pesc src/pesc_runner.cpp) 
 target_include_directories(pesc PUBLIC ${CMAKE_SOURCE_DIR}/include ${ZLIB_INCLUDE_DIRS})
-target_link_libraries(pesc ZLIB::ZLIB Threads::Threads sshash_static ${MALLOC_LIB}) 
+target_link_libraries(pesc pesc_static ZLIB::ZLIB Threads::Threads sshash_static ${MALLOC_LIB}) 
 
 add_executable(evaluator src/index_evaluator.cpp) 
 target_include_directories(evaluator PUBLIC ${CMAKE_SOURCE_DIR}/include ${ZLIB_INCLUDE_DIRS})
 target_link_libraries(evaluator ZLIB::ZLIB Threads::Threads sshash_static) 
 
-add_executable(test_parse src/test_parse_geo.cpp)
-target_include_directories(evaluator PRIVATE ${CMAKE_SOURCE_DIR}/include)
+#add_executable(test_parse src/test_parse_geo.cpp)
+#target_include_directories(evaluator PRIVATE ${CMAKE_SOURCE_DIR}/include)
+
+install(TARGETS build pesc
+        CONFIGURATIONS Debug
+        RUNTIME DESTINATION Debug/bin)
+
+install(TARGETS build pesc
+  CONFIGURATIONS Release
+  RUNTIME DESTINATION Release/bin)
+
+install(TARGETS build pesc
+        CONFIGURATIONS Debug
+        RUNTIME DESTINATION Debug/bin)
+
+install(TARGETS pesc_static
+  CONFIGURATIONS Debug 
+  RUNTIME DESTINATION Debug/lib)
+
+install(TARGETS pesc_static
+  CONFIGURATIONS Release
+  RUNTIME DESTINATION Release/lib)

@@ -512,7 +512,7 @@ struct pesc_options {
   size_t nthread;
 };
 
-int main(int argc, char** argv) {
+int run_pesc(int argc, char** argv) {
     /**
      * PESC : Pseudoalignment Enhanced with Structural Constraints
      **/
