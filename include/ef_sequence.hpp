@@ -8,13 +8,12 @@ namespace sshash {
 
 template <bool index_zeros = false>
 struct ef_sequence {
-    ef_sequence() {}
+    ef_sequence() : m_universe(0) {}
 
-    template <typename Iterator>
-    void encode(Iterator begin, uint64_t n) {
+    template <typename ForwardIterator>
+    void encode(ForwardIterator begin, uint64_t n, uint64_t u) {
         if (n == 0) return;
-        uint64_t u = *(begin + n - 1);
-        m_universe = u;  // universe is last element, "back"
+        m_universe = u;
 
         uint64_t l = uint64_t((n && u / n) ? pthash::util::msb(u / n) : 0);
         pthash::bit_vector_builder bvb_high_bits(n + (u >> l) + 1);
@@ -37,8 +36,8 @@ struct ef_sequence {
 
         pthash::bit_vector(&bvb_high_bits).swap(m_high_bits);
         cv_builder_low_bits.build(m_low_bits);
-        pthash::darray1(m_high_bits).swap(m_high_bits_d1);
-        if constexpr (index_zeros) { pthash::darray0(m_high_bits).swap(m_high_bits_d0); }
+        m_high_bits_d1.build(m_high_bits);
+        if constexpr (index_zeros) m_high_bits_d0.build(m_high_bits);
     }
 
     struct iterator {
@@ -55,7 +54,6 @@ struct ef_sequence {
         }
 
         bool good() const { return m_ef != nullptr; }
-
         bool has_next() const { return m_pos < m_ef->size(); }
 
         uint64_t next() {
@@ -142,6 +140,37 @@ struct ef_sequence {
         return {pos, val};
     }
 
+    // Return [pos_next,prev,next] such that prev < x <= next.
+    // where pos_next is the position of next.
+    // Assumptions:
+    // - all elements of the sequence are distinct;
+    // - x <= back();
+    // - first element of the sequence is 0.
+    // Because of these assumption, this is specific for our use-case, NOT for generic use.
+    inline std::tuple<uint64_t, uint64_t, uint64_t> locate(uint64_t x) const {
+        static_assert(index_zeros == true, "must build index on zeros");
+        assert(m_high_bits_d0.num_positions());
+
+        if (x == 0) return {0, 0, 0};
+
+        uint64_t h_x = x >> m_low_bits.width();
+        uint64_t begin = h_x ? m_high_bits_d0.select(m_high_bits, h_x - 1) - h_x + 1 : 0;
+        assert(begin < size());
+
+        auto it = at(begin);
+        uint64_t pos_next = begin;
+        uint64_t next = it.next();
+        uint64_t prev = next;
+        while (next < x) {
+            ++pos_next;
+            prev = next;
+            next = it.next();
+        }
+        assert(next >= x);
+        assert(pos_next > 0);
+        return {pos_next, pos_next != begin ? prev : access(pos_next - 1), next};
+    }
+
     // Return the position of the rightmost largest element <= x.
     // Return size() if x > back() (largest element).
     inline uint64_t prev_leq(uint64_t x) const {
@@ -149,7 +178,6 @@ struct ef_sequence {
         return pos - (val > x);
     }
 
-    inline bool contains(uint64_t x) const { return next_geq(x).second == x; }
     inline uint64_t back() const { return m_universe; }
     inline uint64_t size() const { return m_low_bits.size(); }
 

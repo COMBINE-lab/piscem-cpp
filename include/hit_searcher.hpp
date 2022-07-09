@@ -5,7 +5,8 @@
 #include "CanonicalKmerIterator.hpp"
 #include "projected_hits.hpp"
 #include "reference_index.hpp"
-#include "query/contig_info_query_canonical_parsing.cpp"
+//#include "query/streaming_query_canonical_parsing.cpp"
+#include "query/streaming_query_canonical_parsing.hpp"
 //#include "Util.hpp"
 //#include "dictionary.hpp"
 
@@ -23,7 +24,7 @@ public:
   }
   
   bool get_raw_hits_sketch(std::string &read,
-                  sshash::contig_info_query_canonical_parsing& qc,
+                  sshash::streaming_query_canonical_parsing& qc,
                   bool isLeft=false,
                   bool verbose=false);
 

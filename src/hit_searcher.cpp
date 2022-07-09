@@ -52,7 +52,7 @@ struct SkipContext {
     return kit1->first;
   }
 
-  inline bool query_kmer(sshash::contig_info_query_canonical_parsing& qc) {
+  inline bool query_kmer(sshash::streaming_query_canonical_parsing& qc) {
     bool found_match = false;
     if (fast_hit.valid()) {
       auto keq = kit1->first.isEquivalent(fast_hit.ref_kmer);
@@ -350,7 +350,14 @@ struct SkipContext {
           if (dist <= 1) {
             // if we're past the position we tried to jump to
             // then we're willing to skip a little faster
-            skip = (dist < 0) ? 2 : 1;
+            
+            // debug print
+            // std::cerr << "dist = " << dist << ", read_target_pos = " << read_target_pos << ", kit_tmp->second" << kit_tmp->second << "\n";
+
+            // skip goes directly to 2 b/c if dist == 1 skip 1 gets us to a position
+            // we already evaluated. Likewise, if dist == 0 (shouldn't happen)
+            // we need to move to the next un-searched position.
+            skip = (dist == 0) ? 1 : 2;// (dist < 0) ? 2 : 1; 
             kit_tmp += skip;
             kit1 = kit_tmp;
           } else {
@@ -468,7 +475,7 @@ struct SkipContext {
 // Nat Biotechnol. 2016;34(5):525-527.
 //
 bool hit_searcher::get_raw_hits_sketch(std::string &read,
-                  sshash::contig_info_query_canonical_parsing& qc,
+                  sshash::streaming_query_canonical_parsing& qc,
                   bool isLeft,
                   bool verbose) {
   (void) verbose;
