@@ -72,12 +72,15 @@ target_link_libraries(build sshash_static z ${MALLOC_LIB})
 target_include_directories(build PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/include)
 
 add_executable(bench src/bench.cpp ${SSHASH_SOURCES})
+target_include_directories(bench PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/include)
 
 add_executable(check src/check.cpp ${SSHASH_SOURCES} ${Z_LIB_SOURCES})
 target_link_libraries(check z)
+target_include_directories(check PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/include)
 
 add_executable(query src/query.cpp ${SSHASH_SOURCES} ${Z_LIB_SOURCES})
 target_link_libraries(query z)
+target_include_directories(query PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/include)
 
 #add_executable(build_contig_table src/build_contig_table.cpp)
 #target_include_directories(build_contig_table PUBLIC ${CMAKE_SOURCE_DIR}/include)
@@ -96,4 +99,4 @@ target_include_directories(evaluator PUBLIC ${CMAKE_SOURCE_DIR}/include ${ZLIB_I
 target_link_libraries(evaluator ZLIB::ZLIB Threads::Threads sshash_static) 
 
 add_executable(test_parse src/test_parse_geo.cpp)
-
+target_include_directories(evaluator PRIVATE ${CMAKE_SOURCE_DIR}/include)

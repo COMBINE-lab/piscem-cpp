@@ -4,6 +4,7 @@
 #include <unordered_map>  // count the distinct weights with freq information
 
 #include "ef_sequence.hpp"
+#include "spdlog/spdlog.h"
 
 namespace sshash {
 
@@ -34,13 +35,11 @@ struct weights {
             assert(
                 std::is_sorted(m_weight_interval_lengths.begin(), m_weight_interval_lengths.end()));
 
-            std::cout << "num_weight_intervals " << num_weight_intervals() << std::endl;
+            spdlog::info("num_weight_intervals {}", num_weight_intervals());
 
             uint64_t num_distinct_weights = m_weights_map.size();
 
-            std::cout << "found " << num_distinct_weights << " distint weights (ceil(log2("
-                      << num_distinct_weights
-                      << ")) = " << std::ceil(std::log2(num_distinct_weights)) << ")" << std::endl;
+            spdlog::info("found {} distinct weights (ceil(log2({})) = {})", num_distinct_weights, num_distinct_weights, std::ceil(std::log2(num_distinct_weights)));
 
             m_weights.reserve(num_distinct_weights);
             uint64_t n = 0;
@@ -52,12 +51,10 @@ struct weights {
             }
             assert(largest_weight > 0);
 
-            std::cout << "largest_weight+1 = " << largest_weight + 1 << " (ceil(log2("
-                      << largest_weight + 1 << ")) = " << std::ceil(std::log2(largest_weight + 1))
-                      << ")" << std::endl;
+            spdlog::info("largest_weight+1 = {} (ceil(log2(largest_weight + 1)) = {}", largest_weight+1, std::ceil(std::log2(largest_weight + 1)));
 
             if (n != num_kmers) {
-                std::cout << "ERROR: expected " << num_kmers << " kmers but got " << n << std::endl;
+              spdlog::critical("expected {} kmers but got {}", num_kmers, n);
                 throw std::runtime_error("file is malformed");
             }
 
@@ -67,8 +64,7 @@ struct weights {
             });
 
             uint64_t rest = num_kmers - m_weights.front().second;
-            std::cout << "kmers that do not have the most frequent weight: " << rest << " ("
-                      << (rest * 100.0) / num_kmers << "%)" << std::endl;
+            spdlog::info("kmers that do not have the most frequent weight: {} ({}%)", rest, (rest * 100.0) / num_kmers); 
 
             m_weight_dictionary_builder.resize(num_distinct_weights,
                                                std::ceil(std::log2(largest_weight + 1)));
@@ -122,12 +118,11 @@ struct weights {
                 entropy_weights += prob * std::log2(1.0 / prob);
                 print += 1;
                 if (print <= 10) {
-                    std::cout << "weight:" << p.first << " freq:" << p.second << " ("
-                              << (p.second * 100.0) / num_kmers << "%)" << std::endl;
+                  spdlog::info("weight: {} freq: {} ({}%)", p.first, p.second, (p.second * 100.0) / num_kmers); 
                 }
             }
-            std::cout << "expected_weight " << expected_weight << std::endl;
-            std::cout << "entropy_weights " << entropy_weights << " [bits/kmer]" << std::endl;
+            spdlog::info("expected_weight {}", expected_weight); 
+            spdlog::info("entropy_weights {} [bits/kmer]", entropy_weights); 
             return entropy_weights;
         }
 
@@ -157,15 +152,9 @@ struct weights {
     }
 
     void print_space_breakdown(uint64_t num_kmers) const {
-        std::cout << "    weight_interval_values: "
-                  << static_cast<double>(m_weight_interval_values.bytes() * 8) / num_kmers
-                  << " [bits/kmer]\n";
-        std::cout << "    weight_interval_lengths: "
-                  << static_cast<double>(m_weight_interval_lengths.num_bits()) / num_kmers
-                  << " [bits/kmer]\n";
-        std::cout << "    weight_dictionary: "
-                  << static_cast<double>(m_weight_dictionary.bytes() * 8) / num_kmers
-                  << " [bits/kmer]\n";
+      spdlog::info("    weight_interval_values: {} [bits/kmer]", static_cast<double>(m_weight_interval_values.bytes() * 8) / num_kmers);
+      spdlog::info("    weight_interval_lengths: {} [bits/kmer]", static_cast<double>(m_weight_interval_lengths.num_bits()) / num_kmers);
+      spdlog::info("    weight_dictionary: {} [bits/kmer]", static_cast<double>(m_weight_dictionary.bytes() * 8) / num_kmers);
     }
 
     template <typename Visitor>
