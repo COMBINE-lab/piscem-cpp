@@ -11,7 +11,16 @@
 
 using namespace sshash;
 
-int main(int argc, char** argv) {
+#ifdef __cplusplus
+extern "C" {
+#endif
+  int run_build(int argc, char** argv);
+#ifdef __cplusplus
+}
+#endif
+
+
+int run_build(int argc, char** argv) {
     cmd_line_parser::parser parser(argc, argv);
 
     /* mandatory arguments */
