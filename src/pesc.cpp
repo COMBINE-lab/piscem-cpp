@@ -510,7 +510,8 @@ struct pesc_options {
   std::string library_geometry;
   protocol_t pt{protocol_t::CUSTOM};
   std::unique_ptr<custom_protocol> p{nullptr};
-  size_t nthread;
+  bool quiet{false};
+  size_t nthread{16};
 };
 
 #ifdef __cplusplus
@@ -527,12 +528,6 @@ int run_pesc(int argc, char** argv) {
      **/
     std::ios_base::sync_with_stdio(false);
 
-    spdlog::drop_all();
-    //auto console_sink = std::make_shared<spdlog::sinks::stdout_color_sink_mt>();
-    auto logger = spdlog::create<spdlog::sinks::stdout_color_sink_mt>("");
-    logger->set_pattern("%+");
-    spdlog::set_default_logger(logger);
-
     pesc_options po;
     CLI::App app{"PESC — single-cell RNA-seq mapper for alevin-fry"};
     app.add_option("-i,--index", po.index_basename, "input index prefix")->required();
@@ -548,7 +543,17 @@ int run_pesc(int argc, char** argv) {
     app.add_option("-t,--threads", po.nthread,
                    "An integer that specifies the number of threads to use")
         ->default_val(16);
+    app.add_flag("--quiet", po.quiet, "try to be quiet in terms of console output");
     CLI11_PARSE(app, argc, argv);
+
+    spdlog::drop_all();
+    auto logger = spdlog::create<spdlog::sinks::stdout_color_sink_mt>("");
+    logger->set_pattern("%+");
+
+    if (po.quiet) {
+      logger->set_level(spdlog::level::warn);
+    }
+    spdlog::set_default_logger(logger);
 
     // start the timer
     auto start_t = std::chrono::high_resolution_clock::now();

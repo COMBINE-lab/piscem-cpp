@@ -24,11 +24,6 @@ extern "C" {
 
 int run_build(int argc, char** argv) {
     cmd_line_parser::parser parser(argc, argv);
-    spdlog::drop_all();
-    //auto console_sink = std::make_shared<spdlog::sinks::stdout_color_sink_mt>();
-    auto logger = spdlog::create<spdlog::sinks::stdout_color_sink_mt>("");
-    logger->set_pattern("%+");
-    spdlog::set_default_logger(logger);
 
     /* mandatory arguments */
     parser.add("input_files_basename",
@@ -71,6 +66,19 @@ int run_build(int argc, char** argv) {
 
     if (!parser.parse()) return 1;
 
+    spdlog::drop_all();
+    //auto console_sink = std::make_shared<spdlog::sinks::stdout_color_sink_mt>();
+    auto logger = spdlog::create<spdlog::sinks::stdout_color_sink_mt>("");
+    logger->set_pattern("%+");
+
+    bool quiet = parser.get<bool>("quiet");
+    if (quiet) {
+      logger->set_level(spdlog::level::warn);
+      logger->warn("being quiet!");
+    }
+
+    spdlog::set_default_logger(logger);
+
     auto input_files_basename = parser.get<std::string>("input_files_basename");
     auto k = parser.get<uint64_t>("k");
     auto m = parser.get<uint64_t>("m");
@@ -83,10 +91,6 @@ int run_build(int argc, char** argv) {
     if (parser.parsed("l")) build_config.l = parser.get<double>("l");
     if (parser.parsed("c")) build_config.c = parser.get<double>("c");
 
-    bool quiet = parser.get<bool>("quiet");
-    if (quiet) {
-      spdlog::set_level(spdlog::level::warn);
-    }
 
     build_config.canonical_parsing = parser.get<bool>("canonical_parsing");
     build_config.weighted = parser.get<bool>("weighted");
@@ -131,5 +135,7 @@ int run_build(int argc, char** argv) {
     }
     
     // now build the contig table
-    return build_contig_table_main(input_files_basename, k, output_filename);
+    bool ctab_ok = build_contig_table_main(input_files_basename, k, output_filename);
+    spdlog::drop_all();
+    return ctab_ok;
 }
