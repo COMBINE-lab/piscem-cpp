@@ -1,8 +1,10 @@
 #include <iostream>
+#include <memory>
 
 #include "../external/pthash/external/cmd_line_parser/include/parser.hpp"
 #include "../include/dictionary.hpp"
 #include "../include/spdlog/spdlog.h"
+#include "../include/spdlog/sinks/stdout_color_sinks.h"
 #include "bench_utils.hpp"
 #include "check_utils.hpp"
 #include "build_contig_table.cpp"
@@ -22,6 +24,11 @@ extern "C" {
 
 int run_build(int argc, char** argv) {
     cmd_line_parser::parser parser(argc, argv);
+    spdlog::drop_all();
+    //auto console_sink = std::make_shared<spdlog::sinks::stdout_color_sink_mt>();
+    auto logger = spdlog::create<spdlog::sinks::stdout_color_sink_mt>("");
+    logger->set_pattern("%+");
+    spdlog::set_default_logger(logger);
 
     /* mandatory arguments */
     parser.add("input_files_basename",
@@ -88,7 +95,7 @@ int run_build(int argc, char** argv) {
         build_config.tmp_dirname = parser.get<std::string>("tmp_dirname");
         essentials::create_directory(build_config.tmp_dirname);
     }
-    if (!quiet) { build_config.print(); }
+    //if (!quiet) { build_config.print(); }
 
     if (!parser.parsed("output_filename")) {
         spdlog::critical("output filename is required but missing!\n");

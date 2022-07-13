@@ -15,6 +15,7 @@
 #include "../include/cli11/CLI11.hpp"
 #include "../include/sc/util.hpp"
 #include "../include/spdlog/spdlog.h"
+#include "../include/spdlog/sinks/stdout_color_sinks.h"
 #include "../include/json.hpp"
 #include "FastxParser.cpp"
 #include "hit_searcher.cpp"
@@ -525,6 +526,12 @@ int run_pesc(int argc, char** argv) {
      * PESC : Pseudoalignment Enhanced with Structural Constraints
      **/
     std::ios_base::sync_with_stdio(false);
+
+    spdlog::drop_all();
+    //auto console_sink = std::make_shared<spdlog::sinks::stdout_color_sink_mt>();
+    auto logger = spdlog::create<spdlog::sinks::stdout_color_sink_mt>("");
+    logger->set_pattern("%+");
+    spdlog::set_default_logger(logger);
 
     pesc_options po;
     CLI::App app{"PESC — single-cell RNA-seq mapper for alevin-fry"};
