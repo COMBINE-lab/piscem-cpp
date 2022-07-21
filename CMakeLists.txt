@@ -99,6 +99,10 @@ add_executable(pesc src/pesc_runner.cpp)
 target_include_directories(pesc PUBLIC ${CMAKE_SOURCE_DIR}/include ${ZLIB_INCLUDE_DIRS})
 target_link_libraries(pesc pesc_static ZLIB::ZLIB Threads::Threads sshash_static ${MALLOC_LIB}) 
 
+add_executable(mapper src/mapper.cpp) 
+target_include_directories(mapper PUBLIC ${CMAKE_SOURCE_DIR}/include ${ZLIB_INCLUDE_DIRS})
+target_link_libraries(mapper ZLIB::ZLIB Threads::Threads sshash_static ${MALLOC_LIB}) 
+
 add_executable(build src/build_runner.cpp) 
 target_include_directories(pesc PUBLIC ${CMAKE_SOURCE_DIR}/include ${ZLIB_INCLUDE_DIRS})
 target_link_libraries(build Threads::Threads build_static sshash_static ZLIB::ZLIB ${MALLOC_LIB}) 
