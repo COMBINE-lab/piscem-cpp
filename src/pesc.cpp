@@ -271,7 +271,6 @@ inline bool map_read(std::string* read_seq, mapping_cache_info& map_cache) {
     if (accepted_hits.size() > map_cache.alt_max_occ) {
         accepted_hits.clear();
         map_type = mapping::util::MappingType::UNMAPPED;
-        std::cerr << "boo\n";
     } else if (!accepted_hits.empty()) {
         map_type = mapping::util::MappingType::SINGLE_MAPPED;
     }

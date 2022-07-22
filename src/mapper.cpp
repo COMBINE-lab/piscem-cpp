@@ -6,7 +6,10 @@
 #include "../include/projected_hits.hpp"
 #include "../include/util.hpp"
 #include "../include/mapping_util.hpp"
+#include "../include/spdlog/spdlog.h"
+#include "../include/spdlog/sinks/stdout_color_sinks.h"
 #include "../include/parallel_hashmap/phmap.h"
+#include "../include/cli11/CLI11.hpp"
 #include "../include/FastxParser.hpp"
 #include "FastxParser.cpp"
 #include "hit_searcher.cpp"
@@ -41,6 +44,7 @@ public:
         hs.clear();
         hit_map.clear();
         accepted_hits.clear();
+        has_matching_kmers = false;
     }
 
     // will store how the read mapped
@@ -65,6 +69,8 @@ public:
     // implements the PASC algorithm
     mindex::hit_searcher hs;
     size_t max_chunk_reads = 5000;
+    // regardless of having full mappings, did any k-mers match
+    bool has_matching_kmers{false};
 };
 
 inline bool map_read(std::string* read_seq, mapping_cache_info& map_cache) {
@@ -79,11 +85,11 @@ inline bool map_read(std::string* read_seq, mapping_cache_info& map_cache) {
     const bool attempt_occ_recover = map_cache.attempt_occ_recover;
     auto k = map_cache.k;
 
-    bool had_left_hit = hs.get_raw_hits_sketch(*read_seq, q, true, false);
+    map_cache.has_matching_kmers = hs.get_raw_hits_sketch(*read_seq, q, true, false);
     bool early_stop = false;
 
     // if there were hits
-    if (had_left_hit) {
+    if (map_cache.has_matching_kmers) {
         uint32_t num_valid_hits{0};
         uint64_t total_occs{0};
         uint64_t largest_occ{0};
@@ -240,12 +246,198 @@ inline bool map_read(std::string* read_seq, mapping_cache_info& map_cache) {
     if (accepted_hits.size() > map_cache.alt_max_occ) {
         accepted_hits.clear();
         map_type = mapping::util::MappingType::UNMAPPED;
-        std::cerr << "boo\n";
     } else if (!accepted_hits.empty()) {
         map_type = mapping::util::MappingType::SINGLE_MAPPED;
     }
 
     return early_stop;
+}
+
+bool is_fw{false};
+int32_t pos{-1};
+float score{0.0};
+uint32_t num_hits{0};
+uint32_t tid{std::numeric_limits<uint32_t>::max()};
+
+void merge_se_mappings(mapping_cache_info& map_cache_left, mapping_cache_info& map_cache_right,
+                       mapping_cache_info& map_cache_out) {
+    map_cache_out.clear();
+    auto& accepted_left = map_cache_left.accepted_hits;
+    auto& accepted_right = map_cache_right.accepted_hits;
+
+    size_t had_matching_kmers_left = map_cache_left.has_matching_kmers;
+    size_t had_matching_kmers_right = map_cache_right.has_matching_kmers;
+
+    size_t num_accepted_left = accepted_left.size();
+    size_t num_accepted_right = accepted_right.size();
+
+    if ((num_accepted_left > 0) and (num_accepted_right > 0)) {
+        // look for paired end mappings
+        // so we have to sort our accepted hits
+        struct {
+            // sort first by orientation, then by transcript id, and finally by position
+            bool operator()(const mapping::util::simple_hit& a,
+                            const mapping::util::simple_hit& b) {
+                if (a.is_fw != b.is_fw) { return a.is_fw > b.is_fw; }
+                // orientations are the same
+                if (a.tid != b.tid) { return a.tid < b.tid; }
+                return a.pos < b.pos;
+            }
+        } simple_hit_less;
+        std::sort(accepted_left.begin(), accepted_left.end(), simple_hit_less);
+        std::sort(accepted_right.begin(), accepted_right.end(), simple_hit_less);
+
+        const mapping::util::simple_hit smallest_rc_hit = {false, -1, 0.0, 0, 0};
+        // start of forward sub-list
+        auto first_fw1 = accepted_left.begin();
+        // end of forward sub-list is first non-forward hit
+        auto last_fw1 = std::lower_bound(accepted_left.begin(), accepted_left.end(),
+                                         smallest_rc_hit, simple_hit_less);
+        // start of rc list
+        auto first_rc1 = last_fw1;
+        // end of rc list
+        auto last_rc1 = accepted_left.end();
+
+        // start of forward sub-list
+        auto first_fw2 = accepted_right.begin();
+        // end of forward sub-list is first non-forward hit
+        auto last_fw2 = std::lower_bound(accepted_right.begin(), accepted_right.end(),
+                                         smallest_rc_hit, simple_hit_less);
+        // start of rc list
+        auto first_rc2 = last_fw2;
+        // end of rc list
+        auto last_rc2 = accepted_right.end();
+
+        auto back_inserter = std::back_inserter(map_cache_out.accepted_hits);
+        using iter_t = decltype(first_fw1);
+        using out_iter_t = decltype(back_inserter);
+
+        auto merge_lists = [](iter_t first1, iter_t last1, iter_t first2, iter_t last2,
+                              out_iter_t out) -> out_iter_t {
+            // https://en.cppreference.com/w/cpp/algorithm/set_intersection
+            while (first1 != last1 && first2 != last2) {
+                if (first1->tid < first2->tid) {
+                    ++first1;
+                } else {
+                    if (!(first2->tid < first1->tid)) {
+                        // first1->tid == first2->tid have the same transcript.
+                        int32_t pos_fw = first1->is_fw ? first1->pos : first2->pos;
+                        int32_t pos_rc = first1->is_fw ? first2->pos : first1->pos;
+                        int32_t frag_len = (pos_rc - pos_fw);
+                        if ((-20 < frag_len) and (frag_len < 1000)) {
+                            *out++ = {first1->is_fw, pos_fw, 0.0, 0, first1->tid};
+                            ++first1;
+                        }
+                    }
+                    ++first2;
+                }
+            }
+            return out;
+        };
+
+        // find hits of form 1:fw, 2:rc
+        merge_lists(first_fw1, last_fw1, first_rc2, last_rc2, back_inserter);
+        // find hits of form 1:rc, 2:fw
+        merge_lists(first_rc1, last_rc1, first_fw2, last_fw2, back_inserter);
+    } else if ((num_accepted_left > 0) and !had_matching_kmers_right) {
+        // just return the left mappings
+        std::swap(map_cache_left.accepted_hits, map_cache_out.accepted_hits);
+    } else if ((num_accepted_right > 0) and !had_matching_kmers_left) {
+        // just return the right mappings
+        std::swap(map_cache_right.accepted_hits, map_cache_out.accepted_hits);
+    } else {
+        // return nothing
+    }
+}
+
+// single-end
+bool map_fragment(fastx_parser::ReadSeq& record, mapping_cache_info& map_cache_left,
+                  mapping_cache_info& map_cache_right, mapping_cache_info& map_cache_out) {
+    (void)map_cache_left;
+    (void)map_cache_right;
+    return map_read(&record.seq, map_cache_out);
+}
+
+// paried-end
+bool map_fragment(fastx_parser::ReadPair& record, mapping_cache_info& map_cache_left,
+                  mapping_cache_info& map_cache_right, mapping_cache_info& map_cache_out) {
+    bool early_exit_left = map_read(&record.first.seq, map_cache_left);
+    bool early_exit_right = map_read(&record.second.seq, map_cache_right);
+
+    merge_se_mappings(map_cache_left, map_cache_right, map_cache_out);
+
+    return (early_exit_left or early_exit_right);
+}
+
+inline void write_sam_mappings(mapping_cache_info& map_cache_out,
+                               fastx_parser::ReadSeq& record, std::string& workstr_left,
+                               std::string& workstr_right, std::atomic<uint64_t>& global_nhits,
+                               std::ostringstream& osstream) {
+    (void)workstr_right;
+    constexpr uint16_t is_secondary = 256;
+    constexpr uint16_t is_rc = 16;
+
+    if (!map_cache_out.accepted_hits.empty()) {
+        ++global_nhits;
+        bool secondary = false;
+        for (auto& ah : map_cache_out.accepted_hits) {
+            uint16_t flag = secondary ? is_secondary : 0;
+            // flag += 2;
+            flag += ah.is_fw ? 0 : is_rc;
+            // flag += first_seg;
+
+            std::string* sptr = nullptr;
+            if (is_rc) {
+                combinelib::kmers::reverseComplement(record.seq, workstr_left);
+                sptr = &workstr_left;
+            } else {
+                sptr = &record.seq;
+            }
+            osstream << record.name << "\t" << flag << "\t" << map_cache_out.hs.get_index()->ref_name(ah.tid) << "\t"
+                     << ah.pos + 1 << "\t255\t*\t*\t0\t" << record.seq.length() << "\t" << *sptr
+                     << "\t*\n";
+            secondary = true;
+        }
+    } else {
+        osstream << record.name << "\t" << 4 << "\t"
+                 << "*\t0\t0\t*\t*\t0\t0\t" << record.seq << "\t*\n";
+    }
+}
+
+// paired-end
+inline void write_sam_mappings(mapping_cache_info& map_cache_out,
+                               fastx_parser::ReadPair& record, std::string& workstr_left,
+                               std::string& workstr_right, std::atomic<uint64_t>& global_nhits,
+                               std::ostringstream& osstream) {
+    (void)workstr_right;
+    constexpr uint16_t is_secondary = 256;
+    constexpr uint16_t is_rc = 16;
+
+    if (!map_cache_out.accepted_hits.empty()) {
+        ++global_nhits;
+        bool secondary = false;
+        for (auto& ah : map_cache_out.accepted_hits) {
+            uint16_t flag = secondary ? is_secondary : 0;
+            // flag += 2;
+            flag += ah.is_fw ? 0 : is_rc;
+            // flag += first_seg;
+
+            std::string* sptr = nullptr;
+            if (is_rc) {
+                combinelib::kmers::reverseComplement(record.first.seq, workstr_left);
+                sptr = &workstr_left;
+            } else {
+                sptr = &record.first.seq;
+            }
+            osstream << record.first.name << "\t" << flag << "\t" << map_cache_out.hs.get_index()->ref_name(ah.tid) << "\t"
+                     << ah.pos + 1 << "\t255\t*\t*\t0\t" << record.first.seq.length() << "\t" << *sptr
+                     << "\t*\n";
+            secondary = true;
+        }
+    } else {
+        osstream << record.first.name << "\t" << 4 << "\t"
+                 << "*\t0\t0\t*\t*\t0\t0\t" << record.first.seq << "\t*\n";
+    }
 }
 
 template <typename FragT>
@@ -254,22 +446,22 @@ void do_map(mindex::reference_index& ri, fastx_parser::FastxParser<FragT>& parse
             std::mutex& iomut) {
     CanonicalKmer::k(ri.k());
 
-    constexpr uint16_t is_secondary = 256;
-    constexpr uint16_t is_rc = 16;
-
     mapping_cache_info map_cache_left(ri);
     mapping_cache_info map_cache_right(ri);
+    mapping_cache_info map_cache_out(ri);
 
     sshash::streaming_query_canonical_parsing q(ri.get_dict());
     mindex::hit_searcher hs(&ri);
     uint64_t read_num = 0;
     uint64_t processed = 0;
     uint64_t buff_size = 10000;
-    std::string workstr;
+    
+    // these don't really belong here
+    std::string workstr_left;
+    std::string workstr_right;
 
     std::ostringstream osstream;
 
-    int32_t k = static_cast<int32_t>(ri.k());
     // Get the read group by which this thread will
     // communicate with the parser (*once per-thread*)
     auto rg = parser.getReadGroup();
@@ -286,34 +478,15 @@ void do_map(mindex::reference_index& ri, fastx_parser::FastxParser<FragT>& parse
                 std::cerr << "readnum : " << rctr << ", num_hits : " << hctr << "\n";
             }
 
-            bool had_early_stop = map_read(&record.seq, map_cache_left);
+            // this *overloaded* function will just do the right thing.
+            // If record is single-end, just map that read, otherwise, map both and look
+            // for proper pairs.
+            bool had_early_stop =
+                map_fragment(record, map_cache_left, map_cache_right, map_cache_out);
             (void)had_early_stop;
 
-            if (!map_cache_left.accepted_hits.empty()) {
-                ++global_nhits;
-                bool secondary = false;
-                for (auto& ah : map_cache_left.accepted_hits) {
-                    uint16_t flag = secondary ? is_secondary : 0;
-                    // flag += 2;
-                    flag += ah.is_fw ? 0 : is_rc;
-                    // flag += first_seg;
-
-                    std::string* sptr = nullptr;
-                    if (is_rc) {
-                        combinelib::kmers::reverseComplement(record.seq, workstr);
-                        sptr = &workstr;
-                    } else {
-                        sptr = &record.seq;
-                    }
-                    osstream << record.name << "\t" << flag << "\t" << ri.ref_name(ah.tid) << "\t"
-                             << ah.pos + 1 << "\t255\t*\t*\t0\t" << record.seq.length() << "\t"
-                             << *sptr << "\t*\n";
-                    secondary = true;
-                }
-            } else {
-                osstream << record.name << "\t" << 4 << "\t"
-                         << "*\t0\t0\t*\t*\t0\t0\t" << record.seq << "\t*\n";
-            }
+            write_sam_mappings(map_cache_out, record, workstr_left, workstr_right, global_nhits,
+                                osstream);
 
             if (processed >= buff_size) {
                 std::string o = osstream.str();
@@ -339,25 +512,55 @@ void do_map(mindex::reference_index& ri, fastx_parser::FastxParser<FragT>& parse
 
 int main(int argc, char** argv) {
     /**
-     * PESC : Pseudoalignment Enhanced with Structural Constraints
+     * Mapper
      **/
     std::ios_base::sync_with_stdio(false);
-    cmd_line_parser::parser parser(argc, argv);
 
-    size_t nthread = 16;
-    /* mandatory arguments */
-    parser.add("input_filename", "input index prefix.");
-    parser.add("reads", "read filename.");
-    parser.add("t", "A (integer) that specifies the number of threads to use.", "-t", false);
-    parser.add("reads", "read filename.");
-    if (!parser.parse()) return 1;
+    std::string index_basename;
+    std::vector<std::string> left_read_filenames;
+    std::vector<std::string> right_read_filenames;
+    std::vector<std::string> single_read_filenames;
+    size_t nthread{16};
+    bool quiet{false};
 
-    auto input_filename = parser.get<std::string>("input_filename");
-    auto read_filename = parser.get<std::string>("reads");
+    CLI::App app{"Mapper"};
+    app.add_option("-i,--index", index_basename, "input index prefix")->required();
 
-    if (parser.parsed("t")) { nthread = parser.get<size_t>("t"); }
+    auto ogroup = app.add_option_group("input reads", "provide input reads");
 
-    std::cerr << "thread: " << nthread << "\n";
+    CLI::Option* read_opt =
+        ogroup->add_option("-r,--reads", single_read_filenames, "path to list of single-end files")
+            ->delimiter(',');
+    CLI::Option* paired_left_opt =
+        ogroup->add_option("-1,--read1", left_read_filenames, "path to list of read 1 files")
+            ->delimiter(',');
+    CLI::Option* paired_right_opt =
+        ogroup->add_option("-2,--read2", right_read_filenames, "path to list of read 2 files")
+            ->delimiter(',');
+
+    paired_left_opt->excludes(read_opt);
+    paired_right_opt->excludes(read_opt);
+    read_opt->excludes(paired_left_opt, paired_right_opt);
+    paired_left_opt->needs(paired_right_opt);
+    paired_right_opt->needs(paired_left_opt);
+
+    ogroup->require_option(1, 2);
+
+    app.add_option("-t,--threads", nthread,
+                   "An integer that specifies the number of threads to use")
+        ->default_val(16);
+    app.add_flag("--quiet", quiet, "try to be quiet in terms of console output");
+
+    CLI11_PARSE(app, argc, argv);
+
+    auto input_filename = index_basename;
+    auto read_filename = single_read_filenames;
+
+    spdlog::drop_all();
+    auto logger = spdlog::create<spdlog::sinks::stderr_color_sink_mt>("");
+    logger->set_pattern("%+");
+    if (quiet) { logger->set_level(spdlog::level::warn); }
+    spdlog::set_default_logger(logger);
 
     mindex::reference_index ri(input_filename);
 
@@ -372,29 +575,52 @@ int main(int argc, char** argv) {
 
     std::mutex iomut;
 
-    std::vector<std::string> filenames = {read_filename};
+    // if we have paired-end data
+    if (read_opt->empty()) {
+        std::vector<std::thread> workers;
+        uint32_t np = 1;
+        if ((left_read_filenames.size() > 1) and (nthread >= 6)) {
+            np += 1;
+            nthread -= 1;
+        }
 
-    uint32_t np = 1;
-    if ((filenames.size() > 1) and (nthread >= 6)) {
-        np += 1;
-        nthread -= 1;
+        fastx_parser::FastxParser<fastx_parser::ReadPair> rparser(
+            left_read_filenames, right_read_filenames, nthread, np);
+        rparser.start();
+
+        std::atomic<uint64_t> global_nr{0};
+        std::atomic<uint64_t> global_nh{0};
+        for (size_t i = 0; i < nthread; ++i) {
+            workers.push_back(std::thread([&ri, &rparser, &global_nr, &global_nh, &iomut]() {
+                do_map(ri, rparser, global_nr, global_nh, iomut);
+            }));
+        }
+
+        for (auto& w : workers) { w.join(); }
+        rparser.stop();
+    } else {  // single-end
+        std::vector<std::thread> workers;
+        uint32_t np = 1;
+        if ((single_read_filenames.size() > 1) and (nthread >= 6)) {
+            np += 1;
+            nthread -= 1;
+        }
+
+        fastx_parser::FastxParser<fastx_parser::ReadSeq> rparser(single_read_filenames, nthread,
+                                                                 np);
+        rparser.start();
+
+        std::atomic<uint64_t> global_nr{0};
+        std::atomic<uint64_t> global_nh{0};
+        for (size_t i = 0; i < nthread; ++i) {
+            workers.push_back(std::thread([&ri, &rparser, &global_nr, &global_nh, &iomut]() {
+                do_map(ri, rparser, global_nr, global_nh, iomut);
+            }));
+        }
+
+        for (auto& w : workers) { w.join(); }
+        rparser.stop();
     }
-
-    fastx_parser::FastxParser<fastx_parser::ReadSeq> rparser(filenames, nthread, np);
-    rparser.start();
-
-    std::atomic<uint64_t> global_nr{0};
-    std::atomic<uint64_t> global_nh{0};
-    std::vector<std::thread> workers;
-    for (size_t i = 0; i < nthread; ++i) {
-        workers.push_back(std::thread([&ri, &rparser, &global_nr, &global_nh, &iomut]() {
-            do_map(ri, rparser, global_nr, global_nh, iomut);
-        }));
-    }
-
-    for (auto& w : workers) { w.join(); }
-
-    rparser.stop();
 
     return 0;
 }

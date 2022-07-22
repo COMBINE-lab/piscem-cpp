@@ -39,6 +39,8 @@ inline std::vector<std::pair<int, projected_hits>>& get_right_hits() {
   return right_rawHits;
 }
 
+inline reference_index* get_index() const { return pfi_; }
+
 private:
   reference_index* pfi_;
   size_t k;

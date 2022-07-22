@@ -11,7 +11,7 @@ namespace mapping {
 
 namespace util {
 
-struct simple_hit {
+  struct simple_hit {
     bool is_fw{false};
     int32_t pos{-1};
     float score{0.0};
