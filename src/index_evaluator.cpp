@@ -1,7 +1,7 @@
 #include "../external/pthash/external/cmd_line_parser/include/parser.hpp"
 #include "../include/reference_index.hpp"
 #include "../include/util.hpp"
-#include "../include/mapping_util.hpp"
+#include "../include/mapping/utils.hpp"
 #include "../include/parallel_hashmap/phmap.h"
 
 #include <iostream>

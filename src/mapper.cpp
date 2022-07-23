@@ -1,13 +1,13 @@
 #include "../include/reference_index.hpp"
 #include "../include/util.hpp"
-#include "../include/mapping_util.hpp"
+#include "../include/mapping/utils.hpp"
 #include "../include/spdlog/spdlog.h"
 #include "../include/spdlog/sinks/stdout_color_sinks.h"
 #include "../include/cli11/CLI11.hpp"
 #include "../include/FastxParser.hpp"
 #include "FastxParser.cpp"
 #include "zlib.h"
-#include "../src/hit_searcher.cpp"
+//#include "../src/hit_searcher.cpp"
 
 #include <atomic>
 #include <iostream>

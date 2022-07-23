@@ -5,7 +5,7 @@
 #include "../include/query/streaming_query_canonical_parsing.hpp"
 #include "../include/projected_hits.hpp"
 #include "../include/util.hpp"
-#include "../include/mapping_util.hpp"
+#include "../include/mapping/utils.hpp"
 #include "../include/parallel_hashmap/phmap.h"
 #include "../include/FastxParser.hpp"
 #include "../include/rad/rad_writer.hpp"
@@ -18,7 +18,7 @@
 #include "../include/spdlog/sinks/stdout_color_sinks.h"
 #include "../include/json.hpp"
 #include "FastxParser.cpp"
-#include "hit_searcher.cpp"
+//#include "hit_searcher.cpp"
 #include "zlib.h"
 
 #include <atomic>

@@ -4,7 +4,7 @@
 #include <fstream>
 
 #include "../include/parallel_hashmap/phmap.h"
-#include "../include/mapping_util.hpp"
+#include "../include/mapping/utils.hpp"
 #include "../Kmer.hpp"
 #include "../reference_index.hpp"
 #include "rad_header.hpp"

@@ -68,7 +68,7 @@ add_library(sshash_static STATIC
 target_include_directories(sshash_static PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/include)
 
 add_library(pesc_static STATIC
-  src/pesc.cpp
+  src/pesc.cpp src/hit_searcher.cpp
 )
 target_include_directories(pesc_static PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/include ${ZLIB_INCLUDE_DIRS})
 
@@ -99,7 +99,7 @@ add_executable(pesc src/pesc_runner.cpp)
 target_include_directories(pesc PUBLIC ${CMAKE_SOURCE_DIR}/include ${ZLIB_INCLUDE_DIRS})
 target_link_libraries(pesc pesc_static ZLIB::ZLIB Threads::Threads sshash_static ${MALLOC_LIB}) 
 
-add_executable(mapper src/mapper.cpp) 
+add_executable(mapper src/mapper.cpp src/hit_searcher.cpp) 
 target_include_directories(mapper PUBLIC ${CMAKE_SOURCE_DIR}/include ${ZLIB_INCLUDE_DIRS})
 target_link_libraries(mapper ZLIB::ZLIB Threads::Threads sshash_static ${MALLOC_LIB}) 
 
