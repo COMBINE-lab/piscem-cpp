@@ -51,6 +51,7 @@ bool map_fragment(fastx_parser::ReadPair& record, mapping_cache_info& map_cache_
     return (early_exit_left or early_exit_right);
 }
 
+// single-end
 inline void write_sam_mappings(mapping_cache_info& map_cache_out, fastx_parser::ReadSeq& record,
                                std::string& workstr_left, std::string& workstr_right,
                                std::atomic<uint64_t>& global_nhits, std::ostringstream& osstream) {

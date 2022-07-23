@@ -93,8 +93,8 @@ size_t write_rad_header(mindex::reference_index& ri, size_t bc_length, size_t um
     // ### end of tag definitions
 
     // the actual file-level tags
-    bw << static_cast<uint16_t>(16);
-    bw << static_cast<uint16_t>(12);
+    bw << static_cast<uint16_t>(bc_length);
+    bw << static_cast<uint16_t>(umi_length);
 
     rad_file << bw;
     bw.clear();
