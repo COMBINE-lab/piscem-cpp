@@ -17,6 +17,7 @@
 #include "../include/spdlog/spdlog.h"
 #include "../include/spdlog/sinks/stdout_color_sinks.h"
 #include "../include/json.hpp"
+#include "../include/mapping/utils.hpp"
 #include "FastxParser.cpp"
 //#include "hit_searcher.cpp"
 #include "zlib.h"
@@ -62,222 +63,6 @@ public:
     std::mutex unmapped_bc_mutex;
 };
 
-struct mapping_cache_info {
-public:
-    mapping_cache_info(mindex::reference_index& ri) : k(ri.k()), q(ri.get_dict()), hs(&ri) {}
-
-    inline void clear() {
-        map_type = mapping::util::MappingType::UNMAPPED;
-        q.start();
-        hs.clear();
-        hit_map.clear();
-        accepted_hits.clear();
-    }
-
-    // will store how the read mapped
-    mapping::util::MappingType map_type{mapping::util::MappingType::UNMAPPED};
-
-    // map from reference id to hit info
-    phmap::flat_hash_map<uint32_t, mapping::util::sketch_hit_info> hit_map;
-    std::vector<mapping::util::simple_hit> accepted_hits;
-
-    // map to recall the number of unmapped reads we see
-    // for each barcode
-    phmap::flat_hash_map<uint64_t, uint32_t> unmapped_bc_map;
-
-    size_t max_occ_default = 200;
-    size_t max_occ_recover = 1000;
-    const bool attempt_occ_recover = (max_occ_recover > max_occ_default);
-    size_t alt_max_occ = 2500;
-    size_t k{0};
-
-    // to perform queries
-    sshash::streaming_query_canonical_parsing q;
-    // implements the PASC algorithm
-    mindex::hit_searcher hs;
-    size_t max_chunk_reads = 5000;
-};
-
-inline bool map_read(std::string* read_seq, mapping_cache_info& map_cache) {
-    map_cache.clear();
-    // rebind map_cache variables to
-    // local names
-    auto& q = map_cache.q;
-    auto& hs = map_cache.hs;
-    auto& hit_map = map_cache.hit_map;
-    auto& accepted_hits = map_cache.accepted_hits;
-    auto& map_type = map_cache.map_type;
-    const bool attempt_occ_recover = map_cache.attempt_occ_recover;
-    auto k = map_cache.k;
-
-    bool had_left_hit = hs.get_raw_hits_sketch(*read_seq, q, true, false);
-    bool early_stop = false;
-
-    // if there were hits
-    if (had_left_hit) {
-        uint32_t num_valid_hits{0};
-        uint64_t total_occs{0};
-        uint64_t largest_occ{0};
-        auto& raw_hits = hs.get_left_hits();
-
-        // SANITY
-        decltype(raw_hits[0].first) prev_read_pos = -1;
-        // the maximum span the supporting k-mers of a
-        // mapping position are allowed to have.
-        // NOTE this is still > read_length b/c the stretch is measured wrt the
-        // START of the terminal k-mer.
-        int32_t max_stretch = static_cast<int32_t>(read_seq->length() * 1.0);
-
-        // a raw hit is a pair of read_pos and a projected hit
-
-        // the least frequent hit for this fragment.
-        uint64_t min_occ = std::numeric_limits<uint64_t>::max();
-
-        // this is false by default and will be set to true
-        // if *every* collected hit for this fragment occurs
-        // max_occ_default times or more.
-        bool had_alt_max_occ = false;
-        int32_t signed_rl = static_cast<int32_t>(read_seq->length());
-        auto collect_mappings_from_hits =
-            [&max_stretch, &min_occ, &hit_map, &num_valid_hits, &total_occs, &largest_occ,
-             &early_stop, signed_rl, k](auto& raw_hits, auto& prev_read_pos, auto& max_allowed_occ,
-                                        auto& had_alt_max_occ) -> bool {
-            for (auto& raw_hit : raw_hits) {
-                auto& read_pos = raw_hit.first;
-                auto& proj_hits = raw_hit.second;
-                auto& refs = proj_hits.refRange;
-
-                uint64_t num_occ = static_cast<uint64_t>(refs.size());
-                min_occ = std::min(min_occ, num_occ);
-                had_alt_max_occ = true;
-
-                bool still_have_valid_target = false;
-                prev_read_pos = read_pos;
-                if (num_occ <= max_allowed_occ) {
-                    total_occs += num_occ;
-                    largest_occ = (num_occ > largest_occ) ? num_occ : largest_occ;
-                    float score_inc = 1.0;
-
-                    for (auto v : refs) {
-                        // uint64_t v = *pos_it;
-                        const auto& ref_pos_ori = proj_hits.decode_hit(v);
-                        uint32_t tid = sshash::util::transcript_id(v);
-                        int32_t pos = static_cast<int32_t>(ref_pos_ori.pos);
-                        bool ori = ref_pos_ori.isFW;
-                        auto& target = hit_map[tid];
-
-                        // Why >= here instead of == ?
-                        // Because hits can happen on the same target in both the forward
-                        // and rc orientations, it is possible that we start the loop with
-                        // the target having num_valid_hits hits in a given orientation (o)
-                        // we see a new hit for this target in oriention o (now it has
-                        // num_valid_hits + 1) then we see a hit for this target in
-                        // orientation rc(o).  We still want to add / consider this hit, but
-                        // max_hits_for_target() > num_valid_hits. So, we must allow for
-                        // that here.
-                        if (target.max_hits_for_target() >= num_valid_hits) {
-                            if (ori) {
-                                target.add_fw(pos, static_cast<int32_t>(read_pos), signed_rl, k,
-                                              max_stretch, score_inc);
-                            } else {
-                                target.add_rc(pos, static_cast<int32_t>(read_pos), signed_rl, k,
-                                              max_stretch, score_inc);
-                            }
-
-                            still_have_valid_target |=
-                                (target.max_hits_for_target() >= num_valid_hits + 1);
-                        }
-
-                    }  // DONE: for (auto &pos_it : refs)
-
-                    ++num_valid_hits;
-
-                    // if there are no targets reaching the valid hit threshold, then break
-                    // early
-                    if (!still_have_valid_target) { return true; }
-
-                }  // DONE : if (num_occ <= max_allowed_occ)
-            }      // DONE : for (auto& raw_hit : raw_hits)
-
-            return false;
-        };
-
-        bool _discard = false;
-        auto mao_first_pass = map_cache.max_occ_default - 1;
-        early_stop = collect_mappings_from_hits(raw_hits, prev_read_pos, mao_first_pass, _discard);
-
-        // If our default threshold was too stringent, then fallback to a more liberal
-        // threshold and look up the k-mers that occur the least frequently.
-        // Specifically, if the min occuring hits have frequency < max_occ_recover (2500 by
-        // default) times, then collect the min occuring hits to get the mapping.
-        if (attempt_occ_recover and (min_occ >= map_cache.max_occ_default) and
-            (min_occ < map_cache.max_occ_recover)) {
-            prev_read_pos = -1;
-            uint64_t max_allowed_occ = min_occ;
-            early_stop = collect_mappings_from_hits(raw_hits, prev_read_pos, max_allowed_occ,
-                                                    had_alt_max_occ);
-        }
-
-        uint32_t best_alt_hits = 0;
-        // int32_t signed_read_len = static_cast<int32_t>(record.seq.length());
-
-        for (auto& kv : hit_map) {
-            auto best_hit_dir = kv.second.best_hit_direction();
-            // if the best direction is FW or BOTH, add the fw hit
-            // otherwise add the RC.
-            auto simple_hit = (best_hit_dir != mapping::util::HitDirection::RC)
-                                  ? kv.second.get_fw_hit()
-                                  : kv.second.get_rc_hit();
-
-            if (simple_hit.num_hits >= num_valid_hits) {
-                simple_hit.tid = kv.first;
-                accepted_hits.emplace_back(simple_hit);
-                // if we had equally good hits in both directions
-                // add the rc hit here (since we added the fw)
-                // above if the best hit was either FW or BOTH
-                if (best_hit_dir == mapping::util::HitDirection::BOTH) {
-                    auto second_hit = kv.second.get_rc_hit();
-                    second_hit.tid = kv.first;
-                    accepted_hits.emplace_back(second_hit);
-                }
-            } else {
-                // best_alt_score = simple_hit.score > best_alt_score ? simple_hit.score :
-                // best_alt_score;
-                best_alt_hits =
-                    simple_hit.num_hits > best_alt_hits ? simple_hit.num_hits : best_alt_hits;
-            }
-        }
-
-        // alt_max_occ = had_alt_max_occ ? accepted_hits.size() : max_occ_default;
-
-        /*
-         * This rule; if enabled, allows through mappings missing a single hit, if there
-         * was no mapping with all hits. NOTE: this won't work with the current early-exit
-         * optimization however.
-        if (accepted_hits.empty() and (num_valid_hits > 1) and (best_alt_hits >=
-        num_valid_hits
-        - 1)) { for (auto& kv : hit_map) { auto simple_hit = kv.second.get_best_hit(); if
-        (simple_hit.num_hits >= best_alt_hits) {
-              //if (simple_hit.valid_pos(signed_read_len, transcripts[kv.first].RefLength,
-        10)) { simple_hit.tid = kv.first; accepted_hits.emplace_back(simple_hit);
-              //}
-            }
-          }
-        }
-        */
-    }  // DONE : if (rh)
-
-    // If the read mapped to > maxReadOccs places, discard it
-    if (accepted_hits.size() > map_cache.alt_max_occ) {
-        accepted_hits.clear();
-        map_type = mapping::util::MappingType::UNMAPPED;
-    } else if (!accepted_hits.empty()) {
-        map_type = mapping::util::MappingType::SINGLE_MAPPED;
-    }
-
-    return early_stop;
-}
-
 template <typename Protocol>
 void do_map(mindex::reference_index& ri, fastx_parser::FastxParser<fastx_parser::ReadPair>& parser,
             const Protocol& p, std::atomic<uint64_t>& global_nr,
@@ -314,7 +99,7 @@ void do_map(mindex::reference_index& ri, fastx_parser::FastxParser<fastx_parser:
     size_t num_short_umi{0};
     size_t num_ambig_umi{0};
 
-    mapping_cache_info map_cache(ri);
+    mapping::util::mapping_cache_info map_cache(ri);
 
     size_t max_chunk_reads = 5000;
     // Get the read group by which this thread will
@@ -378,7 +163,7 @@ void do_map(mindex::reference_index& ri, fastx_parser::FastxParser<fastx_parser:
             std::string* read_seq =
                 protocol.extract_mappable_read(record.first.seq, record.second.seq);
 
-            bool had_early_stop = map_read(read_seq, map_cache);
+            bool had_early_stop = mapping::util::map_read(read_seq, map_cache);
             (void)had_early_stop;
 
             global_nhits += map_cache.accepted_hits.empty() ? 0 : 1;

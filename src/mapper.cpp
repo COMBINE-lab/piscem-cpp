@@ -23,7 +23,7 @@ using mapping::util::mapping_cache_info;
 void print_header(mindex::reference_index& ri, std::string& cmdline) {
     std::cout << "@HD\tVN:1.0\tSO:unsorted\n";
     for (uint64_t i = 0; i < ri.num_refs(); ++i) {
-        std::cout << "@SQ\tNS:" << ri.ref_name(i) << "\tLN:" << ri.ref_len(i) << "\n";
+        std::cout << "@SQ\tSN:" << ri.ref_name(i) << "\tLN:" << ri.ref_len(i) << "\n";
     }
     std::cout << "@PG\tID:mindex_map\tPN:mapper\tVN:0.0.1\t"
               << "CL:" << cmdline << "\n";
@@ -135,8 +135,8 @@ inline void write_sam_mappings(mapping_cache_info& map_cache_out, fastx_parser::
 
             // if both reads are mapped 
             if (map_type == mapping::util::MappingType::MAPPED_PAIR) {
-              pos_first = ah.pos;
-              pos_second = ah.mate_pos;
+              pos_first = ah.pos+1;
+              pos_second = ah.mate_pos+1;
 
               if (ah.is_fw) {
                 flag_first += mate_rc;
@@ -182,7 +182,7 @@ inline void write_sam_mappings(mapping_cache_info& map_cache_out, fastx_parser::
             } else if (map_type == mapping::util::MappingType::MAPPED_SECOND_ORPHAN) {
 
               pos_first = 0;
-              pos_second = ah.pos; 
+              pos_second = ah.pos+1; 
 
               sptr_first = &record.first.seq;
               sptr_second = &record.second.seq;
@@ -201,7 +201,7 @@ inline void write_sam_mappings(mapping_cache_info& map_cache_out, fastx_parser::
             osstream << record.first.name << "\t" << flag_first << "\t"
                      << ((flag_first & unmapped) ? "*" : ref_name)  << '\t' // if mapped RNAME, else *
                      << pos_first << '\t' // POS 
-                     << "255\t*\t" // MAPQ & CIGAR
+                     << "255\t" << record.first.seq.length() << "M\t" // MAPQ & CIGAR
                      << ((flag_first & mate_unmapped) ? '*' : '=') << '\t' // RNEXT
                      << pos_second << '\t' // PNEXT
                      << ah.frag_len() << '\t' 
@@ -209,7 +209,7 @@ inline void write_sam_mappings(mapping_cache_info& map_cache_out, fastx_parser::
             osstream << record.second.name << "\t" << flag_second << "\t"
                      << ((flag_second & unmapped) ? "*" : ref_name)  << '\t' // if mapped RNAME, else *
                      << pos_second << '\t' // POS 
-                     << "255\t*\t" // MAPQ & CIGAR
+                     << "255\t" << record.second.seq.length() << "M\t" // MAPQ & CIGAR
                      << ((flag_second & mate_unmapped) ? '*' : '=') << '\t' // RNEXT
                      << pos_first << '\t' // PNEXT
                      << -ah.frag_len() << '\t' 
