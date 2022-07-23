@@ -106,20 +106,20 @@ inline void write_sam_mappings(mapping_cache_info& map_cache_out, fastx_parser::
         uint16_t base_flag_first = 0;
         uint16_t base_flag_second = 0;
         switch (map_type) {
-          case mapping::util::MappingType::MAPPED_FIRST_ORPHAN:
-            base_flag_first = 73;
-            base_flag_second = 133;
-            break;
-          case mapping::util::MappingType::MAPPED_SECOND_ORPHAN:
-            base_flag_first = 69;
-            base_flag_second = 137;
-            break;
-          case mapping::util::MappingType::MAPPED_PAIR:
-            base_flag_first = 67;
-            base_flag_second = 131;
-            break;
-          default:
-            break;
+            case mapping::util::MappingType::MAPPED_FIRST_ORPHAN:
+                base_flag_first = 73;
+                base_flag_second = 133;
+                break;
+            case mapping::util::MappingType::MAPPED_SECOND_ORPHAN:
+                base_flag_first = 69;
+                base_flag_second = 137;
+                break;
+            case mapping::util::MappingType::MAPPED_PAIR:
+                base_flag_first = 67;
+                base_flag_second = 131;
+                break;
+            default:
+                break;
         }
 
         bool have_rc_first = false;
@@ -127,93 +127,126 @@ inline void write_sam_mappings(mapping_cache_info& map_cache_out, fastx_parser::
         for (auto& ah : map_cache_out.accepted_hits) {
             uint16_t flag_first = secondary ? base_flag_first + is_secondary : base_flag_first;
             uint16_t flag_second = secondary ? base_flag_second + is_secondary : base_flag_second;
- 
+
             std::string* sptr_first = nullptr;
             std::string* sptr_second = nullptr;
-            int32_t pos_first = 0; 
-            int32_t pos_second = 0; 
+            int32_t pos_first = 0;
+            int32_t pos_second = 0;
 
-            // if both reads are mapped 
+            // if both reads are mapped
             if (map_type == mapping::util::MappingType::MAPPED_PAIR) {
-              pos_first = ah.pos+1;
-              pos_second = ah.mate_pos+1;
+                pos_first = ah.pos + 1;
+                pos_second = ah.mate_pos + 1;
 
-              if (ah.is_fw) {
-                flag_first += mate_rc;
-                sptr_first = &record.first.seq;
+                if (ah.is_fw) {
+                    flag_first += mate_rc;
+                    sptr_first = &record.first.seq;
 
-                flag_second += is_rc;
-                if (!have_rc_second) {
-                  have_rc_second = true;
-                  combinelib::kmers::reverseComplement(record.second.seq, workstr_right);
+                    flag_second += is_rc;
+                    if (!have_rc_second) {
+                        have_rc_second = true;
+                        combinelib::kmers::reverseComplement(record.second.seq, workstr_right);
+                    }
+                    sptr_second = &workstr_right;
+                } else {
+                    flag_first += is_rc;
+                    if (!have_rc_first) {
+                        have_rc_first = true;
+                        combinelib::kmers::reverseComplement(record.first.seq, workstr_left);
+                    }
+                    sptr_first = &workstr_left;
+
+                    flag_second += mate_rc;
+                    sptr_second = &record.second.seq;
                 }
-                sptr_second = &workstr_right;
-              } else {
-                
-                flag_first += is_rc; 
-                if (!have_rc_first) {
-                  have_rc_first = true;
-                  combinelib::kmers::reverseComplement(record.first.seq, workstr_left);
-                }
-                sptr_first = &workstr_left;
-
-                flag_second += mate_rc;
-                sptr_second = &record.second.seq;
-              }
             } else if (map_type == mapping::util::MappingType::MAPPED_FIRST_ORPHAN) {
+                pos_first = ah.pos;
+                pos_second = 0;
 
-              pos_first = ah.pos;
-              pos_second = 0; 
+                sptr_first = &record.first.seq;
+                sptr_second = &record.second.seq;
 
-              sptr_first = &record.first.seq;
-              sptr_second = &record.second.seq;
+                if (!ah.is_fw) {  // if the mapped read is rc
+                    flag_first += is_rc;
+                    if (!have_rc_first) {
+                        have_rc_first = true;
+                        combinelib::kmers::reverseComplement(record.first.seq, workstr_left);
+                    }
+                    sptr_first = &workstr_left;
 
-              if (!ah.is_fw) { // if the mapped read is rc
-                flag_first += is_rc;
-                if (!have_rc_first){
-                  have_rc_first = true;
-                  combinelib::kmers::reverseComplement(record.first.seq, workstr_left);
+                    flag_second += mate_rc;
                 }
-                sptr_first = &workstr_left;
-
-                flag_second += mate_rc;
-              } 
 
             } else if (map_type == mapping::util::MappingType::MAPPED_SECOND_ORPHAN) {
+                pos_first = 0;
+                pos_second = ah.pos + 1;
 
-              pos_first = 0;
-              pos_second = ah.pos+1; 
-
-              sptr_first = &record.first.seq;
-              sptr_second = &record.second.seq;
-              if (!ah.is_fw) {
-                flag_first += mate_rc;
-                flag_second += is_rc;
-                if (!have_rc_second) {
-                  have_rc_second = true;
-                  combinelib::kmers::reverseComplement(record.second.seq, workstr_right);
+                sptr_first = &record.first.seq;
+                sptr_second = &record.second.seq;
+                if (!ah.is_fw) {
+                    flag_first += mate_rc;
+                    flag_second += is_rc;
+                    if (!have_rc_second) {
+                        have_rc_second = true;
+                        combinelib::kmers::reverseComplement(record.second.seq, workstr_right);
+                    }
+                    sptr_second = &workstr_right;
                 }
-                sptr_second = &workstr_right;
-              }
             }
 
+            auto print_pos_mapq_cigar = [](bool mapped, int32_t pos, int32_t read_len,
+                                           int32_t ref_len, std::ostream& os) {
+                if (!mapped) {
+                    os << "0\t255\t*\t";
+                    return;
+                }
+                int32_t pad_start = 0;
+                int32_t pad_end = 0;
+                int32_t m_len = read_len;
+
+                if (pos + read_len >= ref_len) {
+                    pad_end = (pos + read_len) - ref_len + 1;
+                    m_len -= pad_end;
+                }
+
+                if (pos <= 0) {
+                    pad_start = (-pos) + 1;
+                    m_len -= pad_start;
+                    pos = 1;
+                }
+
+                os << pos << "\t255\t";
+
+                if (pad_start > 0) { os << pad_start << "S"; }
+                if (pad_end > 0) {
+                    os << m_len << 'M' << pad_end << "S\t";
+                } else {
+                    os << m_len << "M\t";
+                }
+            };
+
             const auto ref_name = map_cache_out.hs.get_index()->ref_name(ah.tid);
+            const int32_t ref_len =
+                static_cast<int32_t>(map_cache_out.hs.get_index()->ref_len(ah.tid));
+
             osstream << record.first.name << "\t" << flag_first << "\t"
-                     << ((flag_first & unmapped) ? "*" : ref_name)  << '\t' // if mapped RNAME, else *
-                     << pos_first << '\t' // POS 
-                     << "255\t" << record.first.seq.length() << "M\t" // MAPQ & CIGAR
-                     << ((flag_first & mate_unmapped) ? '*' : '=') << '\t' // RNEXT
-                     << pos_second << '\t' // PNEXT
-                     << ah.frag_len() << '\t' 
-                     << *sptr_first << "\t*\n";
+                     << ((flag_first & unmapped) ? "*" : ref_name)
+                     << '\t';  // if mapped RNAME, else *
+            print_pos_mapq_cigar(!(flag_first & unmapped), pos_first,
+                                 static_cast<int32_t>(record.first.seq.length()), ref_len,
+                                 osstream);
+            osstream << ((flag_first & mate_unmapped) ? '*' : '=') << '\t'  // RNEXT
+                     << ((flag_first & mate_unmapped) ? 0 : std::max(1, pos_second)) << '\t'                                  // PNEXT
+                     << ah.frag_len() << '\t' << *sptr_first << "\t*\n";
             osstream << record.second.name << "\t" << flag_second << "\t"
-                     << ((flag_second & unmapped) ? "*" : ref_name)  << '\t' // if mapped RNAME, else *
-                     << pos_second << '\t' // POS 
-                     << "255\t" << record.second.seq.length() << "M\t" // MAPQ & CIGAR
-                     << ((flag_second & mate_unmapped) ? '*' : '=') << '\t' // RNEXT
-                     << pos_first << '\t' // PNEXT
-                     << -ah.frag_len() << '\t' 
-                     << *sptr_second << "\t*\n";
+                     << ((flag_second & unmapped) ? "*" : ref_name)
+                     << '\t';  // if mapped RNAME, else *
+            print_pos_mapq_cigar(!(flag_second & unmapped), pos_second,
+                                 static_cast<int32_t>(record.second.seq.length()), ref_len,
+                                 osstream);
+            osstream << ((flag_second & mate_unmapped) ? '*' : '=') << '\t'  // RNEXT
+                     << ((flag_second & mate_unmapped) ? 0 : std::max(1, pos_first)) << '\t'                                  // PNEXT
+                     << -ah.frag_len() << '\t' << *sptr_second << "\t*\n";
             secondary = true;
         }
     } else {
