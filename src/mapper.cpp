@@ -43,15 +43,17 @@ bool map_fragment(fastx_parser::ReadPair& record, mapping_cache_info& map_cache_
     bool early_exit_left = mapping::util::map_read(&record.first.seq, map_cache_left);
     bool early_exit_right = mapping::util::map_read(&record.second.seq, map_cache_right);
 
-    mapping::util::merge_se_mappings(map_cache_left, map_cache_right, map_cache_out);
+    int32_t left_len = static_cast<int32_t>(record.first.seq.length());
+    int32_t right_len = static_cast<int32_t>(record.second.seq.length());
+    mapping::util::merge_se_mappings(map_cache_left, map_cache_right, left_len, right_len,
+                                     map_cache_out);
 
     return (early_exit_left or early_exit_right);
 }
 
-inline void write_sam_mappings(mapping_cache_info& map_cache_out,
-                               fastx_parser::ReadSeq& record, std::string& workstr_left,
-                               std::string& workstr_right, std::atomic<uint64_t>& global_nhits,
-                               std::ostringstream& osstream) {
+inline void write_sam_mappings(mapping_cache_info& map_cache_out, fastx_parser::ReadSeq& record,
+                               std::string& workstr_left, std::string& workstr_right,
+                               std::atomic<uint64_t>& global_nhits, std::ostringstream& osstream) {
     (void)workstr_right;
     constexpr uint16_t is_secondary = 256;
     constexpr uint16_t is_rc = 16;
@@ -72,9 +74,9 @@ inline void write_sam_mappings(mapping_cache_info& map_cache_out,
             } else {
                 sptr = &record.seq;
             }
-            osstream << record.name << "\t" << flag << "\t" << map_cache_out.hs.get_index()->ref_name(ah.tid) << "\t"
-                     << ah.pos + 1 << "\t255\t*\t*\t0\t" << record.seq.length() << "\t" << *sptr
-                     << "\t*\n";
+            osstream << record.name << "\t" << flag << "\t"
+                     << map_cache_out.hs.get_index()->ref_name(ah.tid) << "\t" << ah.pos + 1
+                     << "\t255\t*\t*\t0\t" << record.seq.length() << "\t" << *sptr << "\t*\n";
             secondary = true;
         }
     } else {
@@ -84,38 +86,140 @@ inline void write_sam_mappings(mapping_cache_info& map_cache_out,
 }
 
 // paired-end
-inline void write_sam_mappings(mapping_cache_info& map_cache_out,
-                               fastx_parser::ReadPair& record, std::string& workstr_left,
-                               std::string& workstr_right, std::atomic<uint64_t>& global_nhits,
-                               std::ostringstream& osstream) {
+inline void write_sam_mappings(mapping_cache_info& map_cache_out, fastx_parser::ReadPair& record,
+                               std::string& workstr_left, std::string& workstr_right,
+                               std::atomic<uint64_t>& global_nhits, std::ostringstream& osstream) {
     (void)workstr_right;
     constexpr uint16_t is_secondary = 256;
     constexpr uint16_t is_rc = 16;
+    constexpr uint16_t mate_rc = 32;
+    constexpr uint16_t unmapped = 4;
+    constexpr uint16_t mate_unmapped = 8;
+
+    auto map_type = map_cache_out.map_type;
 
     if (!map_cache_out.accepted_hits.empty()) {
         ++global_nhits;
         bool secondary = false;
-        for (auto& ah : map_cache_out.accepted_hits) {
-            uint16_t flag = secondary ? is_secondary : 0;
-            // flag += 2;
-            flag += ah.is_fw ? 0 : is_rc;
-            // flag += first_seg;
 
-            std::string* sptr = nullptr;
-            if (is_rc) {
-                combinelib::kmers::reverseComplement(record.first.seq, workstr_left);
-                sptr = &workstr_left;
-            } else {
-                sptr = &record.first.seq;
+        uint16_t base_flag_first = 0;
+        uint16_t base_flag_second = 0;
+        switch (map_type) {
+          case mapping::util::MappingType::MAPPED_FIRST_ORPHAN:
+            base_flag_first = 73;
+            base_flag_second = 133;
+            break;
+          case mapping::util::MappingType::MAPPED_SECOND_ORPHAN:
+            base_flag_first = 69;
+            base_flag_second = 137;
+            break;
+          case mapping::util::MappingType::MAPPED_PAIR:
+            base_flag_first = 67;
+            base_flag_second = 131;
+            break;
+          default:
+            break;
+        }
+
+        bool have_rc_first = false;
+        bool have_rc_second = false;
+        for (auto& ah : map_cache_out.accepted_hits) {
+            uint16_t flag_first = secondary ? base_flag_first + is_secondary : base_flag_first;
+            uint16_t flag_second = secondary ? base_flag_second + is_secondary : base_flag_second;
+ 
+            std::string* sptr_first = nullptr;
+            std::string* sptr_second = nullptr;
+            int32_t pos_first = 0; 
+            int32_t pos_second = 0; 
+
+            // if both reads are mapped 
+            if (map_type == mapping::util::MappingType::MAPPED_PAIR) {
+              pos_first = ah.pos;
+              pos_second = ah.mate_pos;
+
+              if (ah.is_fw) {
+                flag_first += mate_rc;
+                sptr_first = &record.first.seq;
+
+                flag_second += is_rc;
+                if (!have_rc_second) {
+                  have_rc_second = true;
+                  combinelib::kmers::reverseComplement(record.second.seq, workstr_right);
+                }
+                sptr_second = &workstr_right;
+              } else {
+                
+                flag_first += is_rc; 
+                if (!have_rc_first) {
+                  have_rc_first = true;
+                  combinelib::kmers::reverseComplement(record.first.seq, workstr_left);
+                }
+                sptr_first = &workstr_left;
+
+                flag_second += mate_rc;
+                sptr_second = &record.second.seq;
+              }
+            } else if (map_type == mapping::util::MappingType::MAPPED_FIRST_ORPHAN) {
+
+              pos_first = ah.pos;
+              pos_second = 0; 
+
+              sptr_first = &record.first.seq;
+              sptr_second = &record.second.seq;
+
+              if (!ah.is_fw) { // if the mapped read is rc
+                flag_first += is_rc;
+                if (!have_rc_first){
+                  have_rc_first = true;
+                  combinelib::kmers::reverseComplement(record.first.seq, workstr_left);
+                }
+                sptr_first = &workstr_left;
+
+                flag_second += mate_rc;
+              } 
+
+            } else if (map_type == mapping::util::MappingType::MAPPED_SECOND_ORPHAN) {
+
+              pos_first = 0;
+              pos_second = ah.pos; 
+
+              sptr_first = &record.first.seq;
+              sptr_second = &record.second.seq;
+              if (!ah.is_fw) {
+                flag_first += mate_rc;
+                flag_second += is_rc;
+                if (!have_rc_second) {
+                  have_rc_second = true;
+                  combinelib::kmers::reverseComplement(record.second.seq, workstr_right);
+                }
+                sptr_second = &workstr_right;
+              }
             }
-            osstream << record.first.name << "\t" << flag << "\t" << map_cache_out.hs.get_index()->ref_name(ah.tid) << "\t"
-                     << ah.pos + 1 << "\t255\t*\t*\t0\t" << record.first.seq.length() << "\t" << *sptr
-                     << "\t*\n";
+
+            const auto ref_name = map_cache_out.hs.get_index()->ref_name(ah.tid);
+            osstream << record.first.name << "\t" << flag_first << "\t"
+                     << ((flag_first & unmapped) ? "*" : ref_name)  << '\t' // if mapped RNAME, else *
+                     << pos_first << '\t' // POS 
+                     << "255\t*\t" // MAPQ & CIGAR
+                     << ((flag_first & mate_unmapped) ? '*' : '=') << '\t' // RNEXT
+                     << pos_second << '\t' // PNEXT
+                     << ah.frag_len() << '\t' 
+                     << *sptr_first << "\t*\n";
+            osstream << record.second.name << "\t" << flag_second << "\t"
+                     << ((flag_second & unmapped) ? "*" : ref_name)  << '\t' // if mapped RNAME, else *
+                     << pos_second << '\t' // POS 
+                     << "255\t*\t" // MAPQ & CIGAR
+                     << ((flag_second & mate_unmapped) ? '*' : '=') << '\t' // RNEXT
+                     << pos_first << '\t' // PNEXT
+                     << -ah.frag_len() << '\t' 
+                     << *sptr_second << "\t*\n";
             secondary = true;
         }
     } else {
-        osstream << record.first.name << "\t" << 4 << "\t"
+        osstream << record.first.name << "\t" << 77 << "\t"
                  << "*\t0\t0\t*\t*\t0\t0\t" << record.first.seq << "\t*\n";
+        osstream << record.second.name << "\t" << 141 << "\t"
+                 << "*\t0\t0\t*\t*\t0\t0\t" << record.second.seq << "\t*\n";
     }
 }
 
@@ -123,8 +227,6 @@ template <typename FragT>
 void do_map(mindex::reference_index& ri, fastx_parser::FastxParser<FragT>& parser,
             std::atomic<uint64_t>& global_nr, std::atomic<uint64_t>& global_nhits,
             std::mutex& iomut) {
-    CanonicalKmer::k(ri.k());
-
     mapping_cache_info map_cache_left(ri);
     mapping_cache_info map_cache_right(ri);
     mapping_cache_info map_cache_out(ri);
@@ -134,7 +236,7 @@ void do_map(mindex::reference_index& ri, fastx_parser::FastxParser<FragT>& parse
     uint64_t read_num = 0;
     uint64_t processed = 0;
     uint64_t buff_size = 10000;
-    
+
     // these don't really belong here
     std::string workstr_left;
     std::string workstr_right;
@@ -165,7 +267,7 @@ void do_map(mindex::reference_index& ri, fastx_parser::FastxParser<FragT>& parse
             (void)had_early_stop;
 
             write_sam_mappings(map_cache_out, record, workstr_left, workstr_right, global_nhits,
-                                osstream);
+                               osstream);
 
             if (processed >= buff_size) {
                 std::string o = osstream.str();
@@ -253,6 +355,9 @@ int main(int argc, char** argv) {
     print_header(ri, cmdline);
 
     std::mutex iomut;
+
+    // set the canonical k-mer size globally
+    CanonicalKmer::k(ri.k());
 
     // if we have paired-end data
     if (read_opt->empty()) {

@@ -19,6 +19,9 @@ namespace mapping {
 
 namespace util {
 
+constexpr int32_t invalid_frag_len = std::numeric_limits<int32_t>::min();
+constexpr int32_t invalid_mate_pos = std::numeric_limits<int32_t>::min();
+
 struct simple_hit {
     bool is_fw{false};
     bool mate_is_fw{false};
@@ -26,13 +29,18 @@ struct simple_hit {
     float score{0.0};
     uint32_t num_hits{0};
     uint32_t tid{std::numeric_limits<uint32_t>::max()};
-    bool valid_pos(int32_t read_len, uint32_t txp_len, int32_t max_over) {
+    int32_t mate_pos{std::numeric_limits<int32_t>::max()};
+    int32_t fragment_length{std::numeric_limits<int32_t>::max()};
+    inline bool valid_pos(int32_t read_len, uint32_t txp_len, int32_t max_over) {
         int32_t signed_txp_len = static_cast<int32_t>(txp_len);
         return (pos > -max_over) and ((pos + read_len) < (signed_txp_len + max_over));
     }
+    inline bool has_mate() const { return mate_pos != invalid_mate_pos; }
+    inline bool mate_is_mapped() const { return mate_pos != invalid_mate_pos; }
+    inline int32_t frag_len() const { return (fragment_length != invalid_frag_len) ? fragment_length : 0; }
 };
 
-enum class MappingType : uint8_t { UNMAPPED, SINGLE_MAPPED };
+enum class MappingType : uint8_t { UNMAPPED, SINGLE_MAPPED , MAPPED_FIRST_ORPHAN, MAPPED_SECOND_ORPHAN, MAPPED_PAIR };
 
 enum class HitDirection : uint8_t { FW, RC, BOTH };
 
@@ -186,6 +194,7 @@ public:
     // regardless of having full mappings, did any k-mers match
     bool has_matching_kmers{false};
 };
+
 inline bool map_read(std::string* read_seq, mapping_cache_info& map_cache) {
     map_cache.clear();
     // rebind map_cache variables to
@@ -367,8 +376,8 @@ inline bool map_read(std::string* read_seq, mapping_cache_info& map_cache) {
 }
 
 inline void merge_se_mappings(mapping_cache_info& map_cache_left,
-                              mapping_cache_info& map_cache_right,
-                              mapping_cache_info& map_cache_out) {
+                              mapping_cache_info& map_cache_right, int32_t left_len,
+                              int32_t right_len, mapping_cache_info& map_cache_out) {
     map_cache_out.clear();
     auto& accepted_left = map_cache_left.accepted_hits;
     auto& accepted_right = map_cache_right.accepted_hits;
@@ -420,7 +429,7 @@ inline void merge_se_mappings(mapping_cache_info& map_cache_left,
         using iter_t = decltype(first_fw1);
         using out_iter_t = decltype(back_inserter);
 
-        auto merge_lists = [](iter_t first1, iter_t last1, iter_t first2, iter_t last2,
+        auto merge_lists = [left_len, right_len](iter_t first1, iter_t last1, iter_t first2, iter_t last2,
                               out_iter_t out) -> out_iter_t {
             // https://en.cppreference.com/w/cpp/algorithm/set_intersection
             while (first1 != last1 && first2 != last2) {
@@ -433,7 +442,14 @@ inline void merge_se_mappings(mapping_cache_info& map_cache_left,
                         int32_t pos_rc = first1->is_fw ? first2->pos : first1->pos;
                         int32_t frag_len = (pos_rc - pos_fw);
                         if ((-20 < frag_len) and (frag_len < 1000)) {
-                            *out++ = {first1->is_fw, first2->is_fw, pos_fw, 0.0, 0, first1->tid};
+                            // if left is fw and right is rc then
+                            // fragment length is (right_pos + right_len - left_pos) + 1
+                            // otherwise it is (left_pos + left_len - right_pos) + 1
+                            bool right_is_rc = !first2->is_fw;
+                            int32_t tlen =
+                                right_is_rc ? ((first2->pos + right_len - first1->pos) + 1)
+                                            : ((first1->pos + left_len - first2->pos) + 1);
+                            *out++ = {first1->is_fw, first2->is_fw, first1->pos, 0.0, 0, first1->tid, first2->pos, tlen};
                             ++first1;
                         }
                     }
@@ -447,12 +463,19 @@ inline void merge_se_mappings(mapping_cache_info& map_cache_left,
         merge_lists(first_fw1, last_fw1, first_rc2, last_rc2, back_inserter);
         // find hits of form 1:rc, 2:fw
         merge_lists(first_rc1, last_rc1, first_fw2, last_fw2, back_inserter);
+
+        map_cache_out.map_type = (map_cache_out.accepted_hits.size() > 0) ?
+          MappingType::MAPPED_PAIR : MappingType::UNMAPPED;
     } else if ((num_accepted_left > 0) and !had_matching_kmers_right) {
         // just return the left mappings
         std::swap(map_cache_left.accepted_hits, map_cache_out.accepted_hits);
+        map_cache_out.map_type = (map_cache_out.accepted_hits.size() > 0) ?
+          MappingType::MAPPED_FIRST_ORPHAN : MappingType::UNMAPPED;
     } else if ((num_accepted_right > 0) and !had_matching_kmers_left) {
         // just return the right mappings
         std::swap(map_cache_right.accepted_hits, map_cache_out.accepted_hits);
+        map_cache_out.map_type = (map_cache_out.accepted_hits.size() > 0) ?
+          MappingType::MAPPED_SECOND_ORPHAN : MappingType::UNMAPPED;
     } else {
         // return nothing
     }
