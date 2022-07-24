@@ -125,24 +125,31 @@ size_t write_rad_header_bulk(mindex::reference_index& ri, bool is_paired, std::o
 
     // read-level tag description
     // will hold the type of mappings for the read
-    uint8_t type_id{1};
+    uint16_t read_level_tags{2};
+    bw << read_level_tags;
 
+    uint8_t type_id{1};
     // fragment mapping type
     // unmapped, mapped single, orphan_left, orphan_right, paired_end
     bw << std::string("frag_map_type");
-    type_id = 1;  // 1 byte
     bw << type_id;
 
     // alignment-level tag description
-    uint16_t aln_level_tags{2};
+    uint16_t aln_level_tags{3};
     bw << aln_level_tags;
 
-    // read_pair_ori, refid, frag length
-    bw << std::string("ori_ref_pos");
-    type_id = 4;
+    // read_pair_ori, refid
+    bw << std::string("compressed_ori_ref");
+    type_id = 3;
     bw << type_id;
 
-    bw << std::string("ori_ref_pos");
+    // fragment start position 
+    bw << std::string("pos");
+    type_id = 3;
+    bw << type_id;
+
+    // fragment length
+    bw << std::string("frag_len");
     type_id = 2;
     bw << type_id;
 
