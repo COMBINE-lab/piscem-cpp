@@ -16,7 +16,7 @@
 #include "../include/sc/util.hpp"
 #include "../include/spdlog/spdlog.h"
 #include "../include/spdlog/sinks/stdout_color_sinks.h"
-#include "../include/json.hpp"
+#include "../include/meta_info.hpp"
 #include "../include/mapping/utils.hpp"
 #include "FastxParser.cpp"
 //#include "hit_searcher.cpp"
@@ -245,47 +245,6 @@ bool set_geometry(std::string& library_geometry, protocol_t& pt,
     return true;
 }
 
-class run_stats {
-public:
-    run_stats() = default;
-    void cmd_line(std::string& cmd_line_in) { cmd_line_ = cmd_line_in; }
-    void num_reads(uint64_t num_reads_in) { num_reads_ = num_reads_in; }
-    void num_hits(uint64_t num_hits_in) { num_hits_ = num_hits_in; }
-    void num_seconds(double num_sec) { num_seconds_ = num_sec; }
-
-    std::string cmd_line() const { return cmd_line_; }
-    uint64_t num_reads() const { return num_reads_; }
-    uint64_t num_hits() const { return num_hits_; }
-    double num_seconds() const { return num_seconds_; }
-
-private:
-    std::string cmd_line_{""};
-    uint64_t num_reads_{0};
-    uint64_t num_hits_{0};
-    double num_seconds_{0};
-};
-
-bool write_map_info(run_stats& rs, ghc::filesystem::path& map_info_file_path) {
-    using json = nlohmann::json;
-
-    json j;
-    j["cmdline"] = rs.cmd_line();
-    j["num_reads"] = rs.num_reads();
-    j["num_mapped"] = rs.num_hits();
-    double percent_mapped = (100.0 * static_cast<double>(rs.num_hits())) / rs.num_reads();
-    j["percent_mapped"] = percent_mapped;
-    j["runtime_seconds"] = rs.num_seconds();
-    // write prettified JSON to another file
-    std::ofstream o(map_info_file_path.string());
-
-    if (!o.good()) { return false; }
-
-    o << std::setw(4) << j << std::endl;
-
-    if (!o) { return false; }
-    return true;
-}
-
 struct pesc_options {
   std::string index_basename;
   std::vector<std::string> left_read_filenames;
@@ -467,14 +426,14 @@ int run_pesc(int argc, char** argv) {
 
     auto end_t = std::chrono::high_resolution_clock::now();
     auto num_sec = std::chrono::duration_cast<std::chrono::seconds>(end_t - start_t);
-    run_stats rs;
+    piscem::meta_info::run_stats rs;
     rs.cmd_line(cmdline);
     rs.num_reads(global_nr.load());
     rs.num_hits(global_nh.load());
     rs.num_seconds(num_sec.count());
 
     ghc::filesystem::path map_info_file_path = output_path / "map_info.json";
-    bool info_ok = write_map_info(rs, map_info_file_path);
+    bool info_ok = piscem::meta_info::write_map_info(rs, map_info_file_path);
     if (!info_ok) { spdlog::critical("failed to write map_info.json file"); }
 
     return 0;

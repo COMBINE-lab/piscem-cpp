@@ -3,7 +3,12 @@
 #include "../include/mapping/utils.hpp"
 #include "../include/spdlog/spdlog.h"
 #include "../include/spdlog/sinks/stdout_color_sinks.h"
+#include "../include/rad/rad_writer.hpp"
+#include "../include/rad/rad_header.hpp"
+#include "../include/rad/util.hpp"
+#include "../include/ghc/filesystem.hpp"
 #include "../include/cli11/CLI11.hpp"
+#include "../include/meta_info.hpp"
 #include "../include/FastxParser.hpp"
 #include "FastxParser.cpp"
 #include "zlib.h"
@@ -19,6 +24,26 @@
 
 using namespace klibpp;
 using mapping::util::mapping_cache_info;
+
+// utility class that wraps the information we will
+// need access to when writing output within each thread
+// as well as information we'll need to update for the
+// caller.
+class mapping_output_info {
+public:
+    // will keep track of the total number
+    // of chunks written to rad_file
+    std::atomic<size_t> num_chunks{0};
+    // the output stream where the actual
+    // RAD records are written
+    std::ofstream rad_file;
+    // the mutex for safely writing to
+    // rad_file
+    std::mutex rad_mutex;
+
+    // will record the total number of observed fragments
+    std::atomic<size_t> observed_fragments{0};
+};
 
 void print_header(mindex::reference_index& ri, std::string& cmdline) {
     std::cout << "@HD\tVN:1.0\tSO:unsorted\n";
@@ -236,7 +261,8 @@ inline void write_sam_mappings(mapping_cache_info& map_cache_out, fastx_parser::
                                  static_cast<int32_t>(record.first.seq.length()), ref_len,
                                  osstream);
             osstream << ((flag_first & mate_unmapped) ? '*' : '=') << '\t'  // RNEXT
-                     << ((flag_first & mate_unmapped) ? 0 : std::max(1, pos_second)) << '\t'                                  // PNEXT
+                     << ((flag_first & mate_unmapped) ? 0 : std::max(1, pos_second))
+                     << '\t'  // PNEXT
                      << ah.frag_len() << '\t' << *sptr_first << "\t*\n";
             osstream << record.second.name << "\t" << flag_second << "\t"
                      << ((flag_second & unmapped) ? "*" : ref_name)
@@ -245,7 +271,8 @@ inline void write_sam_mappings(mapping_cache_info& map_cache_out, fastx_parser::
                                  static_cast<int32_t>(record.second.seq.length()), ref_len,
                                  osstream);
             osstream << ((flag_second & mate_unmapped) ? '*' : '=') << '\t'  // RNEXT
-                     << ((flag_second & mate_unmapped) ? 0 : std::max(1, pos_first)) << '\t'                                  // PNEXT
+                     << ((flag_second & mate_unmapped) ? 0 : std::max(1, pos_first))
+                     << '\t'  // PNEXT
                      << -ah.frag_len() << '\t' << *sptr_second << "\t*\n";
             secondary = true;
         }
@@ -260,16 +287,27 @@ inline void write_sam_mappings(mapping_cache_info& map_cache_out, fastx_parser::
 template <typename FragT>
 void do_map(mindex::reference_index& ri, fastx_parser::FastxParser<FragT>& parser,
             std::atomic<uint64_t>& global_nr, std::atomic<uint64_t>& global_nhits,
+            mapping_output_info& out_info,
             std::mutex& iomut) {
     mapping_cache_info map_cache_left(ri);
     mapping_cache_info map_cache_right(ri);
     mapping_cache_info map_cache_out(ri);
 
+    rad_writer rad_w;
+    size_t max_chunk_reads = 5000;
+    // reserve the space to later write
+    // down the number of reads in the
+    // first chunk.
+    uint32_t num_reads_in_chunk{0};
+    rad_w << num_reads_in_chunk;
+    rad_w << num_reads_in_chunk;
+
     sshash::streaming_query_canonical_parsing q(ri.get_dict());
     mindex::hit_searcher hs(&ri);
     uint64_t read_num = 0;
-    uint64_t processed = 0;
-    uint64_t buff_size = 10000;
+    // SAM output
+    // uint64_t processed = 0;
+    // uint64_t buff_size = 10000;
 
     // these don't really belong here
     std::string workstr_left;
@@ -290,7 +328,9 @@ void do_map(mindex::reference_index& ri, fastx_parser::FastxParser<FragT>& parse
             auto rctr = global_nr.load();
             auto hctr = global_nhits.load();
             if (rctr % 100000 == 0) {
+                iomut.lock();
                 std::cerr << "readnum : " << rctr << ", num_hits : " << hctr << "\n";
+                iomut.unlock();
             }
 
             // this *overloaded* function will just do the right thing.
@@ -300,6 +340,29 @@ void do_map(mindex::reference_index& ri, fastx_parser::FastxParser<FragT>& parse
                 map_fragment(record, map_cache_left, map_cache_right, map_cache_out);
             (void)had_early_stop;
 
+            // RAD output
+            global_nhits += map_cache_out.accepted_hits.empty() ? 0 : 1;
+            rad::util::write_to_rad_stream_bulk(map_cache_out.map_type, map_cache_out.accepted_hits,
+                                                num_reads_in_chunk, rad_w);
+
+            // dump buffer
+            if (num_reads_in_chunk > max_chunk_reads) {
+                out_info.num_chunks++;
+                uint32_t num_bytes = rad_w.num_bytes();
+                rad_w.write_integer_at_offset(0, num_bytes);
+                rad_w.write_integer_at_offset(sizeof(num_bytes), num_reads_in_chunk);
+                out_info.rad_mutex.lock();
+                out_info.rad_file << rad_w;
+                out_info.rad_mutex.unlock();
+                rad_w.clear();
+                num_reads_in_chunk = 0;
+
+                // reserve space for headers of next chunk
+                rad_w << num_reads_in_chunk;
+                rad_w << num_reads_in_chunk;
+            }
+
+            /* SAM output
             write_sam_mappings(map_cache_out, record, workstr_left, workstr_right, global_nhits,
                                osstream);
 
@@ -312,9 +375,24 @@ void do_map(mindex::reference_index& ri, fastx_parser::FastxParser<FragT>& parse
                 osstream.str("");
                 processed = 0;
             }
+            */
         }
     }
 
+    // RAD output: dump any remaining output
+    if (num_reads_in_chunk > 0) {
+        out_info.num_chunks++;
+        uint32_t num_bytes = rad_w.num_bytes();
+        rad_w.write_integer_at_offset(0, num_bytes);
+        rad_w.write_integer_at_offset(sizeof(num_bytes), num_reads_in_chunk);
+        out_info.rad_mutex.lock();
+        out_info.rad_file << rad_w;
+        out_info.rad_mutex.unlock();
+        rad_w.clear();
+        num_reads_in_chunk = 0;
+    }
+
+    /* SAM output 
     // dump any remaining output
     std::string o = osstream.str();
     iomut.lock();
@@ -323,6 +401,7 @@ void do_map(mindex::reference_index& ri, fastx_parser::FastxParser<FragT>& parse
     osstream.clear();
     // don't need this here because osstream goes away at end of scope
     // osstream.str("");
+    */
 }
 
 int main(int argc, char** argv) {
@@ -335,6 +414,7 @@ int main(int argc, char** argv) {
     std::vector<std::string> left_read_filenames;
     std::vector<std::string> right_read_filenames;
     std::vector<std::string> single_read_filenames;
+    std::string output_stem;
     size_t nthread{16};
     bool quiet{false};
 
@@ -361,6 +441,8 @@ int main(int argc, char** argv) {
 
     ogroup->require_option(1, 2);
 
+    app.add_option("-o,--output", output_stem, "the file stem where output should be written.")
+        ->required();
     app.add_option("-t,--threads", nthread,
                    "An integer that specifies the number of threads to use")
         ->default_val(16);
@@ -377,7 +459,12 @@ int main(int argc, char** argv) {
     if (quiet) { logger->set_level(spdlog::level::warn); }
     spdlog::set_default_logger(logger);
 
+    // start the timer
+    auto start_t = std::chrono::high_resolution_clock::now();
+
     mindex::reference_index ri(input_filename);
+
+    bool is_paired = read_opt->empty();
 
     std::string cmdline;
     size_t narg = static_cast<size_t>(argc);
@@ -386,17 +473,31 @@ int main(int argc, char** argv) {
         cmdline.push_back(' ');
     }
     cmdline.pop_back();
-    print_header(ri, cmdline);
+    // print_header(ri, cmdline);
+
+    ghc::filesystem::path rad_file_path = output_stem + ".rad";
+
+    std::ofstream rad_file(rad_file_path.string());
+    if (!rad_file.good()) {
+        spdlog::critical("Could not open {} for writing.", rad_file_path.string());
+        throw std::runtime_error("error creating output file.");
+    }
+
+    mapping_output_info out_info;
+    out_info.rad_file = std::move(rad_file);
+    size_t chunk_offset = rad::util::write_rad_header_bulk(ri, is_paired, out_info.rad_file);
 
     std::mutex iomut;
 
     // set the canonical k-mer size globally
     CanonicalKmer::k(ri.k());
+    std::atomic<uint64_t> global_nr{0};
+    std::atomic<uint64_t> global_nh{0};
+    uint32_t np = 1;
 
     // if we have paired-end data
     if (read_opt->empty()) {
         std::vector<std::thread> workers;
-        uint32_t np = 1;
         if ((left_read_filenames.size() > 1) and (nthread >= 6)) {
             np += 1;
             nthread -= 1;
@@ -406,11 +507,9 @@ int main(int argc, char** argv) {
             left_read_filenames, right_read_filenames, nthread, np);
         rparser.start();
 
-        std::atomic<uint64_t> global_nr{0};
-        std::atomic<uint64_t> global_nh{0};
         for (size_t i = 0; i < nthread; ++i) {
-            workers.push_back(std::thread([&ri, &rparser, &global_nr, &global_nh, &iomut]() {
-                do_map(ri, rparser, global_nr, global_nh, iomut);
+            workers.push_back(std::thread([&ri, &rparser, &global_nr, &global_nh, &out_info, &iomut]() {
+                do_map(ri, rparser, global_nr, global_nh, out_info, iomut);
             }));
         }
 
@@ -418,7 +517,6 @@ int main(int argc, char** argv) {
         rparser.stop();
     } else {  // single-end
         std::vector<std::thread> workers;
-        uint32_t np = 1;
         if ((single_read_filenames.size() > 1) and (nthread >= 6)) {
             np += 1;
             nthread -= 1;
@@ -428,17 +526,54 @@ int main(int argc, char** argv) {
                                                                  np);
         rparser.start();
 
-        std::atomic<uint64_t> global_nr{0};
-        std::atomic<uint64_t> global_nh{0};
         for (size_t i = 0; i < nthread; ++i) {
-            workers.push_back(std::thread([&ri, &rparser, &global_nr, &global_nh, &iomut]() {
-                do_map(ri, rparser, global_nr, global_nh, iomut);
+            workers.push_back(std::thread([&ri, &rparser, &global_nr, &global_nh, &out_info, &iomut]() {
+                do_map(ri, rparser, global_nr, global_nh, out_info, iomut);
             }));
         }
 
         for (auto& w : workers) { w.join(); }
         rparser.stop();
     }
+
+    spdlog::info("finished mapping.");
+
+    // rewind to the start of the file and write the number of
+    // chunks that we actually produced.
+    out_info.rad_file.seekp(chunk_offset);
+    uint64_t nc = out_info.num_chunks.load();
+    out_info.rad_file.write(reinterpret_cast<char*>(&nc), sizeof(nc));
+
+    out_info.rad_file.close();
+
+    // We want to check if the RAD file stream was written to
+    // properly. While we likely would have caught this earlier,
+    // it is possible the badbit may not be set until the stream
+    // actually flushes (perhaps even at close), so we check here
+    // one final time that the status of the stream is as
+    // expected. see :
+    // https://stackoverflow.com/questions/28342660/error-handling-in-stdofstream-while-writing-data
+    if (!out_info.rad_file) {
+        spdlog::critical(
+            "The RAD file stream had an invalid status after "
+            "close; so some operation(s) may"
+            "have failed!\nA common cause for this is lack "
+            "of output disk space.\n"
+            "Consequently, the output may be corrupted.\n\n");
+        return 1;
+    }
+
+    auto end_t = std::chrono::high_resolution_clock::now();
+    auto num_sec = std::chrono::duration_cast<std::chrono::seconds>(end_t - start_t);
+    piscem::meta_info::run_stats rs;
+    rs.cmd_line(cmdline);
+    rs.num_reads(global_nr.load());
+    rs.num_hits(global_nh.load());
+    rs.num_seconds(num_sec.count());
+
+    ghc::filesystem::path map_info_file_path = output_stem + ".map_info.json";
+    bool info_ok = piscem::meta_info::write_map_info(rs, map_info_file_path);
+    if (!info_ok) { spdlog::critical("failed to write map_info.json file"); }
 
     return 0;
 }

@@ -37,10 +37,18 @@ struct simple_hit {
     }
     inline bool has_mate() const { return mate_pos != invalid_mate_pos; }
     inline bool mate_is_mapped() const { return mate_pos != invalid_mate_pos; }
-    inline int32_t frag_len() const { return (fragment_length != invalid_frag_len) ? fragment_length : 0; }
+    inline int32_t frag_len() const {
+        return (fragment_length != invalid_frag_len) ? fragment_length : 0;
+    }
 };
 
-enum class MappingType : uint8_t { UNMAPPED, SINGLE_MAPPED , MAPPED_FIRST_ORPHAN, MAPPED_SECOND_ORPHAN, MAPPED_PAIR };
+enum class MappingType : uint8_t {
+    UNMAPPED = 0,
+    SINGLE_MAPPED = 1,
+    MAPPED_FIRST_ORPHAN = 2,
+    MAPPED_SECOND_ORPHAN = 3,
+    MAPPED_PAIR = 4
+};
 
 enum class HitDirection : uint8_t { FW, RC, BOTH };
 
@@ -429,8 +437,8 @@ inline void merge_se_mappings(mapping_cache_info& map_cache_left,
         using iter_t = decltype(first_fw1);
         using out_iter_t = decltype(back_inserter);
 
-        auto merge_lists = [left_len, right_len](iter_t first1, iter_t last1, iter_t first2, iter_t last2,
-                              out_iter_t out) -> out_iter_t {
+        auto merge_lists = [left_len, right_len](iter_t first1, iter_t last1, iter_t first2,
+                                                 iter_t last2, out_iter_t out) -> out_iter_t {
             // https://en.cppreference.com/w/cpp/algorithm/set_intersection
             while (first1 != last1 && first2 != last2) {
                 if (first1->tid < first2->tid) {
@@ -446,10 +454,11 @@ inline void merge_se_mappings(mapping_cache_info& map_cache_left,
                             // fragment length is (right_pos + right_len - left_pos) + 1
                             // otherwise it is (left_pos + left_len - right_pos) + 1
                             bool right_is_rc = !first2->is_fw;
-                            int32_t tlen =
-                                right_is_rc ? ((first2->pos + right_len - first1->pos) + 1)
-                                            : ((first1->pos + left_len - first2->pos) + 1);
-                            *out++ = {first1->is_fw, first2->is_fw, first1->pos, 0.0, 0, first1->tid, first2->pos, tlen};
+                            int32_t tlen = right_is_rc
+                                               ? ((first2->pos + right_len - first1->pos) + 1)
+                                               : ((first1->pos + left_len - first2->pos) + 1);
+                            *out++ = {first1->is_fw, first2->is_fw, first1->pos, 0.0, 0,
+                                      first1->tid,   first2->pos,   tlen};
                             ++first1;
                         }
                     }
@@ -464,18 +473,20 @@ inline void merge_se_mappings(mapping_cache_info& map_cache_left,
         // find hits of form 1:rc, 2:fw
         merge_lists(first_rc1, last_rc1, first_fw2, last_fw2, back_inserter);
 
-        map_cache_out.map_type = (map_cache_out.accepted_hits.size() > 0) ?
-          MappingType::MAPPED_PAIR : MappingType::UNMAPPED;
+        map_cache_out.map_type = (map_cache_out.accepted_hits.size() > 0) ? MappingType::MAPPED_PAIR
+                                                                          : MappingType::UNMAPPED;
     } else if ((num_accepted_left > 0) and !had_matching_kmers_right) {
         // just return the left mappings
         std::swap(map_cache_left.accepted_hits, map_cache_out.accepted_hits);
-        map_cache_out.map_type = (map_cache_out.accepted_hits.size() > 0) ?
-          MappingType::MAPPED_FIRST_ORPHAN : MappingType::UNMAPPED;
+        map_cache_out.map_type = (map_cache_out.accepted_hits.size() > 0)
+                                     ? MappingType::MAPPED_FIRST_ORPHAN
+                                     : MappingType::UNMAPPED;
     } else if ((num_accepted_right > 0) and !had_matching_kmers_left) {
         // just return the right mappings
         std::swap(map_cache_right.accepted_hits, map_cache_out.accepted_hits);
-        map_cache_out.map_type = (map_cache_out.accepted_hits.size() > 0) ?
-          MappingType::MAPPED_SECOND_ORPHAN : MappingType::UNMAPPED;
+        map_cache_out.map_type = (map_cache_out.accepted_hits.size() > 0)
+                                     ? MappingType::MAPPED_SECOND_ORPHAN
+                                     : MappingType::UNMAPPED;
     } else {
         // return nothing
     }
