@@ -125,7 +125,7 @@ size_t write_rad_header_bulk(mindex::reference_index& ri, bool is_paired, std::o
 
     // read-level tag description
     // will hold the type of mappings for the read
-    uint16_t read_level_tags{2};
+    uint16_t read_level_tags{1};
     bw << read_level_tags;
 
     uint8_t type_id{1};
@@ -256,6 +256,7 @@ inline void write_to_rad_stream_bulk(mapping::util::MappingType map_type,
                 // if we actually have a paird fragment get the
                 // leftmost position
                 leftmost_pos = std::min(aln.pos, aln.mate_pos);
+                frag_len = aln.frag_len();
                 // if the leftmost position is < 0, then adjust
                 // the overhang by setting the start position to 0
                 // and subtracting the overhang from the fragment
