@@ -94,18 +94,42 @@ struct sketch_hit_info {
         // the case.
         // This ensures that we don't double-count a k-mer that
         // might occur twice on this target.
+
+        // swap out the last hit if the position on the read is
+        // the same and we can (heuristic to help in the case of
+        // tandem repeats or highly-repetitive subsequence.
+        // NOTE: consider if a similar heuristic should be
+        // adopted for the forward case.
+        if ((read_pos == last_read_pos_rc) and (ref_pos > last_ref_pos_rc) and
+            (ref_pos < rightmost_bound_rc)) {
+
+            last_ref_pos_rc = ref_pos;
+            // if the read_pos was the same as the first read pos
+            // then also update the approx_end_pos_rc accordingly
+            // for the time being don't mess with that position
+            //if (read_pos == first_read_pos_rc) {
+            //  approx_end_pos_rc = ref_pos + read_pos;
+            //}
+
+            return added;
+        }
+
         if (ref_pos < last_ref_pos_rc and read_pos > last_read_pos_rc) {
             approx_pos_rc = (ref_pos - (rl - (read_pos + k)));
             if (last_read_pos_rc == -1) {
                 approx_end_pos_rc = ref_pos + read_pos;
+                first_read_pos_rc = read_pos;
             } else {
                 if (approx_end_pos_rc - approx_pos_rc > max_stretch) { return false; }
             }
-            // if (last_ref_pos_rc > -1 and ref_pos < last_ref_pos_rc - 15) { return false; }
-            last_ref_pos_rc = ref_pos;
-            last_read_pos_rc = read_pos;
             rc_score += score_inc;
             ++rc_hits;
+
+            // new
+            rightmost_bound_rc = last_ref_pos_rc;
+
+            last_ref_pos_rc = ref_pos;
+            last_read_pos_rc = read_pos;
             added = true;
         }
         return added;
@@ -150,6 +174,11 @@ struct sketch_hit_info {
 
     int32_t last_read_pos_fw{-1};
     int32_t last_read_pos_rc{-1};
+    int32_t rightmost_bound_rc{std::numeric_limits<int32_t>::max()};
+
+    // marks the read position (key) of the 
+    // first hit we see in the rc direction
+    int32_t first_read_pos_rc{-1};
 
     int32_t last_ref_pos_fw{-1};
     int32_t last_ref_pos_rc{std::numeric_limits<int32_t>::max()};
@@ -203,7 +232,7 @@ public:
     bool has_matching_kmers{false};
 };
 
-inline bool map_read(std::string* read_seq, mapping_cache_info& map_cache) {
+inline bool map_read(std::string* read_seq, mapping_cache_info& map_cache, bool verbose = false) {
     map_cache.clear();
     // rebind map_cache variables to
     // local names
@@ -243,10 +272,11 @@ inline bool map_read(std::string* read_seq, mapping_cache_info& map_cache) {
         // max_occ_default times or more.
         bool had_alt_max_occ = false;
         int32_t signed_rl = static_cast<int32_t>(read_seq->length());
-        auto collect_mappings_from_hits =
-            [&max_stretch, &min_occ, &hit_map, &num_valid_hits, &total_occs, &largest_occ,
-             &early_stop, signed_rl, k](auto& raw_hits, auto& prev_read_pos, auto& max_allowed_occ,
-                                        auto& had_alt_max_occ) -> bool {
+        auto collect_mappings_from_hits = [&max_stretch, &min_occ, &hit_map, &num_valid_hits,
+                                           &total_occs, &largest_occ, &early_stop, signed_rl, k,
+                                           verbose](auto& raw_hits, auto& prev_read_pos,
+                                                    auto& max_allowed_occ,
+                                                    auto& had_alt_max_occ) -> bool {
             for (auto& raw_hit : raw_hits) {
                 auto& read_pos = raw_hit.first;
                 auto& proj_hits = raw_hit.second;
@@ -271,6 +301,10 @@ inline bool map_read(std::string* read_seq, mapping_cache_info& map_cache) {
                         bool ori = ref_pos_ori.isFW;
                         auto& target = hit_map[tid];
 
+                        if (verbose) {
+                            std::cerr << "\traw_hit [read_pos: " << read_pos << " ]:" << tid << ", "
+                                      << pos << ", " << (ori ? "fw" : "rc") << "\n";
+                        }
                         // Why >= here instead of == ?
                         // Because hits can happen on the same target in both the forward
                         // and rc orientations, it is possible that we start the loop with

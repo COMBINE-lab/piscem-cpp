@@ -65,11 +65,21 @@ bool map_fragment(fastx_parser::ReadSeq& record, mapping_cache_info& map_cache_l
 // paried-end
 bool map_fragment(fastx_parser::ReadPair& record, mapping_cache_info& map_cache_left,
                   mapping_cache_info& map_cache_right, mapping_cache_info& map_cache_out) {
-    bool early_exit_left = mapping::util::map_read(&record.first.seq, map_cache_left);
-    bool early_exit_right = mapping::util::map_read(&record.second.seq, map_cache_right);
+    bool early_exit_left = mapping::util::map_read(&record.first.seq, map_cache_left, false);
+    bool early_exit_right = mapping::util::map_read(&record.second.seq, map_cache_right, false);
 
     int32_t left_len = static_cast<int32_t>(record.first.seq.length());
     int32_t right_len = static_cast<int32_t>(record.second.seq.length());
+
+    /*
+    for (auto& lh : map_cache_left.accepted_hits) {
+      std::cerr << "left: " << lh.tid << ", " << lh.pos << " (" << (lh.is_fw ? "fw" : "rc") << ")\n"; 
+    }
+    for (auto& lh : map_cache_right.accepted_hits) {
+      std::cerr << "right: " << lh.tid << ", " << lh.pos << " (" << (lh.is_fw ? "fw" : "rc") << ")\n"; 
+    }
+    */
+
     mapping::util::merge_se_mappings(map_cache_left, map_cache_right, left_len, right_len,
                                      map_cache_out);
 
@@ -284,11 +294,14 @@ inline void write_sam_mappings(mapping_cache_info& map_cache_out, fastx_parser::
     }
 }
 
+std::string& get_name(fastx_parser::ReadSeq& rs) { return rs.name; }
+
+std::string& get_name(fastx_parser::ReadPair& rs) { return rs.first.name; }
+
 template <typename FragT>
 void do_map(mindex::reference_index& ri, fastx_parser::FastxParser<FragT>& parser,
             std::atomic<uint64_t>& global_nr, std::atomic<uint64_t>& global_nhits,
-            mapping_output_info& out_info,
-            std::mutex& iomut) {
+            mapping_output_info& out_info, std::mutex& iomut) {
     mapping_cache_info map_cache_left(ri);
     mapping_cache_info map_cache_right(ri);
     mapping_cache_info map_cache_out(ri);
@@ -341,6 +354,12 @@ void do_map(mindex::reference_index& ri, fastx_parser::FastxParser<FragT>& parse
             (void)had_early_stop;
 
             // RAD output
+            if (map_cache_out.accepted_hits.empty()) {
+                iomut.lock();
+                std::cout << get_name(record) << "\n";
+                iomut.unlock();
+            }
+
             global_nhits += map_cache_out.accepted_hits.empty() ? 0 : 1;
             rad::util::write_to_rad_stream_bulk(map_cache_out.map_type, map_cache_out.accepted_hits,
                                                 num_reads_in_chunk, rad_w);
@@ -392,7 +411,7 @@ void do_map(mindex::reference_index& ri, fastx_parser::FastxParser<FragT>& parse
         num_reads_in_chunk = 0;
     }
 
-    /* SAM output 
+    /* SAM output
     // dump any remaining output
     std::string o = osstream.str();
     iomut.lock();
@@ -508,9 +527,10 @@ int main(int argc, char** argv) {
         rparser.start();
 
         for (size_t i = 0; i < nthread; ++i) {
-            workers.push_back(std::thread([&ri, &rparser, &global_nr, &global_nh, &out_info, &iomut]() {
-                do_map(ri, rparser, global_nr, global_nh, out_info, iomut);
-            }));
+            workers.push_back(
+                std::thread([&ri, &rparser, &global_nr, &global_nh, &out_info, &iomut]() {
+                    do_map(ri, rparser, global_nr, global_nh, out_info, iomut);
+                }));
         }
 
         for (auto& w : workers) { w.join(); }
@@ -527,9 +547,10 @@ int main(int argc, char** argv) {
         rparser.start();
 
         for (size_t i = 0; i < nthread; ++i) {
-            workers.push_back(std::thread([&ri, &rparser, &global_nr, &global_nh, &out_info, &iomut]() {
-                do_map(ri, rparser, global_nr, global_nh, out_info, iomut);
-            }));
+            workers.push_back(
+                std::thread([&ri, &rparser, &global_nr, &global_nh, &out_info, &iomut]() {
+                    do_map(ri, rparser, global_nr, global_nh, out_info, iomut);
+                }));
         }
 
         for (auto& w : workers) { w.join(); }

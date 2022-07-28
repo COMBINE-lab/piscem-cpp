@@ -120,15 +120,19 @@ size_t write_rad_header_bulk(mindex::reference_index& ri, bool is_paired, std::o
 
     // File-level tag description
     // none right now
-    uint16_t file_level_tags{0};
+    uint16_t file_level_tags{1};
     bw << file_level_tags;
+
+    uint8_t type_id{7}; // type is array
+    bw << std::string("ref_lengths");
+    bw << type_id; 
 
     // read-level tag description
     // will hold the type of mappings for the read
     uint16_t read_level_tags{1};
     bw << read_level_tags;
 
-    uint8_t type_id{1};
+    type_id = 1;
     // fragment mapping type
     // unmapped, mapped single, orphan_left, orphan_right, paired_end
     bw << std::string("frag_map_type");
@@ -155,9 +159,18 @@ size_t write_rad_header_bulk(mindex::reference_index& ri, bool is_paired, std::o
 
     // ### end of tag definitions
 
-    // the actual file-level tags
-    // bw << static_cast<uint16_t>(bc_length);
-    // bw << static_cast<uint16_t>(umi_length);
+    // the actual file-level tag
+    // it's an array so the spec says we first give 
+    // the type of the length, the the length, then the type 
+    // of entry, followed by the actual entries
+    type_id = 3; // length type is u32
+    uint32_t num_refs = static_cast<uint32_t>(ri.num_refs());
+    // array length type u32, number of elements is num refs, element type u32
+    bw << type_id << num_refs << type_id; 
+    for (size_t i = 0; i < num_refs; ++i) {
+      uint32_t rl = static_cast<uint32_t>(ri.ref_len(i));
+      bw << rl;
+    }
 
     rad_file << bw;
     bw.clear();
