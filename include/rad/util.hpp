@@ -16,7 +16,7 @@ namespace util {
 using umi_kmer_t = combinelib::kmers::Kmer<31, 2>;
 using bc_kmer_t = combinelib::kmers::Kmer<31, 3>;
 
-size_t write_rad_header(mindex::reference_index& ri, size_t bc_length, size_t umi_length,
+inline size_t write_rad_header(mindex::reference_index& ri, size_t bc_length, size_t umi_length,
                         std::ofstream& rad_file) {
     rad_writer bw;
     //  RADHeader
@@ -101,7 +101,7 @@ size_t write_rad_header(mindex::reference_index& ri, size_t bc_length, size_t um
     return chunk_offset;
 }
 
-size_t write_rad_header_bulk(mindex::reference_index& ri, bool is_paired, std::ofstream& rad_file) {
+inline size_t write_rad_header_bulk(mindex::reference_index& ri, bool is_paired, std::ofstream& rad_file) {
     rad_writer bw;
     //  RADHeader
     rad_header rh;
