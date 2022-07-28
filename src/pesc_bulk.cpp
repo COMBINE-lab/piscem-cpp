@@ -10,8 +10,8 @@
 #include "../include/cli11/CLI11.hpp"
 #include "../include/meta_info.hpp"
 #include "../include/FastxParser.hpp"
-#include "FastxParser.cpp"
 #include "zlib.h"
+//#include "FastxParser.cpp"
 //#include "../src/hit_searcher.cpp"
 
 #include <atomic>
@@ -302,6 +302,35 @@ template <typename FragT>
 void do_map(mindex::reference_index& ri, fastx_parser::FastxParser<FragT>& parser,
             std::atomic<uint64_t>& global_nr, std::atomic<uint64_t>& global_nhits,
             mapping_output_info& out_info, std::mutex& iomut) {
+    auto log_level = spdlog::get_level();
+    auto write_mapping_rate = false;
+    switch (log_level) {
+        case spdlog::level::level_enum::trace:
+            write_mapping_rate = true;
+            break;
+        case spdlog::level::level_enum::debug:
+            write_mapping_rate = true;
+            break;
+        case spdlog::level::level_enum::info:
+            write_mapping_rate = true;
+            break;
+        case spdlog::level::level_enum::warn:
+            write_mapping_rate = false;
+            break;
+        case spdlog::level::level_enum::err:
+            write_mapping_rate = false;
+            break;
+        case spdlog::level::level_enum::critical:
+            write_mapping_rate = false;
+            break;
+        case spdlog::level::level_enum::off:
+            write_mapping_rate = false;
+            break;
+        default:
+            write_mapping_rate = false;
+    }
+
+
     mapping_cache_info map_cache_left(ri);
     mapping_cache_info map_cache_right(ri);
     mapping_cache_info map_cache_out(ri);
@@ -340,9 +369,10 @@ void do_map(mindex::reference_index& ri, fastx_parser::FastxParser<FragT>& parse
             ++read_num;
             auto rctr = global_nr.load();
             auto hctr = global_nhits.load();
-            if (rctr % 100000 == 0) {
+
+            if (write_mapping_rate and (rctr % 500000 == 0)) {
                 iomut.lock();
-                std::cerr << "readnum : " << rctr << ", num_hits : " << hctr << "\n";
+                std::cerr << "\rprocessed (" << rctr << ") reads; (" << hctr << ") had mappings.";
                 iomut.unlock();
             }
 
@@ -426,7 +456,15 @@ void do_map(mindex::reference_index& ri, fastx_parser::FastxParser<FragT>& parse
     */
 }
 
-int main(int argc, char** argv) {
+#ifdef __cplusplus
+extern "C" {
+#endif
+  int run_pesc_bulk(int argc, char** argv);
+#ifdef __cplusplus
+}
+#endif
+
+int run_pesc_bulk(int argc, char** argv) {
     /**
      * Mapper
      **/

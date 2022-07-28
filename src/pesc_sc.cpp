@@ -18,7 +18,7 @@
 #include "../include/spdlog/sinks/stdout_color_sinks.h"
 #include "../include/meta_info.hpp"
 #include "../include/mapping/utils.hpp"
-#include "FastxParser.cpp"
+//#include "FastxParser.cpp"
 //#include "hit_searcher.cpp"
 #include "zlib.h"
 
@@ -260,12 +260,12 @@ struct pesc_options {
 #ifdef __cplusplus
 extern "C" {
 #endif
-  int run_pesc(int argc, char** argv);
+  int run_pesc_sc(int argc, char** argv);
 #ifdef __cplusplus
 }
 #endif
 
-int run_pesc(int argc, char** argv) {
+int run_pesc_sc(int argc, char** argv) {
     /**
      * PESC : Pseudoalignment Enhanced with Structural Constraints
      **/
