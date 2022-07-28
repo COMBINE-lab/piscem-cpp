@@ -279,6 +279,9 @@ inline void write_to_rad_stream_bulk(mapping::util::MappingType map_type,
                     leftmost_pos = 0;
                 }
                 break;
+            case mapping::util::MappingType::UNMAPPED:
+                // don't do anything here
+                break;
         }
 
         bw << static_cast<uint32_t>(leftmost_pos);

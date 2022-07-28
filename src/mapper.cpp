@@ -65,12 +65,12 @@ bool map_fragment(fastx_parser::ReadSeq& record, mapping_cache_info& map_cache_l
 // paried-end
 bool map_fragment(fastx_parser::ReadPair& record, mapping_cache_info& map_cache_left,
                   mapping_cache_info& map_cache_right, mapping_cache_info& map_cache_out) {
-    bool early_exit_left = mapping::util::map_read(&record.first.seq, map_cache_left, false);
-    bool early_exit_right = mapping::util::map_read(&record.second.seq, map_cache_right, false);
+    bool early_exit_left = mapping::util::map_read(&record.first.seq, map_cache_left, true);
+    bool early_exit_right = mapping::util::map_read(&record.second.seq, map_cache_right, true);
 
     int32_t left_len = static_cast<int32_t>(record.first.seq.length());
     int32_t right_len = static_cast<int32_t>(record.second.seq.length());
-
+    
     /*
     for (auto& lh : map_cache_left.accepted_hits) {
       std::cerr << "left: " << lh.tid << ", " << lh.pos << " (" << (lh.is_fw ? "fw" : "rc") << ")\n"; 
@@ -353,13 +353,16 @@ void do_map(mindex::reference_index& ri, fastx_parser::FastxParser<FragT>& parse
                 map_fragment(record, map_cache_left, map_cache_right, map_cache_out);
             (void)had_early_stop;
 
-            // RAD output
+            // to write unmapped names
+            /*
             if (map_cache_out.accepted_hits.empty()) {
                 iomut.lock();
                 std::cout << get_name(record) << "\n";
                 iomut.unlock();
             }
+            */
 
+            // RAD output
             global_nhits += map_cache_out.accepted_hits.empty() ? 0 : 1;
             rad::util::write_to_rad_stream_bulk(map_cache_out.map_type, map_cache_out.accepted_hits,
                                                 num_reads_in_chunk, rad_w);

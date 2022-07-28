@@ -73,7 +73,6 @@ struct sketch_hit_info {
             } else {
                 if ((ref_pos - approx_pos_fw) > max_stretch) { return false; }
             }
-            // if (last_ref_pos_fw > -1 and (ref_pos > last_ref_pos_fw + 15)) { return false; }
             last_ref_pos_fw = ref_pos;
             last_read_pos_fw = read_pos;
             fw_score += score_inc;
@@ -90,14 +89,25 @@ struct sketch_hit_info {
         bool added{false};
         // since hits are collected by moving _forward_ in the
         // read, if this is an rc hit, it should be moving
-        // backwards in the reference. Only add it if this is
-        // the case.
+        // backwards in the reference. 
+        // In general, we only add the hit if this is the case.
         // This ensures that we don't double-count a k-mer that
         // might occur twice on this target.
 
-        // swap out the last hit if the position on the read is
-        // the same and we can (heuristic to help in the case of
-        // tandem repeats or highly-repetitive subsequence.
+        // we have a special case here; what if the same exact 
+        // k-mer (i.e. not just the same sequence but same position
+        // on the query) occurs more than one time on this refernece?
+        //
+        // In that case, the GENERAL case code will already have 
+        // processed and seen a k-mer with the read position 
+        // equal to `read_pos`.  In the case below, we see 
+        // a hit with the *same* read pos again (one or more times).
+        // 
+        // Here, we swap out the previous hit having this read_pos 
+        // if the position of the current hit on the read is
+        // the same and the position on the reference is greater 
+        // (this is a heuristic to help in the case of tandem repeats or 
+        // highly-repetitive subsequence).
         // NOTE: consider if a similar heuristic should be
         // adopted for the forward case.
         if ((read_pos == last_read_pos_rc) and (ref_pos > last_ref_pos_rc) and
@@ -106,14 +116,18 @@ struct sketch_hit_info {
             last_ref_pos_rc = ref_pos;
             // if the read_pos was the same as the first read pos
             // then also update the approx_end_pos_rc accordingly
-            // for the time being don't mess with that position
-            //if (read_pos == first_read_pos_rc) {
-            //  approx_end_pos_rc = ref_pos + read_pos;
+            // NOTE: for the time being don't mess with this position
+            // empirically this does better, but if we really want 
+            // to optimize this for accuracy we need a better general
+            // heuristic.
+            // if (read_pos == first_read_pos_rc) {
+            //   approx_end_pos_rc = ref_pos + read_pos;
             //}
 
             return added;
         }
 
+        // GENERAL case
         if (ref_pos < last_ref_pos_rc and read_pos > last_read_pos_rc) {
             approx_pos_rc = (ref_pos - (rl - (read_pos + k)));
             if (last_read_pos_rc == -1) {
@@ -301,10 +315,11 @@ inline bool map_read(std::string* read_seq, mapping_cache_info& map_cache, bool 
                         bool ori = ref_pos_ori.isFW;
                         auto& target = hit_map[tid];
 
-                        if (verbose) {
-                            std::cerr << "\traw_hit [read_pos: " << read_pos << " ]:" << tid << ", "
-                                      << pos << ", " << (ori ? "fw" : "rc") << "\n";
-                        }
+                        //if (verbose) {
+                        //    std::cerr << "\traw_hit [read_pos: " << read_pos << " ]:" << tid << ", "
+                        //              << pos << ", " << (ori ? "fw" : "rc") << "\n";
+                        //}
+
                         // Why >= here instead of == ?
                         // Because hits can happen on the same target in both the forward
                         // and rc orientations, it is possible that we start the loop with
