@@ -1,4 +1,6 @@
-cmake_minimum_required(VERSION 3.5)
+# 3.15 introuced many nice features and seems 
+# a reasonable minimum version worth supporting.
+cmake_minimum_required(VERSION 3.15)
 project(SSHASH)
 
 # Set path for modules required to search for existing packages in the system.
@@ -27,7 +29,10 @@ if (UNIX)
 
   # Flags for PTHash:
   set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -mbmi2 -msse4.2") # for hardware popcount and pdep
-  set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -pthread")        # for multi-threading
+
+  # should not be required with the find_package below
+  # *and* with the `THREADS_PREFER_PTHREAD_FLAG` set.
+  # set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -pthread")        # for multi-threading
 
   if (SSHASH_USE_SANITIZERS)
     set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -fsanitize=address -fno-omit-frame-pointer")
@@ -36,7 +41,8 @@ if (UNIX)
 endif()
 
 find_package(ZLIB REQUIRED)
-find_package(Threads REQUIRED)
+set(THREADS_PREFER_PTHREAD_FLAG TRUE)
+find_package(Threads REQUIRED) # for pthreads
 
 # Prepare the `jemalloc` library. It provides scalable concurrency support and better avoidance
 # of fragmentation.
@@ -84,16 +90,16 @@ add_executable(bench src/bench.cpp ${SSHASH_SOURCES})
 target_include_directories(bench PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/include)
 
 add_executable(check src/check.cpp ${SSHASH_SOURCES} ${Z_LIB_SOURCES})
-target_link_libraries(check z)
+target_link_libraries(check z Threads::Threads)
 target_include_directories(check PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/include)
 
 add_executable(query src/query.cpp ${SSHASH_SOURCES} ${Z_LIB_SOURCES})
-target_link_libraries(query z)
+target_link_libraries(query z Threads::Threads)
 target_include_directories(query PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/include)
 
 add_executable(test_load src/test_load.cpp)
 target_include_directories(test_load PUBLIC ${CMAKE_SOURCE_DIR}/include ${ZLIB_INCLUDE_DIRS})
-target_link_libraries(test_load ZLIB::ZLIB sshash_static)
+target_link_libraries(test_load ZLIB::ZLIB sshash_static Threads::Threads)
 
 add_executable(pesc-sc src/pesc_sc_runner.cpp) 
 target_include_directories(pesc-sc PUBLIC ${CMAKE_SOURCE_DIR}/include ${ZLIB_INCLUDE_DIRS})

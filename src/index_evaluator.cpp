@@ -13,7 +13,8 @@ std::vector<uint64_t> histogram(mindex::reference_index& ri){
 	const auto& ct = ri.get_contig_table();
 	
 	phmap::flat_hash_map<uint64_t, uint64_t> freq_map;
-	auto cit = sshash::ef_sequence<false>::iterator(&ct.m_ctg_offsets, 0);
+
+	auto cit = ct.m_ctg_offsets.at(0);// sshash::ef_sequence<false>::iterator(&ct.m_ctg_offsets, 0);
 	uint64_t max_freq = 0;
 	uint64_t prev = 0;
 	while (cit.has_next()) {
