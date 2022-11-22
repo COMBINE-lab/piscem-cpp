@@ -87,7 +87,7 @@ bool build_contig_table(const std::string& input_filename, uint64_t k,
                         auto rn = ref_names.back();
                         uint64_t len = current_offset + (k - 1);
                         ref_lens.push_back(len);
-                        max_ref_len = std::max(max_ref_len, len);
+                        max_ref_len = std::max(static_cast<uint64_t>(max_ref_len), len);
                         if (refctr % 10000 == 0) {
                             spdlog::info("finished processing reference #{} : {}, len : {}", refctr,
                                          rn, len);
@@ -134,7 +134,7 @@ bool build_contig_table(const std::string& input_filename, uint64_t k,
         // for the last reference
         uint64_t len = current_offset + (k - 1);
         ref_lens.push_back(len);
-        max_ref_len = std::max(max_ref_len, len);
+        max_ref_len = std::max(static_cast<uint64_t>(max_ref_len), len);
 
         // from the json file we will get info about any
         // short references
@@ -148,7 +148,7 @@ bool build_contig_table(const std::string& input_filename, uint64_t k,
                 for (auto& p : short_refs_info) {
                     ref_names.push_back(p.first);
                     ref_lens.push_back(static_cast<uint64_t>(p.second));
-                    max_ref_len = std::max(max_ref_len, len);
+                    max_ref_len = std::max(static_cast<uint64_t>(max_ref_len), len);
                 }
             }
         }
