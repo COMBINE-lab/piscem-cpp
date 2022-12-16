@@ -58,7 +58,7 @@ enum class MappingType : uint8_t {
 
 enum class HitDirection : uint8_t { FW, RC, BOTH };
 
-constexpr uint8_t max_distortion= std::numeric_limits<uint8_t>::max();
+constexpr uint8_t max_distortion = std::numeric_limits<uint8_t>::max();
 
 struct chain_state {
     int32_t read_start_pos{-1};
@@ -290,7 +290,7 @@ struct sketch_hit_info {
     }
 
     // for directly incrementing the number of hits
-    // even when we are not building chains (e.g. in the case 
+    // even when we are not building chains (e.g. in the case
     // of filtering based on occurrences of ambiguous seeds).
     inline void inc_fw_hits() { ++fw_hits; }
     inline void inc_rc_hits() { ++rc_hits; }
@@ -404,6 +404,7 @@ private:
         bool is_fw_hit,  // we are processing a hit in the forward orientation (otherwise, RC)
         int32_t read_start_pos, int32_t next_hit_pos, int32_t max_stretch, C chain_state_comparator,
         itlib::small_vector<chain_state, max_num_chains>& chains, uint32_t& num_hits, bool& added) {
+        (void)max_stretch;
         // find the chain that best matches this k-mer.
         chain_state predecessor_probe{read_start_pos, next_hit_pos, -1, 0, max_distortion};
         auto chain_pos = std::lower_bound(chains.begin(), chains.end(), predecessor_probe,
@@ -425,28 +426,28 @@ private:
 
         // if we found a valid chain to extend
         if (chain_pos < chains.end()) {
-          auto stretch = std::abs(chain_pos->read_start_pos - read_start_pos);
-          stretch = std::min(stretch, static_cast<decltype(stretch)>(max_distortion));
-          // and if it hasn't yet been extended
-          if (chain_pos->curr_pos == -1) {
-            if (stretch < 15) {
-              // then extend this chain
-              chain_pos->curr_pos = next_hit_pos;
+            auto stretch = std::abs(chain_pos->read_start_pos - read_start_pos);
+            stretch = std::min(stretch, static_cast<decltype(stretch)>(max_distortion));
+            // and if it hasn't yet been extended
+            if (chain_pos->curr_pos == -1) {
+                if (stretch < 15) {
+                    // then extend this chain
+                    chain_pos->curr_pos = next_hit_pos;
+                    chain_pos->min_distortion = static_cast<uint8_t>(stretch);
+                    // and increment the number of hits
+                    ++(chain_pos->num_hits);
+                    uint32_t curr_max_hits = num_hits;
+                    num_hits = std::max(curr_max_hits,
+                                        static_cast<decltype(curr_max_hits)>(chain_pos->num_hits));
+                    added = true;
+                    // std::cerr << "chaining " << chain_pos->curr_pos << " onto " <<
+                    // chain_pos->prev_pos << " : num_hits " << chain_pos->num_hits << ", num_hits "
+                    // << num_hits << "\n";
+                }
+            } /*else if (stretch < chain_pos->min_distortion) {
               chain_pos->min_distortion = static_cast<uint8_t>(stretch);
-              // and increment the number of hits
-              ++(chain_pos->num_hits);
-              uint32_t curr_max_hits = num_hits;
-              num_hits = std::max(curr_max_hits,
-                  static_cast<decltype(curr_max_hits)>(chain_pos->num_hits));
               added = true;
-              // std::cerr << "chaining " << chain_pos->curr_pos << " onto " <<
-              // chain_pos->prev_pos << " : num_hits " << chain_pos->num_hits << ", num_hits " <<
-              // num_hits << "\n";
-            }
-          } /*else if (stretch < chain_pos->min_distortion) {
-            chain_pos->min_distortion = static_cast<uint8_t>(stretch);
-            added = true;
-          }*/
+            }*/
         }
     }
 };
@@ -489,7 +490,7 @@ public:
     size_t max_chunk_reads = 5000;
     // regardless of having full mappings, did any k-mers match
     bool has_matching_kmers{false};
-    // holds the indices of k-mers too ambiguous to chain, but which 
+    // holds the indices of k-mers too ambiguous to chain, but which
     // we might later want to check the existence of
     itlib::small_vector<uint32_t, 255> ambiguous_hit_indices;
 };
@@ -504,6 +505,7 @@ inline bool map_read(std::string* read_seq, mapping_cache_info& map_cache, bool 
     auto& accepted_hits = map_cache.accepted_hits;
     auto& map_type = map_cache.map_type;
     const bool attempt_occ_recover = map_cache.attempt_occ_recover;
+    const bool perform_ambig_filtering = map_cache.hs.get_index()->has_ec_table();
     auto k = map_cache.k;
 
     map_cache.has_matching_kmers = hs.get_raw_hits_sketch(*read_seq, q, true, false);
@@ -534,12 +536,11 @@ inline bool map_read(std::string* read_seq, mapping_cache_info& map_cache, bool 
         // max_occ_default times or more.
         bool had_alt_max_occ = false;
         int32_t signed_rl = static_cast<int32_t>(read_seq->length());
-        auto collect_mappings_from_hits = [&max_stretch, &min_occ, &hit_map, &num_valid_hits,
-                                           &total_occs, &largest_occ, &early_stop, signed_rl, k,
-                                           &map_cache, verbose](auto& raw_hits, auto& prev_read_pos,
-                                                                auto& max_allowed_occ,
-                                                                auto& ambiguous_hit_indices,
-                                                                auto& had_alt_max_occ) -> bool {
+        auto collect_mappings_from_hits =
+            [&max_stretch, &min_occ, &hit_map, &num_valid_hits, &total_occs, &largest_occ,
+             &early_stop, signed_rl, k, &map_cache, perform_ambig_filtering,
+             verbose](auto& raw_hits, auto& prev_read_pos, auto& max_allowed_occ,
+                      auto& ambiguous_hit_indices, auto& had_alt_max_occ) -> bool {
             int32_t hit_idx{0};
 
             for (auto& raw_hit : raw_hits) {
@@ -553,7 +554,7 @@ inline bool map_read(std::string* read_seq, mapping_cache_info& map_cache, bool 
 
                 bool still_have_valid_target = false;
                 prev_read_pos = read_pos;
-                
+
                 if (num_occ <= max_allowed_occ) {
                     total_occs += num_occ;
                     largest_occ = (num_occ > largest_occ) ? num_occ : largest_occ;
@@ -603,20 +604,23 @@ inline bool map_read(std::string* read_seq, mapping_cache_info& map_cache, bool 
                     // early
                     if (!still_have_valid_target) { return true; }
 
-                }  else { // HERE we have that num_occ > max_allowed_occ 
-                  ambiguous_hit_indices.push_back(hit_idx);
-                } 
+                } else if (perform_ambig_filtering) {  // HERE we have that num_occ >
+                                                       // max_allowed_occ
+                    ambiguous_hit_indices.push_back(hit_idx);
+                }
 
                 ++hit_idx;
-                //std::cerr << "kmer for read_pos : " << read_pos << " occurred too many times (" << num_occ << ")\n";
-            }      // DONE : for (auto& raw_hit : raw_hits)
+                // std::cerr << "kmer for read_pos : " << read_pos << " occurred too many times ("
+                // << num_occ << ")\n";
+            }  // DONE : for (auto& raw_hit : raw_hits)
 
             return false;
         };
 
         bool _discard = false;
         auto mao_first_pass = map_cache.max_occ_default - 1;
-        early_stop = collect_mappings_from_hits(raw_hits, prev_read_pos, mao_first_pass, map_cache.ambiguous_hit_indices, _discard);
+        early_stop = collect_mappings_from_hits(raw_hits, prev_read_pos, mao_first_pass,
+                                                map_cache.ambiguous_hit_indices, _discard);
 
         // If our default threshold was too stringent, then fallback to a more liberal
         // threshold and look up the k-mers that occur the least frequently.
@@ -627,50 +631,47 @@ inline bool map_read(std::string* read_seq, mapping_cache_info& map_cache, bool 
             map_cache.ambiguous_hit_indices.clear();
             prev_read_pos = -1;
             uint64_t max_allowed_occ = min_occ;
-            early_stop = collect_mappings_from_hits(raw_hits, prev_read_pos, max_allowed_occ,
-                                                    map_cache.ambiguous_hit_indices,
-                                                    had_alt_max_occ);
+            early_stop =
+                collect_mappings_from_hits(raw_hits, prev_read_pos, max_allowed_occ,
+                                           map_cache.ambiguous_hit_indices, had_alt_max_occ);
         }
-        
 
         // Further filtering of mappings by ambiguous k-mers
-        /*
-        const bool perform_ambig_filtering = map_cache.hs.get_index()->has_ec_table();
         if (perform_ambig_filtering and !hit_map.empty()) {
-          auto& ec_table = map_cache.hs.get_index()->get_ec_table();
-          // for each ambiguous hit
-          for (auto hit_idx : map_cache.ambiguous_hit_indices) {
-            auto& proj_hit = raw_hits[hit_idx].second;
-            uint32_t contig_id = proj_hit.contig_id();
-            bool fw_on_contig = proj_hit.hit_fw_on_contig();
-            
-            auto ec_entries = ec_table.entries_for_tile(contig_id);
-            for (const auto& ent : ec_entries) {
-              
-              uint32_t tid = (ent >> 2);
-              auto hm_it = hit_map.find(tid);
-              if (hm_it != hit_map.end()) {
-                // we found this target, now:
-                // (1) check the orientation
-                uint32_t ori = (ent & 0x3);
-                // (2) add hits in the appropriate way
-                switch (ori) {
-                  case 0: // fw 
-                    (fw_on_contig) ? hm_it->second.inc_fw_hits() : hm_it->second.inc_rc_hits();
-                    break;
-                  case 1: // rc 
-                    (fw_on_contig) ? hm_it->second.inc_rc_hits() : hm_it->second.inc_fw_hits();
-                    break;
-                  default: // both 
-                    hm_it->second.inc_fw_hits();
-                    hm_it->second.inc_rc_hits();
-                } 
-              }
-            } // all target oritentation pairs in this eq class
-            ++num_valid_hits;
-          } // all ambiguous hits
-        } // if we are processing ambiguous hits
-       */ 
+            auto& ec_table = map_cache.hs.get_index()->get_ec_table();
+            // for each ambiguous hit
+            for (auto hit_idx : map_cache.ambiguous_hit_indices) {
+                auto& proj_hit = raw_hits[hit_idx].second;
+                uint32_t contig_id = proj_hit.contig_id();
+                bool fw_on_contig = proj_hit.hit_fw_on_contig();
+
+                auto ec_entries = ec_table.entries_for_tile(contig_id);
+                for (const auto& ent : ec_entries) {
+                    uint32_t tid = (ent >> 2);
+                    auto hm_it = hit_map.find(tid);
+                    if (hm_it != hit_map.end()) {
+                        // we found this target, now:
+                        // (1) check the orientation
+                        uint32_t ori = (ent & 0x3);
+                        // (2) add hits in the appropriate way
+                        switch (ori) {
+                            case 0:  // fw
+                                (fw_on_contig) ? hm_it->second.inc_fw_hits()
+                                               : hm_it->second.inc_rc_hits();
+                                break;
+                            case 1:  // rc
+                                (fw_on_contig) ? hm_it->second.inc_rc_hits()
+                                               : hm_it->second.inc_fw_hits();
+                                break;
+                            default:  // both
+                                hm_it->second.inc_fw_hits();
+                                hm_it->second.inc_rc_hits();
+                        }
+                    }
+                }  // all target oritentation pairs in this eq class
+                ++num_valid_hits;
+            }  // all ambiguous hits
+        }      // if we are processing ambiguous hits
 
         uint32_t best_alt_hits = 0;
         // int32_t signed_read_len = static_cast<int32_t>(record.seq.length());

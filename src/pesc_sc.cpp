@@ -246,21 +246,22 @@ bool set_geometry(std::string& library_geometry, protocol_t& pt,
 }
 
 struct pesc_options {
-  std::string index_basename;
-  std::vector<std::string> left_read_filenames;
-  std::vector<std::string> right_read_filenames;
-  std::string output_dirname;
-  std::string library_geometry;
-  protocol_t pt{protocol_t::CUSTOM};
-  std::unique_ptr<custom_protocol> p{nullptr};
-  bool quiet{false};
-  size_t nthread{16};
+    std::string index_basename;
+    std::vector<std::string> left_read_filenames;
+    std::vector<std::string> right_read_filenames;
+    std::string output_dirname;
+    std::string library_geometry;
+    protocol_t pt{protocol_t::CUSTOM};
+    std::unique_ptr<custom_protocol> p{nullptr};
+    bool quiet{false};
+    bool check_ambig_hits{false};
+    size_t nthread{16};
 };
 
 #ifdef __cplusplus
 extern "C" {
 #endif
-  int run_pesc_sc(int argc, char** argv);
+int run_pesc_sc(int argc, char** argv);
 #ifdef __cplusplus
 }
 #endif
@@ -287,15 +288,16 @@ int run_pesc_sc(int argc, char** argv) {
                    "An integer that specifies the number of threads to use")
         ->default_val(16);
     app.add_flag("--quiet", po.quiet, "try to be quiet in terms of console output");
+    app.add_flag("--check-ambig-hits", po.check_ambig_hits,
+                 "check the existence of highly-frequent hits in mapped targets, rather than "
+                 "ignoring them.");
     CLI11_PARSE(app, argc, argv);
 
     spdlog::drop_all();
     auto logger = spdlog::create<spdlog::sinks::stdout_color_sink_mt>("");
     logger->set_pattern("%+");
 
-    if (po.quiet) {
-      logger->set_level(spdlog::level::warn);
-    }
+    if (po.quiet) { logger->set_level(spdlog::level::warn); }
     spdlog::set_default_logger(logger);
 
     // start the timer
@@ -314,7 +316,8 @@ int run_pesc_sc(int argc, char** argv) {
     ghc::filesystem::path rad_file_path = output_path / "map.rad";
     ghc::filesystem::path unmapped_bc_file_path = output_path / "unmapped_bc_count.bin";
 
-    mindex::reference_index ri(po.index_basename);
+    bool attempt_load_ec_map = po.check_ambig_hits;
+    mindex::reference_index ri(po.index_basename, attempt_load_ec_map);
 
     std::string cmdline;
     size_t narg = static_cast<size_t>(argc);
@@ -354,7 +357,8 @@ int run_pesc_sc(int argc, char** argv) {
         po.nthread -= 1;
     }
 
-    fastx_parser::FastxParser<fastx_parser::ReadPair> rparser(po.left_read_filenames, po.right_read_filenames, po.nthread, np);
+    fastx_parser::FastxParser<fastx_parser::ReadPair> rparser(
+        po.left_read_filenames, po.right_read_filenames, po.nthread, np);
     rparser.start();
 
     // set the k-mer size for the
@@ -396,8 +400,8 @@ int run_pesc_sc(int argc, char** argv) {
     rparser.stop();
 
     spdlog::info("finished mapping.");
-    
-    // rewind to the start of the file and write the number of 
+
+    // rewind to the start of the file and write the number of
     // chunks that we actually produced.
     out_info.rad_file.seekp(chunk_offset);
     uint64_t nc = out_info.num_chunks.load();
