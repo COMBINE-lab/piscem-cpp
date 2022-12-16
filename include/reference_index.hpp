@@ -4,11 +4,13 @@
 
 #include "dictionary.hpp"
 #include "basic_contig_table.hpp"
+#include "equivalence_class_map.hpp"
 #include "../external/pthash/external/essentials/include/essentials.hpp"
 #include "../include/bitsery/bitsery.h"
 #include "../include/bitsery/adapter/stream.h"
 #include "../include/bitsery/brief_syntax/vector.h"
 #include "../include/bitsery/brief_syntax/string.h"
+#include "../include/ghc/filesystem.hpp"
 //#include "query/contig_info_query_canonical_parsing.cpp"
 #include "query/streaming_query_canonical_parsing.hpp"
 #include "bit_vector_iterator.hpp"
@@ -26,6 +28,15 @@ public:
         essentials::load(m_dict, dict_name.c_str());
         std::string ctg_name = basename + ".ctab";
         essentials::load(m_bct, ctg_name.c_str());
+
+        std::string ectab_name = basename + ".ectab";
+        if (ghc::filesystem::exists(ectab_name)) {
+          m_has_ec_tab = true;
+          essentials::load(m_ec_tab, ectab_name.c_str());
+        } else {
+          m_has_ec_tab = false;
+        }
+ 
         // based on the number of bits used to encode reference positions
         // read from the file, set the shift we have to perform on a
         // contig table entry to read off the reference id (= m_ref_len_bits + 1)
@@ -101,11 +112,18 @@ public:
     uint64_t ref_len(size_t i) const { return m_ref_lens[i]; }
     uint64_t num_refs() const { return m_ref_names.size(); }
     const sshash::basic_contig_table& get_contig_table() const { return m_bct; }
+    
+    bool has_ec_table() const { return m_has_ec_tab; }
+    const sshash::equivalence_class_map& get_ec_table() { return m_ec_tab; }
 
 private:
     sshash::dictionary m_dict;
     sshash::basic_contig_table m_bct;
+    sshash::equivalence_class_map m_ec_tab;
     std::vector<std::string> m_ref_names;
     std::vector<uint64_t> m_ref_lens;
+    // will be set to true if we have & load 
+    // and equivalence class table.
+    bool m_has_ec_tab{false};
 };
 }  // namespace mindex

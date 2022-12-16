@@ -40,7 +40,6 @@ public:
     // the mutex for safely writing to
     // rad_file
     std::mutex rad_mutex;
-
     // will record the total number of observed fragments
     std::atomic<size_t> observed_fragments{0};
 };
@@ -59,14 +58,14 @@ bool map_fragment(fastx_parser::ReadSeq& record, mapping_cache_info& map_cache_l
                   mapping_cache_info& map_cache_right, mapping_cache_info& map_cache_out) {
     (void)map_cache_left;
     (void)map_cache_right;
-    return mapping::util::map_read(&record.seq, map_cache_out);
+    return mapping::util::map_read(&record.seq, map_cache_out, false);
 }
 
 // paried-end
 bool map_fragment(fastx_parser::ReadPair& record, mapping_cache_info& map_cache_left,
                   mapping_cache_info& map_cache_right, mapping_cache_info& map_cache_out) {
-    bool early_exit_left = mapping::util::map_read(&record.first.seq, map_cache_left, true);
-    bool early_exit_right = mapping::util::map_read(&record.second.seq, map_cache_right, true);
+    bool early_exit_left = mapping::util::map_read(&record.first.seq, map_cache_left, false);
+    bool early_exit_right = mapping::util::map_read(&record.second.seq, map_cache_right, false);
 
     int32_t left_len = static_cast<int32_t>(record.first.seq.length());
     int32_t right_len = static_cast<int32_t>(record.second.seq.length());
@@ -348,8 +347,8 @@ void do_map(mindex::reference_index& ri, fastx_parser::FastxParser<FragT>& parse
     mindex::hit_searcher hs(&ri);
     uint64_t read_num = 0;
     // SAM output
-    // uint64_t processed = 0;
-    // uint64_t buff_size = 10000;
+    //uint64_t processed = 0;
+    //uint64_t buff_size = 10000;
 
     // these don't really belong here
     std::string workstr_left;
@@ -414,7 +413,8 @@ void do_map(mindex::reference_index& ri, fastx_parser::FastxParser<FragT>& parse
                 rad_w << num_reads_in_chunk;
             }
 
-            /* SAM output
+            // SAM output
+            /*
             write_sam_mappings(map_cache_out, record, workstr_left, workstr_right, global_nhits,
                                osstream);
 
@@ -444,8 +444,9 @@ void do_map(mindex::reference_index& ri, fastx_parser::FastxParser<FragT>& parse
         num_reads_in_chunk = 0;
     }
 
-    /* SAM output
+    // SAM output
     // dump any remaining output
+    /*
     std::string o = osstream.str();
     iomut.lock();
     std::cout << o;

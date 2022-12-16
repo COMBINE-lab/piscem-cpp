@@ -59,6 +59,8 @@ int run_build(int argc, char** argv) {
                "Canonical parsing of k-mers. This option changes the parsing and results in a "
                "trade-off between index space and lookup time.",
                "--canonical-parsing", true);
+    parser.add("build_ec_table", "build orientation-aware equivalence class table an include it in the index.", 
+               "--build-ec-table", true);
     parser.add("weighted", "Also store the weights in compressed format.", "--weighted", true);
     parser.add("check", "Check correctness after construction.", "--check", true);
     parser.add("bench", "Run benchmark after construction.", "--bench", true);
@@ -135,7 +137,8 @@ int run_build(int argc, char** argv) {
     }
     
     // now build the contig table
-    bool ctab_ok = build_contig_table_main(input_files_basename, k, output_filename);
+    bool build_ec_table = parser.get<bool>("build_ec_table");
+    bool ctab_ok = build_contig_table_main(input_files_basename, k, build_ec_table, output_filename);
     spdlog::drop_all();
     return ctab_ok;
 }

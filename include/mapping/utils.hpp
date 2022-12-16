@@ -6,14 +6,18 @@
 #include "../include/query/streaming_query_canonical_parsing.hpp"
 #include "../include/projected_hits.hpp"
 #include "../include/FastxParser.hpp"
+#include "../include/itlib/small_vector.hpp"
 
 #include "../include/hit_searcher.hpp"
 
+#include <algorithm>
+#include <limits>
 #include <vector>
 #include <cassert>
 #include <fstream>
 #include <cmath>  // for std::ceil on linux
 #include <numeric>
+#include <type_traits>
 
 namespace mapping {
 
@@ -21,6 +25,8 @@ namespace util {
 
 constexpr int32_t invalid_frag_len = std::numeric_limits<int32_t>::min();
 constexpr int32_t invalid_mate_pos = std::numeric_limits<int32_t>::min();
+
+enum class orientation_filter : uint8_t { NONE, FORWARD_ONLY, RC_ONLY };
 
 struct simple_hit {
     bool is_fw{false};
@@ -52,7 +58,22 @@ enum class MappingType : uint8_t {
 
 enum class HitDirection : uint8_t { FW, RC, BOTH };
 
+constexpr uint8_t max_distortion= std::numeric_limits<uint8_t>::max();
+
+struct chain_state {
+    int32_t read_start_pos{-1};
+    int32_t prev_pos{-1};
+    int32_t curr_pos{-1};
+    uint8_t num_hits{0};
+    uint8_t min_distortion{max_distortion};
+};
+
+inline bool compare_chains(const chain_state& a, const chain_state& b) {
+    return a.prev_pos < b.prev_pos;
+}
+
 struct sketch_hit_info {
+    static constexpr size_t max_num_chains = 16;
     // add a hit to the current target that occurs in the forward
     // orientation with respect to the target.
     bool add_fw(int32_t ref_pos, int32_t read_pos, int32_t rl, int32_t k, int32_t max_stretch,
@@ -61,6 +82,60 @@ struct sketch_hit_info {
         (void)k;
         bool added{false};
 
+        // If structural constraints have been disabled
+        // then simply count the number of hits we see in
+        // the given orientation (being careful to count
+        // a k-mer of a given rank only one time).
+        if (ignore_struct_constraints_fw) {
+            if (read_pos > last_read_pos_fw) {
+                if (last_read_pos_fw == -1) { approx_pos_fw = ref_pos - read_pos; }
+                last_ref_pos_fw = ref_pos;
+                last_read_pos_fw = read_pos;
+                fw_score += score_inc;
+                ++fw_hits;
+                added = true;
+            }
+            return added;
+        }
+        // NO STRUCTURAL CONSTRAINTS
+
+        int32_t approx_map_pos = ref_pos - read_pos;
+        // If this is a k-mer of a new rank
+        if (read_pos > last_read_pos_fw) {
+            // if this is the first k-mer we are seeing
+            if (last_read_pos_fw == -1) {
+                approx_pos_fw = approx_map_pos;
+            } else {
+                // std::cerr << "compacting chain pointers of size : " << fw_chains.size() << ",
+                // req_hits = " << fw_hits << "\n";
+                // we are seeing a k-mer of a new rank.
+                // at this point, we've seen all k-mers of the
+                // previous rank, so copy over any valid chains
+                // for the next search.
+                compact_chains(fw_chains, fw_hits);
+            }
+
+            // update the current query position
+            // (i.e. rank) of the seed we are processing
+            last_read_pos_fw = read_pos;
+            ++fw_rank;
+        }
+
+        // if this is still a hit for the *first*
+        // k-mer of the chains
+        if (fw_rank == 0) {
+            process_rank0_hit(approx_map_pos, ref_pos, fw_chains, approx_pos_fw,
+                              ignore_struct_constraints_fw, fw_hits, added);
+        } else {
+            // this is a hit for a k-mer of rank > 0, so we already
+            // have a set of active chains.
+            process_hit(true, approx_map_pos, ref_pos, max_stretch, compare_chains, fw_chains,
+                        fw_hits, added);
+        }
+        return added;
+
+        ///// orig
+        /*
         // since hits are collected by moving _forward_ in the
         // read, if this is a fw hit, it should be moving
         // forward in the reference. Only add it if this is
@@ -80,6 +155,7 @@ struct sketch_hit_info {
             added = true;
         }
         return added;
+        */
     }
 
     // add a hit to the current target that occurs in the forward
@@ -87,26 +163,89 @@ struct sketch_hit_info {
     bool add_rc(int32_t ref_pos, int32_t read_pos, int32_t rl, int32_t k, int32_t max_stretch,
                 float score_inc) {
         bool added{false};
+
+        // NO STRUCTURAL CONSTRAINTS
+        if (ignore_struct_constraints_rc) {
+            if (read_pos > last_read_pos_rc) {
+                approx_pos_rc = (ref_pos - (rl - (read_pos + k)));
+                if (last_read_pos_rc == -1) {
+                    approx_end_pos_rc = ref_pos + read_pos;
+                    first_read_pos_rc = read_pos;
+                }
+                rc_score += score_inc;
+                ++rc_hits;
+
+                // new
+                rightmost_bound_rc = last_ref_pos_rc;
+
+                last_ref_pos_rc = ref_pos;
+                last_read_pos_rc = read_pos;
+                added = true;
+            }
+            return added;
+        }
+        // NO STRUCTURAL CONSTRAINTS
+
+        int32_t approx_map_pos = (ref_pos - (rl - (read_pos + k)));
+        // If this is a k-mer of a new rank
+        if (read_pos > last_read_pos_rc) {
+            approx_pos_rc = approx_map_pos;
+            // if this is the first k-mer we are seeing
+            if (last_read_pos_rc == -1) {
+                approx_end_pos_rc = ref_pos + read_pos;
+                first_read_pos_rc = read_pos;
+            } else {
+                // std::cerr << "compacting chain pointers of size : " << rc_chains.size() << ",
+                // req_hits = " << rc_hits << "\n"; we are seeing a k-mer of a new rank. at this
+                // point, we've seen all k-mers of the previous rank, so copy over any valid chains
+                // for the next search.
+                compact_chains(rc_chains, rc_hits);
+            }
+
+            // update the current query position
+            // (i.e. rank) of the seed we are processing
+            ++rc_rank;
+            // new
+            rightmost_bound_rc = last_ref_pos_rc;
+
+            last_ref_pos_rc = ref_pos;
+            last_read_pos_rc = read_pos;
+            added = true;
+        }
+
+        // if this is still a hit for the *first*
+        // k-mer of the chains
+        if (rc_rank == 0) {
+            process_rank0_hit(approx_map_pos, ref_pos, rc_chains, approx_pos_rc,
+                              ignore_struct_constraints_rc, rc_hits, added);
+        } else {
+            // this is a hit for a k-mer of rank > 0, so we already
+            // have a set of active chains.
+            process_hit(false, approx_map_pos, ref_pos, max_stretch, compare_chains, rc_chains,
+                        rc_hits, added);
+        }
+        return added;
+        /*
         // since hits are collected by moving _forward_ in the
         // read, if this is an rc hit, it should be moving
-        // backwards in the reference. 
+        // backwards in the reference.
         // In general, we only add the hit if this is the case.
         // This ensures that we don't double-count a k-mer that
         // might occur twice on this target.
 
-        // we have a special case here; what if the same exact 
+        // we have a special case here; what if the same exact
         // k-mer (i.e. not just the same sequence but same position
         // on the query) occurs more than one time on this refernece?
         //
-        // In that case, the GENERAL case code will already have 
-        // processed and seen a k-mer with the read position 
-        // equal to `read_pos`.  In the case below, we see 
+        // In that case, the GENERAL case code will already have
+        // processed and seen a k-mer with the read position
+        // equal to `read_pos`.  In the case below, we see
         // a hit with the *same* read pos again (one or more times).
-        // 
-        // Here, we swap out the previous hit having this read_pos 
+        //
+        // Here, we swap out the previous hit having this read_pos
         // if the position of the current hit on the read is
-        // the same and the position on the reference is greater 
-        // (this is a heuristic to help in the case of tandem repeats or 
+        // the same and the position on the reference is greater
+        // (this is a heuristic to help in the case of tandem repeats or
         // highly-repetitive subsequence).
         // NOTE: consider if a similar heuristic should be
         // adopted for the forward case.
@@ -117,7 +256,7 @@ struct sketch_hit_info {
             // if the read_pos was the same as the first read pos
             // then also update the approx_end_pos_rc accordingly
             // NOTE: for the time being don't mess with this position
-            // empirically this does better, but if we really want 
+            // empirically this does better, but if we really want
             // to optimize this for accuracy we need a better general
             // heuristic.
             // if (read_pos == first_read_pos_rc) {
@@ -147,7 +286,14 @@ struct sketch_hit_info {
             added = true;
         }
         return added;
+        */
     }
+
+    // for directly incrementing the number of hits
+    // even when we are not building chains (e.g. in the case 
+    // of filtering based on occurrences of ambiguous seeds).
+    inline void inc_fw_hits() { ++fw_hits; }
+    inline void inc_rc_hits() { ++rc_hits; }
 
     inline uint32_t max_hits_for_target() { return std::max(fw_hits, rc_hits); }
 
@@ -190,7 +336,7 @@ struct sketch_hit_info {
     int32_t last_read_pos_rc{-1};
     int32_t rightmost_bound_rc{std::numeric_limits<int32_t>::max()};
 
-    // marks the read position (key) of the 
+    // marks the read position (key) of the
     // first hit we see in the rc direction
     int32_t first_read_pos_rc{-1};
 
@@ -205,6 +351,104 @@ struct sketch_hit_info {
     uint32_t rc_hits{0};
     float fw_score{0.0};
     float rc_score{0.0};
+
+    bool ignore_struct_constraints_fw{false};
+    bool ignore_struct_constraints_rc{false};
+
+    int32_t fw_rank{-1};
+    int32_t rc_rank{-1};
+    itlib::small_vector<chain_state, max_num_chains> fw_chains;
+    itlib::small_vector<chain_state, max_num_chains> rc_chains;
+
+private:
+    inline void compact_chains(itlib::small_vector<chain_state, max_num_chains>& chains,
+                               const uint32_t required_hits) {
+        chains.erase(std::remove_if(chains.begin(), chains.end(),
+                                    [required_hits](chain_state& s) -> bool {
+                                        // remove this chain if it doesn't satisfy
+                                        // the hit constraint.
+                                        if (s.num_hits < required_hits) { return true; }
+                                        // the current position becomes the
+                                        // previous position for kmers of the
+                                        // next rank, and the curr pos gets reset
+                                        // to -1.
+                                        s.prev_pos = s.curr_pos;
+                                        s.curr_pos = -1;
+                                        return false;
+                                    }),
+                     chains.end());
+    }
+
+    inline void process_rank0_hit(int32_t approx_map_pos, int32_t hit_pos,
+                                  itlib::small_vector<chain_state, max_num_chains>& chains,
+                                  int32_t& approx_pos_out, bool& ignore_struct_constraints,
+                                  uint32_t& num_hits, bool& added) {
+        // if there are too many possible chains, just punt
+        // and turn off structural constraints for this
+        // query, reference, orientation tuple.
+        if (chains.size() == chains.capacity()) {
+            ignore_struct_constraints = true;
+            approx_pos_out = chains.front().read_start_pos;
+            num_hits = chains.front().num_hits;
+            added = true;
+        } else {
+            // otherise add this hit
+            chains.push_back({approx_map_pos, -1, hit_pos, 1, max_distortion});
+            added = true;
+        }
+        num_hits = 1;
+    }
+
+    template <typename C>
+    inline void process_hit(
+        bool is_fw_hit,  // we are processing a hit in the forward orientation (otherwise, RC)
+        int32_t read_start_pos, int32_t next_hit_pos, int32_t max_stretch, C chain_state_comparator,
+        itlib::small_vector<chain_state, max_num_chains>& chains, uint32_t& num_hits, bool& added) {
+        // find the chain that best matches this k-mer.
+        chain_state predecessor_probe{read_start_pos, next_hit_pos, -1, 0, max_distortion};
+        auto chain_pos = std::lower_bound(chains.begin(), chains.end(), predecessor_probe,
+                                          chain_state_comparator);
+
+        // If this is a forward hit, lower bound will return
+        // the first element >= the key (the current hit), so back up
+        // by one element.
+        // Otherwise, ff this is a reverse complement hit, we actually
+        // want the first element >= the current hit, so keep it.
+        if (is_fw_hit) {
+            if (chain_pos > chains.begin()) {
+                chain_pos--;
+            } else {
+                added = false;
+                return;
+            }
+        }
+
+        // if we found a valid chain to extend
+        if (chain_pos < chains.end()) {
+          auto stretch = std::abs(chain_pos->read_start_pos - read_start_pos);
+          stretch = std::min(stretch, static_cast<decltype(stretch)>(max_distortion));
+          // and if it hasn't yet been extended
+          if (chain_pos->curr_pos == -1) {
+            if (stretch < 15) {
+              // then extend this chain
+              chain_pos->curr_pos = next_hit_pos;
+              chain_pos->min_distortion = static_cast<uint8_t>(stretch);
+              // and increment the number of hits
+              ++(chain_pos->num_hits);
+              uint32_t curr_max_hits = num_hits;
+              num_hits = std::max(curr_max_hits,
+                  static_cast<decltype(curr_max_hits)>(chain_pos->num_hits));
+              added = true;
+              // std::cerr << "chaining " << chain_pos->curr_pos << " onto " <<
+              // chain_pos->prev_pos << " : num_hits " << chain_pos->num_hits << ", num_hits " <<
+              // num_hits << "\n";
+            }
+          } /*else if (stretch < chain_pos->min_distortion) {
+            chain_pos->min_distortion = static_cast<uint8_t>(stretch);
+            added = true;
+          }*/
+        }
+    }
 };
 
 struct mapping_cache_info {
@@ -218,6 +462,7 @@ public:
         hit_map.clear();
         accepted_hits.clear();
         has_matching_kmers = false;
+        ambiguous_hit_indices.clear();
     }
 
     // will store how the read mapped
@@ -244,6 +489,9 @@ public:
     size_t max_chunk_reads = 5000;
     // regardless of having full mappings, did any k-mers match
     bool has_matching_kmers{false};
+    // holds the indices of k-mers too ambiguous to chain, but which 
+    // we might later want to check the existence of
+    itlib::small_vector<uint32_t, 255> ambiguous_hit_indices;
 };
 
 inline bool map_read(std::string* read_seq, mapping_cache_info& map_cache, bool verbose = false) {
@@ -288,9 +536,12 @@ inline bool map_read(std::string* read_seq, mapping_cache_info& map_cache, bool 
         int32_t signed_rl = static_cast<int32_t>(read_seq->length());
         auto collect_mappings_from_hits = [&max_stretch, &min_occ, &hit_map, &num_valid_hits,
                                            &total_occs, &largest_occ, &early_stop, signed_rl, k,
-                                           verbose](auto& raw_hits, auto& prev_read_pos,
-                                                    auto& max_allowed_occ,
-                                                    auto& had_alt_max_occ) -> bool {
+                                           &map_cache, verbose](auto& raw_hits, auto& prev_read_pos,
+                                                                auto& max_allowed_occ,
+                                                                auto& ambiguous_hit_indices,
+                                                                auto& had_alt_max_occ) -> bool {
+            int32_t hit_idx{0};
+
             for (auto& raw_hit : raw_hits) {
                 auto& read_pos = raw_hit.first;
                 auto& proj_hits = raw_hit.second;
@@ -302,6 +553,7 @@ inline bool map_read(std::string* read_seq, mapping_cache_info& map_cache, bool 
 
                 bool still_have_valid_target = false;
                 prev_read_pos = read_pos;
+                
                 if (num_occ <= max_allowed_occ) {
                     total_occs += num_occ;
                     largest_occ = (num_occ > largest_occ) ? num_occ : largest_occ;
@@ -315,10 +567,11 @@ inline bool map_read(std::string* read_seq, mapping_cache_info& map_cache, bool 
                         bool ori = ref_pos_ori.isFW;
                         auto& target = hit_map[tid];
 
-                        //if (verbose) {
-                        //    std::cerr << "\traw_hit [read_pos: " << read_pos << " ]:" << tid << ", "
-                        //              << pos << ", " << (ori ? "fw" : "rc") << "\n";
-                        //}
+                        if (verbose) {
+                            auto& tname = map_cache.hs.get_index()->ref_name(tid);
+                            std::cerr << "\traw_hit [read_pos: " << read_pos << " ]:" << tname
+                                      << ", " << pos << ", " << (ori ? "fw" : "rc") << "\n";
+                        }
 
                         // Why >= here instead of == ?
                         // Because hits can happen on the same target in both the forward
@@ -350,7 +603,12 @@ inline bool map_read(std::string* read_seq, mapping_cache_info& map_cache, bool 
                     // early
                     if (!still_have_valid_target) { return true; }
 
-                }  // DONE : if (num_occ <= max_allowed_occ)
+                }  else { // HERE we have that num_occ > max_allowed_occ 
+                  ambiguous_hit_indices.push_back(hit_idx);
+                } 
+
+                ++hit_idx;
+                //std::cerr << "kmer for read_pos : " << read_pos << " occurred too many times (" << num_occ << ")\n";
             }      // DONE : for (auto& raw_hit : raw_hits)
 
             return false;
@@ -358,7 +616,7 @@ inline bool map_read(std::string* read_seq, mapping_cache_info& map_cache, bool 
 
         bool _discard = false;
         auto mao_first_pass = map_cache.max_occ_default - 1;
-        early_stop = collect_mappings_from_hits(raw_hits, prev_read_pos, mao_first_pass, _discard);
+        early_stop = collect_mappings_from_hits(raw_hits, prev_read_pos, mao_first_pass, map_cache.ambiguous_hit_indices, _discard);
 
         // If our default threshold was too stringent, then fallback to a more liberal
         // threshold and look up the k-mers that occur the least frequently.
@@ -366,17 +624,60 @@ inline bool map_read(std::string* read_seq, mapping_cache_info& map_cache, bool 
         // default) times, then collect the min occuring hits to get the mapping.
         if (attempt_occ_recover and (min_occ >= map_cache.max_occ_default) and
             (min_occ < map_cache.max_occ_recover)) {
+            map_cache.ambiguous_hit_indices.clear();
             prev_read_pos = -1;
             uint64_t max_allowed_occ = min_occ;
             early_stop = collect_mappings_from_hits(raw_hits, prev_read_pos, max_allowed_occ,
+                                                    map_cache.ambiguous_hit_indices,
                                                     had_alt_max_occ);
         }
+        
+
+        // Further filtering of mappings by ambiguous k-mers
+        /*
+        const bool perform_ambig_filtering = map_cache.hs.get_index()->has_ec_table();
+        if (perform_ambig_filtering and !hit_map.empty()) {
+          auto& ec_table = map_cache.hs.get_index()->get_ec_table();
+          // for each ambiguous hit
+          for (auto hit_idx : map_cache.ambiguous_hit_indices) {
+            auto& proj_hit = raw_hits[hit_idx].second;
+            uint32_t contig_id = proj_hit.contig_id();
+            bool fw_on_contig = proj_hit.hit_fw_on_contig();
+            
+            auto ec_entries = ec_table.entries_for_tile(contig_id);
+            for (const auto& ent : ec_entries) {
+              
+              uint32_t tid = (ent >> 2);
+              auto hm_it = hit_map.find(tid);
+              if (hm_it != hit_map.end()) {
+                // we found this target, now:
+                // (1) check the orientation
+                uint32_t ori = (ent & 0x3);
+                // (2) add hits in the appropriate way
+                switch (ori) {
+                  case 0: // fw 
+                    (fw_on_contig) ? hm_it->second.inc_fw_hits() : hm_it->second.inc_rc_hits();
+                    break;
+                  case 1: // rc 
+                    (fw_on_contig) ? hm_it->second.inc_rc_hits() : hm_it->second.inc_fw_hits();
+                    break;
+                  default: // both 
+                    hm_it->second.inc_fw_hits();
+                    hm_it->second.inc_rc_hits();
+                } 
+              }
+            } // all target oritentation pairs in this eq class
+            ++num_valid_hits;
+          } // all ambiguous hits
+        } // if we are processing ambiguous hits
+       */ 
 
         uint32_t best_alt_hits = 0;
         // int32_t signed_read_len = static_cast<int32_t>(record.seq.length());
 
         for (auto& kv : hit_map) {
             auto best_hit_dir = kv.second.best_hit_direction();
+
             // if the best direction is FW or BOTH, add the fw hit
             // otherwise add the RC.
             auto simple_hit = (best_hit_dir != mapping::util::HitDirection::RC)

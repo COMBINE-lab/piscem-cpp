@@ -25,6 +25,7 @@ struct projected_hits {
     inline bool empty() { return refRange.empty(); }
 
     inline uint32_t contig_id() const { return contigIdx_; }
+    inline bool hit_fw_on_contig() const { return contigOrientation_; }
 
     inline ref_pos decode_hit(uint64_t v) {
         // true if the contig is fowrard on the reference
