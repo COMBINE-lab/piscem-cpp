@@ -26,6 +26,10 @@ public:
         return entries_for_ec(m_tile_ec_ids[tile_id]);
     }
 
+    inline uint64_t ec_for_tile(uint64_t tile_id) const {
+        return m_tile_ec_ids[tile_id];
+    }
+
     pthash::compact_vector m_tile_ec_ids;
     pthash::compact_vector m_label_entries;
     sshash::ef_sequence<false> m_label_list_offsets;

@@ -440,14 +440,11 @@ private:
                     num_hits = std::max(curr_max_hits,
                                         static_cast<decltype(curr_max_hits)>(chain_pos->num_hits));
                     added = true;
-                    // std::cerr << "chaining " << chain_pos->curr_pos << " onto " <<
-                    // chain_pos->prev_pos << " : num_hits " << chain_pos->num_hits << ", num_hits "
-                    // << num_hits << "\n";
                 }
-            } /*else if (stretch < chain_pos->min_distortion) {
+            } else if (stretch < chain_pos->min_distortion) {
               chain_pos->min_distortion = static_cast<uint8_t>(stretch);
               added = true;
-            }*/
+            }
         }
     }
 };
@@ -636,42 +633,92 @@ inline bool map_read(std::string* read_seq, mapping_cache_info& map_cache, bool 
                                            map_cache.ambiguous_hit_indices, had_alt_max_occ);
         }
 
+        constexpr size_t max_ec_ambig = 1024;//256;
         // Further filtering of mappings by ambiguous k-mers
-        if (perform_ambig_filtering and !hit_map.empty()) {
+        if (perform_ambig_filtering and !hit_map.empty() and !map_cache.ambiguous_hit_indices.empty()) {
+            phmap::flat_hash_set<uint64_t> observed_ecs;
+            size_t min_cardinality_ec_size = std::numeric_limits<size_t>::max();
+            uint64_t min_cardinality_ec = std::numeric_limits<size_t>::max();
+            size_t min_cardinality_index = 0;
+            size_t visited = 0;
             auto& ec_table = map_cache.hs.get_index()->get_ec_table();
+
+            auto visit_ec = [&hit_map](uint64_t ent, bool fw_on_contig) -> bool {
+              uint32_t tid = (ent >> 2);
+              auto hm_it = hit_map.find(tid);
+              bool found = false;
+              if (hm_it != hit_map.end()) {
+                // we found this target, now:
+                // (1) check the orientation
+                uint32_t ori = (ent & 0x3);
+                // (2) add hits in the appropriate way
+                switch (ori) {
+                  case 0:  // fw
+                    (fw_on_contig) ? hm_it->second.inc_fw_hits()
+                      : hm_it->second.inc_rc_hits();
+                    break;
+                  case 1:  // rc
+                    (fw_on_contig) ? hm_it->second.inc_rc_hits()
+                      : hm_it->second.inc_fw_hits();
+                    break;
+                  default:  // both
+                    hm_it->second.inc_fw_hits();
+                    hm_it->second.inc_rc_hits();
+                }
+                found = true;
+              }
+              return found;
+            };
+
             // for each ambiguous hit
             for (auto hit_idx : map_cache.ambiguous_hit_indices) {
                 auto& proj_hit = raw_hits[hit_idx].second;
                 uint32_t contig_id = proj_hit.contig_id();
                 bool fw_on_contig = proj_hit.hit_fw_on_contig();
 
-                auto ec_entries = ec_table.entries_for_tile(contig_id);
+                // put the combination of the eq and the k-mer orientation 
+                // into the map.
+                uint64_t ec = ec_table.ec_for_tile(contig_id);
+                uint64_t ec_key = ec | (fw_on_contig ? 0 : 0x8000000000000000);
+                // if we've already seen this ec, no point in processing 
+                // it again.
+                if (observed_ecs.contains(ec_key)) {
+                  continue;
+                }
+                // otherwise, insert it.
+                observed_ecs.insert(ec_key);
+
+                auto ec_entries = ec_table.entries_for_ec(ec);
+                if (ec_entries.size() < min_cardinality_ec_size) {
+                  min_cardinality_ec_size = ec_entries.size();
+                  min_cardinality_ec = ec;
+                  min_cardinality_index = hit_idx;
+                }
+                if (ec_entries.size() > max_ec_ambig) { continue; }
+                ++visited;
                 for (const auto& ent : ec_entries) {
-                    uint32_t tid = (ent >> 2);
-                    auto hm_it = hit_map.find(tid);
-                    if (hm_it != hit_map.end()) {
-                        // we found this target, now:
-                        // (1) check the orientation
-                        uint32_t ori = (ent & 0x3);
-                        // (2) add hits in the appropriate way
-                        switch (ori) {
-                            case 0:  // fw
-                                (fw_on_contig) ? hm_it->second.inc_fw_hits()
-                                               : hm_it->second.inc_rc_hits();
-                                break;
-                            case 1:  // rc
-                                (fw_on_contig) ? hm_it->second.inc_rc_hits()
-                                               : hm_it->second.inc_fw_hits();
-                                break;
-                            default:  // both
-                                hm_it->second.inc_fw_hits();
-                                hm_it->second.inc_rc_hits();
-                        }
-                    }
+                  visit_ec(ent, fw_on_contig);
                 }  // all target oritentation pairs in this eq class
                 ++num_valid_hits;
             }  // all ambiguous hits
-        }      // if we are processing ambiguous hits
+            
+            // if we haven't visited *any* equivalence classes (they were all)
+            // too ambiguous, then make a last-ditch effort to just visit the 
+            // the one with smallest cardinality.
+            if (visited == 0) {
+              auto hit_idx = min_cardinality_index;
+              auto& proj_hit = raw_hits[hit_idx].second;
+              bool fw_on_contig = proj_hit.hit_fw_on_contig();
+
+              uint64_t ec = min_cardinality_ec;
+              auto ec_entries = ec_table.entries_for_ec(ec);
+              for (const auto& ent : ec_entries) {
+                visit_ec(ent, fw_on_contig);
+              } // all target oritentation pairs in this eq class
+              ++num_valid_hits;
+            } // done visiting the last-ditch ec
+
+        } // if we are processing ambiguous hits
 
         uint32_t best_alt_hits = 0;
         // int32_t signed_read_len = static_cast<int32_t>(record.seq.length());
