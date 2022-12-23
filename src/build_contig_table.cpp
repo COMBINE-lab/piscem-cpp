@@ -3,6 +3,7 @@
 #include "../include/basic_contig_table.hpp"
 #include "../external/pthash/external/essentials/include/essentials.hpp"
 #include "../include/ef_sequence.hpp"
+#include "../include/equivalence_class_map.hpp"
 #include "../external/pthash/external/cmd_line_parser/include/parser.hpp"
 #include "../include/util.hpp"
 #include "../include/parallel_hashmap/phmap.h"
@@ -13,6 +14,7 @@
 #include "../include/bitsery/brief_syntax/string.h"
 #include "../include/spdlog/spdlog.h"
 #include "../include/json.hpp"
+#include "../external/pthash/include/utils/hasher.hpp"
 
 using namespace sshash;
 using phmap::flat_hash_map;
@@ -23,7 +25,33 @@ struct rank_count {
     uint64_t count;
 };
 
+struct rank_offset {
+  uint32_t rank;
+  uint64_t offset;
+};
+
+enum class dir_status : uint8_t {
+  FW=0, RC=1, BOTH=2
+};
+
+
+namespace std {
+
+  template <>
+  struct hash<std::vector<std::tuple<uint32_t, dir_status>>>
+  {
+    std::size_t operator()(const std::vector<std::tuple<uint32_t, dir_status>>& k) const
+    {
+       const void* data = reinterpret_cast<const void*>(&k[0]);
+       uint64_t len = k.size() * sizeof(std::tuple<uint32_t, dir_status>);
+       return pthash::MurmurHash2_64(data, len, 0);
+    }
+  };
+
+}
+
 bool build_contig_table(const std::string& input_filename, uint64_t k,
+                        bool build_eq_table,
                         const std::string& output_filename) {
     flat_hash_map<uint64_t, rank_count> id_to_rank;
     const std::string refstr = "Reference";
@@ -294,6 +322,130 @@ bool build_contig_table(const std::string& input_filename, uint64_t k,
     std::string out_ctab = output_filename + ".ctab";
     essentials::save(bct, out_ctab.c_str());
 
+    if (build_eq_table) {
+      // map equivalence class content to id
+      flat_hash_map<std::vector<std::tuple<uint32_t, dir_status>>, rank_offset>  ec_id_map;
+      std::vector<std::tuple<uint32_t, dir_status>> label;
+      uint64_t largest_label = 0;
+
+      // the number of tiles
+      size_t num_tiles = id_to_rank.size();
+
+      // the ec table
+      equivalence_class_map ect;
+
+      // will hold the total length of concatenated labels of all equivalence 
+      // classes
+      size_t total_label_length = 0;
+      {
+        // will hold the starting position in the globally concatenated 
+        // list, for the sublist corresponding to each equivalence class
+        std::vector<uint64_t> label_list_offsets;
+
+        // holds the corresponding ec id for each contig
+        std::vector<uint32_t> tile_ec_ids;
+        tile_ec_ids.reserve(num_tiles);
+
+        for (size_t tile_idx = 0; tile_idx < num_tiles; ++tile_idx) {
+          label.clear();
+          uint32_t prev_tid = 0;
+          dir_status prev_dir;
+          bool first = true;
+          sshash::util::contig_span ctg_entry_span = bct.contig_entries(tile_idx);
+          for (auto ce : ctg_entry_span) {
+            // note, these sshash::util:: functions should be safe to call because 
+            // we have set the relevant static members above.
+            uint32_t tid = sshash::util::transcript_id(ce);
+            dir_status dir = sshash::util::orientation(ce) ? dir_status::FW : dir_status::RC;
+            largest_label = std::max(static_cast<uint64_t>(tid), largest_label);
+
+            // skip adjacent duplicates (we can still get dups because of orientation 
+            // switching), but if duplicate target / ori pairs are adjacent, don't 
+            // add them to avoid the vector growing unnecessarily.
+            if (first or tid != prev_tid) {
+              label.push_back({tid, dir});
+            } else if (tid == prev_tid and dir != prev_dir) {
+              // if dir != prev_dir, then 
+              // dir == FW and prev_dir == RC
+              // or dir == RC and prev_dir == FW
+              // or prev_dir == BOTH and dir == FW | RC 
+              // in any such case, the right thing to do is 
+              // to set (or keep) the dir as BOTH.
+              std::get<1>(label.back()) = dir_status::BOTH;
+            }
+
+            prev_tid = tid;
+            prev_dir = dir;
+            first = false;
+          }
+          // remove any duplicate entries --- shouldn't be any!
+          std::sort(label.begin(), label.end());
+          auto last_valid_it = std::unique(label.begin(), label.end());
+          if (last_valid_it != label.end()) {
+            std::cerr << "sort | unique should not be necessary on ec label!\n";
+            label.erase(last_valid_it, label.end());
+          }
+
+          // see if we know about this class already
+          uint32_t next_ec_rank = static_cast<uint32_t>(ec_id_map.size());
+          auto ec_it = ec_id_map.insert({label, {next_ec_rank, total_label_length}});
+          // if this is newly inserted
+          if (ec_it.second) {
+            label_list_offsets.push_back(total_label_length);
+            total_label_length += label.size();
+          }
+          // may have been set / updated in the if above
+          tile_ec_ids.push_back((ec_it.first)->second.rank);
+
+        } // created the hash map, now pack it into an efficient structure 
+          // last label list ending position
+        label_list_offsets.push_back(total_label_length);
+        // since the offset vector is a monotonic sequence
+        // it is amenable to Elias-Fano compression, so compress it
+        // as such and write it.
+        ect.m_label_list_offsets.encode(label_list_offsets.begin(), label_list_offsets.size(),
+            label_list_offsets.back());
+        
+        uint64_t tile_id_width = std::ceil(std::log2(ec_id_map.size() + 1));
+        pthash::compact_vector::builder ec_id_builder(tile_ec_ids.begin(), tile_ec_ids.size(), tile_id_width);
+        ec_id_builder.build(ect.m_tile_ec_ids);
+      } // end scope to free labal_list_offsets 
+
+      // the +2 is for the orientation bits;
+      uint64_t label_width = std::ceil(std::log2(largest_label + 1)) + 2;
+      pthash::compact_vector::builder label_builder(total_label_length, label_width);
+
+      // now, iterate over the equivalence class map and pack the 
+      // label information into the concatenated vector
+      for (auto& kv : ec_id_map) {
+        // where we start writing 
+        uint64_t offset_pos = kv.second.offset;
+        for (auto ref_dir : kv.first) {
+          auto txpid = std::get<0>(ref_dir);
+          auto dir = std::get<1>(ref_dir);
+          // pack this into the compact_vector 
+          uint64_t packed_entry = (txpid << 2);
+          switch (dir) {
+            case dir_status::FW:
+              break;
+            case dir_status::RC:
+              packed_entry |= 0x1;
+              break;
+            case dir_status::BOTH:
+              packed_entry |= 0x2;
+          }
+
+          label_builder.set(offset_pos, packed_entry);
+          ++offset_pos;
+        }
+      }
+
+      label_builder.build(ect.m_label_entries);
+
+      std::string out_ectab = output_filename + ".ectab";
+      essentials::save(ect, out_ectab.c_str());
+    }
+
     /*
     std::cerr << "verifying contig table invariants.\n";
 
@@ -326,8 +478,9 @@ bool build_contig_table(const std::string& input_filename, uint64_t k,
 }
 
 int build_contig_table_main(const std::string& input_filename, uint64_t k,
+                            bool build_eq_table,
                             const std::string& output_filename) {
-    bool success = build_contig_table(input_filename, k, output_filename);
+    bool success = build_contig_table(input_filename, k, build_eq_table, output_filename);
     if (!success) {
         spdlog::critical("failed to build contig table.");
         return 1;

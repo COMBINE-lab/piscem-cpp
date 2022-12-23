@@ -38,6 +38,22 @@ using BarCodeRecovered = single_cell::util::BarCodeRecovered;
 using umi_kmer_t = rad::util::umi_kmer_t;
 using bc_kmer_t = rad::util::bc_kmer_t;
 
+enum class protocol_t : uint8_t { CHROM_V2, CHROM_V3, CUSTOM };
+
+struct pesc_options {
+    std::string index_basename;
+    std::vector<std::string> left_read_filenames;
+    std::vector<std::string> right_read_filenames;
+    std::string output_dirname;
+    std::string library_geometry;
+    protocol_t pt{protocol_t::CUSTOM};
+    std::unique_ptr<custom_protocol> p{nullptr};
+    bool quiet{false};
+    bool check_ambig_hits{false};
+    uint32_t max_ec_card{256};
+    size_t nthread{16};
+};
+
 // utility class that wraps the information we will
 // need access to when writing output within each thread
 // as well as information we'll need to update for the
@@ -65,7 +81,7 @@ public:
 
 template <typename Protocol>
 void do_map(mindex::reference_index& ri, fastx_parser::FastxParser<fastx_parser::ReadPair>& parser,
-            const Protocol& p, std::atomic<uint64_t>& global_nr,
+            const Protocol& p, const pesc_options& po, std::atomic<uint64_t>& global_nr,
             std::atomic<uint64_t>& global_nhits, pesc_output_info& out_info, std::mutex& iomut) {
     auto log_level = spdlog::get_level();
     auto write_mapping_rate = false;
@@ -100,6 +116,7 @@ void do_map(mindex::reference_index& ri, fastx_parser::FastxParser<fastx_parser:
     size_t num_ambig_umi{0};
 
     mapping::util::mapping_cache_info map_cache(ri);
+    map_cache.max_ec_card = po.max_ec_card;
 
     size_t max_chunk_reads = 5000;
     // Get the read group by which this thread will
@@ -217,8 +234,6 @@ void do_map(mindex::reference_index& ri, fastx_parser::FastxParser<fastx_parser:
     }
 }
 
-enum class protocol_t : uint8_t { CHROM_V2, CHROM_V3, CUSTOM };
-
 bool set_geometry(std::string& library_geometry, protocol_t& pt,
                   std::unique_ptr<custom_protocol>& p) {
     if (library_geometry == "chromium_v2") {
@@ -245,22 +260,10 @@ bool set_geometry(std::string& library_geometry, protocol_t& pt,
     return true;
 }
 
-struct pesc_options {
-  std::string index_basename;
-  std::vector<std::string> left_read_filenames;
-  std::vector<std::string> right_read_filenames;
-  std::string output_dirname;
-  std::string library_geometry;
-  protocol_t pt{protocol_t::CUSTOM};
-  std::unique_ptr<custom_protocol> p{nullptr};
-  bool quiet{false};
-  size_t nthread{16};
-};
-
 #ifdef __cplusplus
 extern "C" {
 #endif
-  int run_pesc_sc(int argc, char** argv);
+int run_pesc_sc(int argc, char** argv);
 #ifdef __cplusplus
 }
 #endif
@@ -287,15 +290,23 @@ int run_pesc_sc(int argc, char** argv) {
                    "An integer that specifies the number of threads to use")
         ->default_val(16);
     app.add_flag("--quiet", po.quiet, "try to be quiet in terms of console output");
+    auto check_ambig =
+        app.add_flag("--check-ambig-hits", po.check_ambig_hits,
+                     "check the existence of highly-frequent hits in mapped targets, rather than "
+                     "ignoring them.");
+    app.add_option("--max-ec-card", po.max_ec_card,
+                   "determines the maximum cardinality equivalence class "
+                   "(number of (txp, orientation status) pairs) to examine "
+                   "if performing check-ambig-hits.")
+        ->needs(check_ambig)
+        ->default_val(256);
     CLI11_PARSE(app, argc, argv);
 
     spdlog::drop_all();
     auto logger = spdlog::create<spdlog::sinks::stdout_color_sink_mt>("");
     logger->set_pattern("%+");
 
-    if (po.quiet) {
-      logger->set_level(spdlog::level::warn);
-    }
+    if (po.quiet) { logger->set_level(spdlog::level::warn); }
     spdlog::set_default_logger(logger);
 
     // start the timer
@@ -314,7 +325,8 @@ int run_pesc_sc(int argc, char** argv) {
     ghc::filesystem::path rad_file_path = output_path / "map.rad";
     ghc::filesystem::path unmapped_bc_file_path = output_path / "unmapped_bc_count.bin";
 
-    mindex::reference_index ri(po.index_basename);
+    bool attempt_load_ec_map = po.check_ambig_hits;
+    mindex::reference_index ri(po.index_basename, attempt_load_ec_map);
 
     std::string cmdline;
     size_t narg = static_cast<size_t>(argc);
@@ -354,7 +366,8 @@ int run_pesc_sc(int argc, char** argv) {
         po.nthread -= 1;
     }
 
-    fastx_parser::FastxParser<fastx_parser::ReadPair> rparser(po.left_read_filenames, po.right_read_filenames, po.nthread, np);
+    fastx_parser::FastxParser<fastx_parser::ReadPair> rparser(
+        po.left_read_filenames, po.right_read_filenames, po.nthread, np);
     rparser.start();
 
     // set the k-mer size for the
@@ -369,23 +382,23 @@ int run_pesc_sc(int argc, char** argv) {
             case protocol_t::CHROM_V2: {
                 chromium_v2 prot;
                 workers.push_back(std::thread(
-                    [&ri, &rparser, &prot, &global_nr, &global_nh, &iomut, &out_info]() {
-                        do_map(ri, rparser, prot, global_nr, global_nh, out_info, iomut);
+                    [&ri, &rparser, &prot, &po, &global_nr, &global_nh, &iomut, &out_info]() {
+                        do_map(ri, rparser, prot, po, global_nr, global_nh, out_info, iomut);
                     }));
                 break;
             }
             case protocol_t::CHROM_V3: {
                 chromium_v3 prot;
                 workers.push_back(std::thread(
-                    [&ri, &rparser, &prot, &global_nr, &global_nh, &iomut, &out_info]() {
-                        do_map(ri, rparser, prot, global_nr, global_nh, out_info, iomut);
+                    [&ri, &rparser, &prot, &po, &global_nr, &global_nh, &iomut, &out_info]() {
+                        do_map(ri, rparser, prot, po, global_nr, global_nh, out_info, iomut);
                     }));
                 break;
             }
             case protocol_t::CUSTOM: {
                 workers.push_back(
                     std::thread([&ri, &rparser, &po, &global_nr, &global_nh, &iomut, &out_info]() {
-                        do_map(ri, rparser, *(po.p), global_nr, global_nh, out_info, iomut);
+                        do_map(ri, rparser, *(po.p), po, global_nr, global_nh, out_info, iomut);
                     }));
                 break;
             }
@@ -396,8 +409,8 @@ int run_pesc_sc(int argc, char** argv) {
     rparser.stop();
 
     spdlog::info("finished mapping.");
-    
-    // rewind to the start of the file and write the number of 
+
+    // rewind to the start of the file and write the number of
     // chunks that we actually produced.
     out_info.rad_file.seekp(chunk_offset);
     uint64_t nc = out_info.num_chunks.load();

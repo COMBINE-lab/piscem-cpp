@@ -260,6 +260,17 @@ struct contig_span {
     inline size_t size() const { return len; }
 };
 
+struct ec_span {
+    pthash::compact_vector::iterator start;
+    pthash::compact_vector::iterator stop;
+    size_t len=0;
+
+    inline pthash::compact_vector::iterator begin() { return start; }
+    inline pthash::compact_vector::iterator end() { return stop; }
+    inline bool empty() const { return len == 0; }
+    inline size_t size() const { return len; }
+};
+
 // the amount we have to shift right
 // to get just the reference on which
 // the hit occurs
