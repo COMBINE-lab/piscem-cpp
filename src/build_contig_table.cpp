@@ -362,9 +362,7 @@ bool build_contig_table(const std::string& input_filename, uint64_t k,
             // skip adjacent duplicates (we can still get dups because of orientation 
             // switching), but if duplicate target / ori pairs are adjacent, don't 
             // add them to avoid the vector growing unnecessarily.
-            if (first) {
-              label.push_back({tid, dir});
-            } else if (tid != prev_tid) {
+            if (first or tid != prev_tid) {
               label.push_back({tid, dir});
             } else if (tid == prev_tid and dir != prev_dir) {
               // if dir != prev_dir, then 
@@ -393,18 +391,6 @@ bool build_contig_table(const std::string& input_filename, uint64_t k,
           auto ec_it = ec_id_map.insert({label, {next_ec_rank, total_label_length}});
           // if this is newly inserted
           if (ec_it.second) {
-            // ec_it.first is the iterator to the 
-            // newly-inserted key in the map, and 
-            // ec_it.first.second is the value we want 
-            // to set.
-            //
-            // the rank is the next available 
-            // unique identifier.
-            // ec_it.first.second.rank = next_ec_rank;
-            // where we start writing the information for this 
-            // equivalence class in the globally concatenated
-            // list.
-            // ec_it.first.second.rank = total_label_length;
             label_list_offsets.push_back(total_label_length);
             total_label_length += label.size();
           }

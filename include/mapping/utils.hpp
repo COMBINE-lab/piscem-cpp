@@ -73,7 +73,7 @@ inline bool compare_chains(const chain_state& a, const chain_state& b) {
 }
 
 struct sketch_hit_info {
-    static constexpr size_t max_num_chains = 16;
+    static constexpr size_t max_num_chains = 8;
     // add a hit to the current target that occurs in the forward
     // orientation with respect to the target.
     bool add_fw(int32_t ref_pos, int32_t read_pos, int32_t rl, int32_t k, int32_t max_stretch,
@@ -82,13 +82,14 @@ struct sketch_hit_info {
         (void)k;
         bool added{false};
 
+        int32_t approx_map_pos = ref_pos - read_pos;
         // If structural constraints have been disabled
         // then simply count the number of hits we see in
         // the given orientation (being careful to count
         // a k-mer of a given rank only one time).
         if (ignore_struct_constraints_fw) {
             if (read_pos > last_read_pos_fw) {
-                if (last_read_pos_fw == -1) { approx_pos_fw = ref_pos - read_pos; }
+                if (last_read_pos_fw == -1) { approx_pos_fw = approx_map_pos; }
                 last_ref_pos_fw = ref_pos;
                 last_read_pos_fw = read_pos;
                 fw_score += score_inc;
@@ -99,15 +100,12 @@ struct sketch_hit_info {
         }
         // NO STRUCTURAL CONSTRAINTS
 
-        int32_t approx_map_pos = ref_pos - read_pos;
         // If this is a k-mer of a new rank
         if (read_pos > last_read_pos_fw) {
             // if this is the first k-mer we are seeing
             if (last_read_pos_fw == -1) {
                 approx_pos_fw = approx_map_pos;
             } else {
-                // std::cerr << "compacting chain pointers of size : " << fw_chains.size() << ",
-                // req_hits = " << fw_hits << "\n";
                 // we are seeing a k-mer of a new rank.
                 // at this point, we've seen all k-mers of the
                 // previous rank, so copy over any valid chains
@@ -122,7 +120,9 @@ struct sketch_hit_info {
         }
 
         // if this is still a hit for the *first*
-        // k-mer of the chains
+        // k-mer of the chains — *note* the first 
+        // k-mer will be of rank 0 because fw_rank 
+        // is initialized to -1.
         if (fw_rank == 0) {
             process_rank0_hit(approx_map_pos, ref_pos, fw_chains, approx_pos_fw,
                               ignore_struct_constraints_fw, fw_hits, added);
@@ -163,11 +163,12 @@ struct sketch_hit_info {
     bool add_rc(int32_t ref_pos, int32_t read_pos, int32_t rl, int32_t k, int32_t max_stretch,
                 float score_inc) {
         bool added{false};
+        int32_t approx_map_pos = (ref_pos - (rl - (read_pos + k)));
 
         // NO STRUCTURAL CONSTRAINTS
         if (ignore_struct_constraints_rc) {
             if (read_pos > last_read_pos_rc) {
-                approx_pos_rc = (ref_pos - (rl - (read_pos + k)));
+                approx_pos_rc = approx_map_pos;
                 if (last_read_pos_rc == -1) {
                     approx_end_pos_rc = ref_pos + read_pos;
                     first_read_pos_rc = read_pos;
@@ -186,7 +187,6 @@ struct sketch_hit_info {
         }
         // NO STRUCTURAL CONSTRAINTS
 
-        int32_t approx_map_pos = (ref_pos - (rl - (read_pos + k)));
         // If this is a k-mer of a new rank
         if (read_pos > last_read_pos_rc) {
             approx_pos_rc = approx_map_pos;
@@ -195,8 +195,6 @@ struct sketch_hit_info {
                 approx_end_pos_rc = ref_pos + read_pos;
                 first_read_pos_rc = read_pos;
             } else {
-                // std::cerr << "compacting chain pointers of size : " << rc_chains.size() << ",
-                // req_hits = " << rc_hits << "\n"; we are seeing a k-mer of a new rank. at this
                 // point, we've seen all k-mers of the previous rank, so copy over any valid chains
                 // for the next search.
                 compact_chains(rc_chains, rc_hits);
@@ -413,7 +411,7 @@ private:
         // If this is a forward hit, lower bound will return
         // the first element >= the key (the current hit), so back up
         // by one element.
-        // Otherwise, ff this is a reverse complement hit, we actually
+        // Otherwise, if this is a reverse complement hit, we actually
         // want the first element >= the current hit, so keep it.
         if (is_fw_hit) {
             if (chain_pos > chains.begin()) {
@@ -558,7 +556,6 @@ inline bool map_read(std::string* read_seq, mapping_cache_info& map_cache, bool 
                     float score_inc = 1.0;
 
                     for (auto v : refs) {
-                        // uint64_t v = *pos_it;
                         const auto& ref_pos_ori = proj_hits.decode_hit(v);
                         uint32_t tid = sshash::util::transcript_id(v);
                         int32_t pos = static_cast<int32_t>(ref_pos_ori.pos);
@@ -594,7 +591,6 @@ inline bool map_read(std::string* read_seq, mapping_cache_info& map_cache, bool 
                         }
 
                     }  // DONE: for (auto &pos_it : refs)
-
                     ++num_valid_hits;
 
                     // if there are no targets reaching the valid hit threshold, then break
@@ -607,8 +603,6 @@ inline bool map_read(std::string* read_seq, mapping_cache_info& map_cache, bool 
                 }
 
                 ++hit_idx;
-                // std::cerr << "kmer for read_pos : " << read_pos << " occurred too many times ("
-                // << num_occ << ")\n";
             }  // DONE : for (auto& raw_hit : raw_hits)
 
             return false;
@@ -633,7 +627,8 @@ inline bool map_read(std::string* read_seq, mapping_cache_info& map_cache, bool 
                                            map_cache.ambiguous_hit_indices, had_alt_max_occ);
         }
 
-        constexpr size_t max_ec_ambig = 1024;//256;
+        // this should be a user-settable parameter
+        constexpr size_t max_ec_ambig = 256;//1024;
         // Further filtering of mappings by ambiguous k-mers
         if (perform_ambig_filtering and !hit_map.empty() and !map_cache.ambiguous_hit_indices.empty()) {
             phmap::flat_hash_set<uint64_t> observed_ecs;
