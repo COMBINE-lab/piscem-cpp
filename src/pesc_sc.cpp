@@ -290,13 +290,16 @@ int run_pesc_sc(int argc, char** argv) {
                    "An integer that specifies the number of threads to use")
         ->default_val(16);
     app.add_flag("--quiet", po.quiet, "try to be quiet in terms of console output");
-    auto check_ambig = app.add_flag("--check-ambig-hits", po.check_ambig_hits,
-                 "check the existence of highly-frequent hits in mapped targets, rather than "
-                 "ignoring them.");
+    auto check_ambig =
+        app.add_flag("--check-ambig-hits", po.check_ambig_hits,
+                     "check the existence of highly-frequent hits in mapped targets, rather than "
+                     "ignoring them.");
     app.add_option("--max-ec-card", po.max_ec_card,
-                 "determines the maximum cardinality equivalence class "
-                 "(number of (txp, orientation status) pairs) to examine "
-                 "if performing check-ambig-hits.")->needs(check_ambig)->default_val(256);
+                   "determines the maximum cardinality equivalence class "
+                   "(number of (txp, orientation status) pairs) to examine "
+                   "if performing check-ambig-hits.")
+        ->needs(check_ambig)
+        ->default_val(256);
     CLI11_PARSE(app, argc, argv);
 
     spdlog::drop_all();
