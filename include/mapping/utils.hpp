@@ -461,7 +461,7 @@ public:
         ambiguous_hit_indices.clear();
     }
 
-    // will store how the read mapped
+   // will store how the read mapped
     mapping::util::MappingType map_type{mapping::util::MappingType::UNMAPPED};
 
     // map from reference id to hit info
@@ -488,6 +488,9 @@ public:
     // holds the indices of k-mers too ambiguous to chain, but which
     // we might later want to check the existence of
     itlib::small_vector<uint32_t, 255> ambiguous_hit_indices;
+
+    // max ec card
+    uint32_t max_ec_card{256};
 };
 
 inline bool map_read(std::string* read_seq, mapping_cache_info& map_cache, bool verbose = false) {
@@ -628,7 +631,7 @@ inline bool map_read(std::string* read_seq, mapping_cache_info& map_cache, bool 
         }
 
         // this should be a user-settable parameter
-        constexpr size_t max_ec_ambig = 256;//1024;
+        const size_t max_ec_ambig = map_cache.max_ec_card;
         // Further filtering of mappings by ambiguous k-mers
         if (perform_ambig_filtering and !hit_map.empty() and !map_cache.ambiguous_hit_indices.empty()) {
             phmap::flat_hash_set<uint64_t> observed_ecs;
