@@ -47,6 +47,7 @@ int main(int argc, char* argv[]) {
 	auto index_prefix = parser.get<std::string>("input_filename");
 
 	mindex::reference_index ri(index_prefix);
+
 	auto freqs = histogram(ri);
 	for (size_t i = 0; i < freqs.size(); ++i) {
 		std::cout << freqs[i];

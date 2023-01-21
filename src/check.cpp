@@ -1,25 +1,74 @@
 #include <iostream>
 
 #include "../external/pthash/external/cmd_line_parser/include/parser.hpp"
-#include "../include/dictionary.hpp"
+#include "../include/reference_index.hpp"
+#include "../include/query/streaming_query_canonical_parsing.hpp"
 #include "check_utils.hpp"
+#include "../include/FastxParser.hpp"
+#include "../include/CanonicalKmerIterator.hpp"
 
 using namespace sshash;
 
 int main(int argc, char** argv) {
     cmd_line_parser::parser parser(argc, argv);
     parser.add("index_filename", "Must be a file generated with src/build.cpp");
+    parser.add("ref_filename", "Reference from which the index was built");
     if (!parser.parse()) return 1;
 
     auto index_filename = parser.get<std::string>("index_filename");
+    auto ref_filename = parser.get<std::string>("ref_filename");
 
-    dictionary dict;
-    uint64_t num_bytes_read = essentials::load(dict, index_filename.c_str());
-    std::cout << "index size: " << essentials::convert(num_bytes_read, essentials::MB) << " [MB] ("
-              << (num_bytes_read * 8.0) / dict.size() << " [bits/kmer])" << std::endl;
-    dict.print_info();
+  	mindex::reference_index ri(index_filename);
+    sshash::streaming_query_canonical_parsing q(ri.get_dict());
 
-    check_dictionary(dict);
+    // set the canonical k-mer size globally
+    CanonicalKmer::k(ri.k());
+
+    fastx_parser::FastxParser<klibpp::KSeq> rparser({ref_filename}, 1); 
+    rparser.start();
+    auto rg = rparser.getReadGroup();
+
+    while (rparser.refill(rg)) {
+        // Here, rg will contain a chunk of references 
+        // we can process.
+        for (auto& record : rg) {
+
+          pufferfish::CanonicalKmerIterator end;
+          pufferfish::CanonicalKmerIterator kit(record.seq);
+          while (kit != end) {
+            //auto km = kit->first;
+            //auto pos = kit->second;
+
+            bool found = false;
+            auto& read_pos = kit->second;
+            auto proj_hits = ri.query(kit, q);
+            auto& refs = proj_hits.refRange;
+
+            for (auto v : refs) {
+              const auto& ref_pos_ori = proj_hits.decode_hit(v);
+              //uint32_t tid = sshash::util::transcript_id(v);
+              int32_t pos = static_cast<int32_t>(ref_pos_ori.pos);
+              //bool ori = ref_pos_ori.isFW;
+              if (pos == read_pos) {
+                found = true;
+                break;
+              }
+            }
+
+            if (!found) {
+              std::cerr << "couldn't find k-mer " << kit->first.to_str() << " at position " << read_pos << "\n";
+            }
+
+            ++kit;
+          }
+          
+        }
+    }
+
+
+    rparser.stop();
+    //check_dictionary(dict);
+
 
     return 0;
 }

@@ -129,27 +129,40 @@ bool build_contig_table(const std::string& input_filename, uint64_t k,
                     current_offset = 0;
                     first = false;
                 } else {  // this should be a segment entry
-
+                    bool is_n_tile = false;
                     if (!((tok.back() == '-') or (tok.back() == '+'))) {
-                        spdlog::critical("unexpected last character of tiling entry [{}]",
-                                         tok.back());
-                        std::exit(1);
+                        // in this case, the first character must be an 'N'
+                        if ( tok.front() == 'N' ) { 
+                          is_n_tile = true;
+                        } else {
+                          spdlog::critical("Unless a tiling entry is an 'N' entry, it must end with '+' or '-'. "
+                                           "Found unexpected last character [{}] of tiling entry.",
+                                           tok.back());
+                          std::exit(1);
+                        }
                     }
 
-                    tok.pop_back();
-                    uint64_t id = std::stoul(tok, nullptr, 0);
+                    if (is_n_tile) {
+                      // skip the number of 'N's and the overlapping (k-1)-mer
+                      tok.erase(0,1); // remove the actual 'N'
+                      uint64_t num_ns = std::stoul(tok, nullptr, 10);
+                      current_offset += num_ns + (k - 1);
+                    } else {
+                      tok.pop_back();
+                      uint64_t id = std::stoul(tok, nullptr, 10);
 
-                    auto rit = id_to_rank.find(id);
-                    if (rit == id_to_rank.end()) {
+                      auto rit = id_to_rank.find(id);
+                      if (rit == id_to_rank.end()) {
                         spdlog::critical(
                             "encountered segment {} that was not found in the id_to_rank "
                             "dictionary!",
                             id);
                         std::exit(1);
-                    } else {
+                      } else {
                         rit->second.count += 1;
                         // then we increment the current offset
                         current_offset += rit->second.len - (k - 1);
+                      }
                     }
                 }
             }
@@ -287,32 +300,43 @@ bool build_contig_table(const std::string& input_filename, uint64_t k,
                     first = false;
                     current_offset = 0;
                 } else {  // this should be a segment entry
+                    bool is_n_tile = false;
                     bool is_fw = true;
                     if (tok.back() == '-') {
                         is_fw = false;
                     } else if (tok.back() == '+') {
                         is_fw = true;
+                    } else if (tok.front() == 'N') {
+                        is_n_tile = true;
                     } else {
-                        spdlog::critical("unexpected last character of tiling entry [{}]",
-                                         tok.back());
+                        spdlog::critical("Unless a tiling entry is an 'N' entry, it must end with '+' or '-'. "
+                                         "Found unexpected last character [{}] of tiling entry.",
+                                          tok.back());
                         std::exit(1);
                     }
-                    tok.pop_back();
-                    uint64_t id = std::stoul(tok, nullptr, 0);
-                    // get the entry for this segment
-                    auto& v = id_to_rank[id];
+                    
+                    if (is_n_tile) {
+                      tok.erase(0,1); // remove the leading 'N'
+                      uint64_t num_ns = std::stoul(tok, nullptr, 10);
+                      current_offset += num_ns + (k - 1);
+                    } else {
+                      tok.pop_back();
+                      uint64_t id = std::stoul(tok, nullptr, 10);
+                      // get the entry for this segment
+                      auto& v = id_to_rank[id];
 
-                    // insert the next entry for this segment
-                    // at the index given by v.count.
-                    auto entry_idx = v.count;
-                    uint64_t encoded_entry =
+                      // insert the next entry for this segment
+                      // at the index given by v.count.
+                      auto entry_idx = v.count;
+                      uint64_t encoded_entry =
                         sshash::util::encode_contig_entry(refctr, current_offset, is_fw);
-                    //[entry_idx].update(refctr, current_offset, is_fw);
-                    seg_table_builder.set(entry_idx, encoded_entry);
-                    // then we increment entry_idx for next time
-                    v.count += 1;
-                    // then we increment the current offset
-                    current_offset += v.len - (k - 1);
+                      //[entry_idx].update(refctr, current_offset, is_fw);
+                      seg_table_builder.set(entry_idx, encoded_entry);
+                      // then we increment entry_idx for next time
+                      v.count += 1;
+                      // then we increment the current offset
+                      current_offset += v.len - (k - 1);
+                    }
                 }
             }
         }
@@ -349,7 +373,7 @@ bool build_contig_table(const std::string& input_filename, uint64_t k,
         for (size_t tile_idx = 0; tile_idx < num_tiles; ++tile_idx) {
           label.clear();
           uint32_t prev_tid = 0;
-          dir_status prev_dir;
+          dir_status prev_dir = dir_status::FW;
           bool first = true;
           sshash::util::contig_span ctg_entry_span = bct.contig_entries(tile_idx);
           for (auto ce : ctg_entry_span) {

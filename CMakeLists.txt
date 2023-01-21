@@ -89,9 +89,9 @@ target_include_directories(build_static PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/incl
 add_executable(bench src/bench.cpp ${SSHASH_SOURCES})
 target_include_directories(bench PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/include)
 
-add_executable(check src/check.cpp ${SSHASH_SOURCES} ${Z_LIB_SOURCES})
-target_link_libraries(check z Threads::Threads)
-target_include_directories(check PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/include)
+add_executable(check src/check.cpp src/FastxParser.cpp) 
+target_link_libraries(check ZLIB::ZLIB sshash_static Threads::Threads)
+target_include_directories(check PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/include ${ZLIB_INCLUDE_DIRS})
 
 add_executable(query src/query.cpp ${SSHASH_SOURCES} ${Z_LIB_SOURCES})
 target_link_libraries(query z Threads::Threads)
