@@ -46,10 +46,11 @@ int main(int argc, char** argv) {
 
             for (auto v : refs) {
               const auto& ref_pos_ori = proj_hits.decode_hit(v);
-              //uint32_t tid = sshash::util::transcript_id(v);
+              uint32_t tid = sshash::util::transcript_id(v);
+              auto& ref_name = ri.ref_name(tid);
               int32_t pos = static_cast<int32_t>(ref_pos_ori.pos);
               //bool ori = ref_pos_ori.isFW;
-              if (pos == read_pos) {
+              if ((pos == read_pos) and (record.name == ref_name)) {
                 found = true;
                 break;
               }
