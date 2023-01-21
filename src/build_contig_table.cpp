@@ -146,7 +146,13 @@ bool build_contig_table(const std::string& input_filename, uint64_t k,
                       // skip the number of 'N's and the overlapping (k-1)-mer
                       tok.erase(0,1); // remove the actual 'N'
                       uint64_t num_ns = std::stoul(tok, nullptr, 10);
-                      current_offset += num_ns + (k - 1);
+                      // if this was the first tile it needs special handling.
+                      // specifically, we *shouldn't* skip the k-1 overlap we should 
+                      // just skip the leading 'N's.
+                      if (current_offset > 0) {
+                        current_offset += (k-1);
+                      }
+                      current_offset += num_ns;
                     } else {
                       tok.pop_back();
                       uint64_t id = std::stoul(tok, nullptr, 10);
@@ -318,7 +324,13 @@ bool build_contig_table(const std::string& input_filename, uint64_t k,
                     if (is_n_tile) {
                       tok.erase(0,1); // remove the leading 'N'
                       uint64_t num_ns = std::stoul(tok, nullptr, 10);
-                      current_offset += num_ns + (k - 1);
+                      // if this was the first tile it needs special handling.
+                      // specifically, we *shouldn't* skip the k-1 overlap we should 
+                      // just skip the leading 'N's.
+                      if (current_offset > 0) {
+                        current_offset += (k-1);
+                      }
+                      current_offset += num_ns;
                     } else {
                       tok.pop_back();
                       uint64_t id = std::stoul(tok, nullptr, 10);
