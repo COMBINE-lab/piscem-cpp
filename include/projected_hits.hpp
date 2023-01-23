@@ -25,6 +25,7 @@ struct projected_hits {
     inline bool empty() { return refRange.empty(); }
 
     inline uint32_t contig_id() const { return contigIdx_; }
+    inline bool hit_fw_on_contig() const { return contigOrientation_; }
 
     inline ref_pos decode_hit(uint64_t v) {
         // true if the contig is fowrard on the reference
@@ -68,18 +69,18 @@ struct projected_hits {
 
         return {rpos, rfw};
     }
-    
-    friend std::ostream& operator<<(std::ostream& os, projected_hits& h);
+
+    // inline friend function :
+    // https://stackoverflow.com/questions/381164/friend-and-inline-method-whats-the-point 
+    // this helps to avoid duplicate symbol error.
+    inline friend std::ostream& operator<<(std::ostream& os, projected_hits& h) {
+        os << "{ proj_hit : \n"
+           << "\t{ contig_idx : " << h.contigIdx_ << ", "
+           << "contig_pos : " << h.contigPos_ << ", "
+           << "contig_ori : " << (h.contigOrientation_ ? "fw" : "rc") << ", "
+           << "contig_len : " << h.contigLen_ << ", "
+           << "global_pos : " << h.globalPos_ << ", "
+           << "ref_range_len : " << h.refRange.size() << "}\n}\n";
+        return os;
+    }
 };
-
-
-std::ostream& operator<<(std::ostream& os, projected_hits& h) {
-    os << "{ proj_hit : \n"
-       << "\t{ contig_idx : " << h.contigIdx_ << ", "
-       << "contig_pos : " << h.contigPos_ << ", "
-       << "contig_ori : " << (h.contigOrientation_ ? "fw" : "rc") << ", "
-       << "contig_len : " << h.contigLen_ << ", "
-       << "global_pos : " << h.globalPos_ << ", "
-       << "ref_range_len : " << h.refRange.size() << "}\n}\n";
-    return os;
-}

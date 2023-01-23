@@ -96,7 +96,7 @@ struct build_configuration {
         , canonical_parsing(false)
         , weighted(false)
         , verbose(true)
-
+        , num_threads(1)
         , tmp_dirname(constants::default_tmp_dirname) {}
 
     uint64_t k;  // kmer size
@@ -109,7 +109,8 @@ struct build_configuration {
     bool canonical_parsing;
     bool weighted;
     bool verbose;
-
+    
+    uint64_t num_threads; // number of threads to use during construction
     std::string tmp_dirname;
 
     void print() const {
@@ -250,6 +251,17 @@ private:
 namespace util {
 
 struct contig_span {
+    pthash::compact_vector::iterator start;
+    pthash::compact_vector::iterator stop;
+    size_t len=0;
+
+    inline pthash::compact_vector::iterator begin() { return start; }
+    inline pthash::compact_vector::iterator end() { return stop; }
+    inline bool empty() const { return len == 0; }
+    inline size_t size() const { return len; }
+};
+
+struct ec_span {
     pthash::compact_vector::iterator start;
     pthash::compact_vector::iterator stop;
     size_t len=0;

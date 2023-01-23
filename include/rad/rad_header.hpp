@@ -17,16 +17,16 @@ public:
 
     // adds n to the list of reference names and
     // returns the total number of reference names
-    uint64_t add_refname(const std::string& n) {
+    inline uint64_t add_refname(const std::string& n) {
         ref_names.emplace_back(n);
         ++ref_count_;
         return ref_count_;
     }
 
-    bool is_paired() const { return is_paired_; }
-    void is_paired(bool ip) { is_paired_ = ip; }
+    inline bool is_paired() const { return is_paired_; }
+    inline void is_paired(bool ip) { is_paired_ = ip; }
 
-    bool dump_to_bin(rad_writer& bw) {
+    inline bool dump_to_bin(rad_writer& bw) {
         uint8_t p = is_paired_ ? 1 : 0;
         bw << p;
         bw << ref_count_;

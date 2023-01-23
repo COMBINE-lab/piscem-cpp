@@ -1,7 +1,7 @@
 #include "../external/pthash/external/cmd_line_parser/include/parser.hpp"
 #include "../include/reference_index.hpp"
 #include "../include/util.hpp"
-#include "../include/mapping_util.hpp"
+#include "../include/mapping/utils.hpp"
 #include "../include/parallel_hashmap/phmap.h"
 
 #include <iostream>
@@ -13,7 +13,8 @@ std::vector<uint64_t> histogram(mindex::reference_index& ri){
 	const auto& ct = ri.get_contig_table();
 	
 	phmap::flat_hash_map<uint64_t, uint64_t> freq_map;
-	auto cit = sshash::ef_sequence<false>::iterator(&ct.m_ctg_offsets, 0);
+
+	auto cit = ct.m_ctg_offsets.at(0);// sshash::ef_sequence<false>::iterator(&ct.m_ctg_offsets, 0);
 	uint64_t max_freq = 0;
 	uint64_t prev = 0;
 	while (cit.has_next()) {
@@ -46,6 +47,7 @@ int main(int argc, char* argv[]) {
 	auto index_prefix = parser.get<std::string>("input_filename");
 
 	mindex::reference_index ri(index_prefix);
+
 	auto freqs = histogram(ri);
 	for (size_t i = 0; i < freqs.size(); ++i) {
 		std::cout << freqs[i];

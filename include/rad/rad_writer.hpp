@@ -110,7 +110,7 @@ rad_writer& operator<<(const stx::string_view& inval) {
 
     // support for logging directly from spdlog
     template <typename OStream>
-    friend OStream& operator<<(OStream& os, const rad_writer& bin_record) {
+    inline friend OStream& operator<<(OStream& os, const rad_writer& bin_record) {
         std::ostream_iterator<char> out_iter(os);
         std::copy(bin_record._bin_data.begin(), bin_record._bin_data.end(), out_iter);
         return os;

@@ -1,8 +1,11 @@
 #include <iostream>
+#include <memory>
+#include <thread>
 
 #include "../external/pthash/external/cmd_line_parser/include/parser.hpp"
 #include "../include/dictionary.hpp"
 #include "../include/spdlog/spdlog.h"
+#include "../include/spdlog/sinks/stdout_color_sinks.h"
 #include "bench_utils.hpp"
 #include "check_utils.hpp"
 #include "build_contig_table.cpp"
@@ -11,7 +14,19 @@
 
 using namespace sshash;
 
-int main(int argc, char** argv) {
+#ifdef __cplusplus
+extern "C" {
+#endif
+  int run_build(int argc, char** argv);
+#ifdef __cplusplus
+}
+#endif
+
+
+int run_build(int argc, char** argv) {
+    constexpr uint32_t min_threads = 1;
+    constexpr uint32_t target_threads = 16;
+    uint32_t default_num_threads = std::max(min_threads, std::min(target_threads, static_cast<uint32_t>(std::thread::hardware_concurrency())));
     cmd_line_parser::parser parser(argc, argv);
 
     /* mandatory arguments */
@@ -44,16 +59,37 @@ int main(int argc, char** argv) {
         "Temporary directory used for construction in external memory. Default is directory '" +
             constants::default_tmp_dirname + "'.",
         "-d", false);
+    parser.add(
+        "num_threads",
+        "Number of threads to use for hash construction (much of the other index building is currently single-threaded, default is " +
+          std::to_string(default_num_threads) + ")",
+        "-t", false
+        );
     parser.add("canonical_parsing",
                "Canonical parsing of k-mers. This option changes the parsing and results in a "
                "trade-off between index space and lookup time.",
                "--canonical-parsing", true);
+    parser.add("build_ec_table", "build orientation-aware equivalence class table an include it in the index.", 
+               "--build-ec-table", true);
     parser.add("weighted", "Also store the weights in compressed format.", "--weighted", true);
     parser.add("check", "Check correctness after construction.", "--check", true);
     parser.add("bench", "Run benchmark after construction.", "--bench", true);
     parser.add("verbose", "Verbose output during construction.", "--verbose", true);
 
     if (!parser.parse()) return 1;
+
+    spdlog::drop_all();
+    //auto console_sink = std::make_shared<spdlog::sinks::stdout_color_sink_mt>();
+    auto logger = spdlog::create<spdlog::sinks::stdout_color_sink_mt>("");
+    logger->set_pattern("%+");
+
+    bool quiet = parser.get<bool>("quiet");
+    if (quiet) {
+      logger->set_level(spdlog::level::warn);
+      logger->warn("being quiet!");
+    }
+
+    spdlog::set_default_logger(logger);
 
     auto input_files_basename = parser.get<std::string>("input_files_basename");
     auto k = parser.get<uint64_t>("k");
@@ -66,11 +102,24 @@ int main(int argc, char** argv) {
     if (parser.parsed("seed")) build_config.seed = parser.get<uint64_t>("seed");
     if (parser.parsed("l")) build_config.l = parser.get<double>("l");
     if (parser.parsed("c")) build_config.c = parser.get<double>("c");
-
-    bool quiet = parser.get<bool>("quiet");
-    if (quiet) {
-      spdlog::set_level(spdlog::level::warn);
+    if (parser.parsed("num_threads")) { 
+      // make sure less than hw concurrency
+      build_config.num_threads = parser.get<uint32_t>("num_threads");
+    } else {
+      build_config.num_threads = default_num_threads;
     }
+
+    // make sure the number of requested threads is OK
+    if (build_config.num_threads == 0) {
+      spdlog::warn("specified 0 threads, defaulting to 1");
+      build_config.num_threads = 1;
+    }
+    uint64_t max_num_threads = std::thread::hardware_concurrency();
+    if (build_config.num_threads > max_num_threads) {
+      build_config.num_threads = max_num_threads;
+      spdlog::warn("too many threads specified, defaulting to {}", build_config.num_threads); 
+    }
+
 
     build_config.canonical_parsing = parser.get<bool>("canonical_parsing");
     build_config.weighted = parser.get<bool>("weighted");
@@ -79,7 +128,7 @@ int main(int argc, char** argv) {
         build_config.tmp_dirname = parser.get<std::string>("tmp_dirname");
         essentials::create_directory(build_config.tmp_dirname);
     }
-    if (!quiet) { build_config.print(); }
+    //if (!quiet) { build_config.print(); }
 
     if (!parser.parsed("output_filename")) {
         spdlog::critical("output filename is required but missing!\n");
@@ -115,5 +164,8 @@ int main(int argc, char** argv) {
     }
     
     // now build the contig table
-    return build_contig_table_main(input_files_basename, k, output_filename);
+    bool build_ec_table = parser.get<bool>("build_ec_table");
+    bool ctab_ok = build_contig_table_main(input_files_basename, k, build_ec_table, output_filename);
+    spdlog::drop_all();
+    return ctab_ok;
 }
