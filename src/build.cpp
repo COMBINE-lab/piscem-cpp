@@ -30,7 +30,7 @@ int run_build(int argc, char** argv) {
     cmd_line_parser::parser parser(argc, argv);
 
     /* Required arguments. */
-    parser.add("input_filename",
+    parser.add("input_files_basename",
                "Must be the basename of input cuttlefish files (expected suffixes are .cf_seq and "
                ".cf_seg, possibly ending with '.gz'.)",
                "-i", true);
