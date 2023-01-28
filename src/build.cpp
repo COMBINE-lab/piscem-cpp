@@ -29,12 +29,14 @@ int run_build(int argc, char** argv) {
     uint32_t default_num_threads = std::max(min_threads, std::min(target_threads, static_cast<uint32_t>(std::thread::hardware_concurrency())));
     cmd_line_parser::parser parser(argc, argv);
 
-    /* mandatory arguments */
-    parser.add("input_files_basename",
+    /* Required arguments. */
+    parser.add("input_filename",
                "Must be the basename of input cuttlefish files (expected suffixes are .cf_seq and "
-               ".cf_seg, possibly ending with '.gz'.)");
-    parser.add("k", "K-mer length (must be <= " + std::to_string(constants::max_k) + ").");
-    parser.add("m", "Minimizer length (must be < k).");
+               ".cf_seg, possibly ending with '.gz'.)",
+               "-i", true);
+    parser.add("k", "K-mer length (must be <= " + std::to_string(constants::max_k) + ").", "-k",
+               true);
+    parser.add("m", "Minimizer length (must be < k).", "-m", true);
 
     /* optional arguments */
     parser.add("quiet", "Only write errors or critical messages to the log", "--quiet", true);

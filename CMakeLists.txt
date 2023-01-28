@@ -86,20 +86,20 @@ target_include_directories(build_static PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/incl
 #target_link_libraries(build sshash_static z ${MALLOC_LIB})
 #target_include_directories(build PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/include)
 
-add_executable(bench src/bench.cpp ${SSHASH_SOURCES})
-target_include_directories(bench PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/include)
+#add_executable(bench src/bench.cpp ${SSHASH_SOURCES})
+#target_include_directories(bench PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/include)
 
 add_executable(check src/check.cpp src/FastxParser.cpp) 
 target_link_libraries(check ZLIB::ZLIB sshash_static Threads::Threads)
 target_include_directories(check PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/include ${ZLIB_INCLUDE_DIRS})
 
-add_executable(query src/query.cpp ${SSHASH_SOURCES} ${Z_LIB_SOURCES})
-target_link_libraries(query z Threads::Threads)
-target_include_directories(query PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/include)
+#add_executable(query src/query.cpp ${SSHASH_SOURCES} ${Z_LIB_SOURCES})
+#target_link_libraries(query z Threads::Threads)
+#target_include_directories(query PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/include)
 
-add_executable(test_load src/test_load.cpp)
-target_include_directories(test_load PUBLIC ${CMAKE_SOURCE_DIR}/include ${ZLIB_INCLUDE_DIRS})
-target_link_libraries(test_load ZLIB::ZLIB sshash_static Threads::Threads)
+#add_executable(test_load src/test_load.cpp)
+#target_include_directories(test_load PUBLIC ${CMAKE_SOURCE_DIR}/include ${ZLIB_INCLUDE_DIRS})
+#target_link_libraries(test_load ZLIB::ZLIB sshash_static Threads::Threads)
 
 add_executable(pesc-sc src/pesc_sc_runner.cpp) 
 target_include_directories(pesc-sc PUBLIC ${CMAKE_SOURCE_DIR}/include ${ZLIB_INCLUDE_DIRS})
