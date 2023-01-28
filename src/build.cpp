@@ -39,7 +39,7 @@ int run_build(int argc, char** argv) {
     parser.add("m", "Minimizer length (must be < k).", "-m", true);
 
     /* optional arguments */
-    parser.add("quiet", "Only write errors or critical messages to the log", "--quiet", true);
+    parser.add("quiet", "Only write errors or critical messages to the log", "--quiet", false, true);
     parser.add("seed",
                "Seed for construction (default is " + std::to_string(constants::seed) + ").", "-s",
                false);
@@ -70,13 +70,13 @@ int run_build(int argc, char** argv) {
     parser.add("canonical_parsing",
                "Canonical parsing of k-mers. This option changes the parsing and results in a "
                "trade-off between index space and lookup time.",
-               "--canonical-parsing", true);
+               "--canonical-parsing", false, true);
     parser.add("build_ec_table", "build orientation-aware equivalence class table an include it in the index.", 
-               "--build-ec-table", true);
-    parser.add("weighted", "Also store the weights in compressed format.", "--weighted", true);
-    parser.add("check", "Check correctness after construction.", "--check", true);
-    parser.add("bench", "Run benchmark after construction.", "--bench", true);
-    parser.add("verbose", "Verbose output during construction.", "--verbose", true);
+               "--build-ec-table", false, true);
+    parser.add("weighted", "Also store the weights in compressed format.", "--weighted", false, true);
+    parser.add("check", "Check correctness after construction.", "--check", false, true);
+    parser.add("bench", "Run benchmark after construction.", "--bench", false, true);
+    parser.add("verbose", "Verbose output during construction.", "--verbose", false, true);
 
     if (!parser.parse()) return 1;
 
