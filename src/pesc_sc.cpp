@@ -357,7 +357,6 @@ int run_pesc_sc(int argc, char** argv) {
     size_t umi_length = umi_kmer_t::k();
     size_t chunk_offset = rad::util::write_rad_header(ri, bc_length, umi_length, out_info.rad_file);
 
-    std::atomic<uint64_t> num_chunks{0};
     std::mutex iomut;
 
     uint32_t np = 1;

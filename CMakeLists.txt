@@ -19,12 +19,13 @@ MESSAGE(STATUS "CMAKE_BUILD_TYPE: " ${CMAKE_BUILD_TYPE})
 
 set(CMAKE_RUNTIME_OUTPUT_DIRECTORY ${CMAKE_BINARY_DIR})
 
-if (UNIX OR (APPLE AND (CMAKE_HOST_SYSTEM_PROCESSOR STREQUAL "x86_64")))
+MESSAGE(STATUS "Compiling for processor: " ${CMAKE_HOST_SYSTEM_PROCESSOR})
+if (UNIX AND (CMAKE_HOST_SYSTEM_PROCESSOR STREQUAL "x86_64"))
+  MESSAGE(STATUS "Compiling with flags: -march=native -mbmi2 -msse4.2")
   set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -march=native")
-  # Flags for PTHash:
   set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -mbmi2 -msse4.2") # for hardware popcount and pdep
 endif()
-
+## figure out what we might want / need to put here if we have a non x86_64 arch.
 
 if (UNIX)
 

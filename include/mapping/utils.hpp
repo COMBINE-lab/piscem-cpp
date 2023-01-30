@@ -537,9 +537,10 @@ inline bool map_read(std::string* read_seq, mapping_cache_info& map_cache, bool 
         int32_t signed_rl = static_cast<int32_t>(read_seq->length());
         auto collect_mappings_from_hits =
             [&max_stretch, &min_occ, &hit_map, &num_valid_hits, &total_occs, &largest_occ,
-             &early_stop, signed_rl, k, &map_cache, perform_ambig_filtering,
+             signed_rl, k, perform_ambig_filtering,
              verbose](auto& raw_hits, auto& prev_read_pos, auto& max_allowed_occ,
                       auto& ambiguous_hit_indices, auto& had_alt_max_occ) -> bool {
+            (void)verbose;
             int32_t hit_idx{0};
 
             for (auto& raw_hit : raw_hits) {
@@ -694,7 +695,7 @@ inline bool map_read(std::string* read_seq, mapping_cache_info& map_cache, bool 
                 }
                 if (ec_entries.size() > max_ec_ambig) { continue; }
                 ++visited;
-                for (const auto& ent : ec_entries) {
+                for (const auto ent : ec_entries) {
                     visit_ec(ent, fw_on_contig);
                 }  // all target oritentation pairs in this eq class
                 ++num_valid_hits;
@@ -710,7 +711,7 @@ inline bool map_read(std::string* read_seq, mapping_cache_info& map_cache, bool 
 
                 uint64_t ec = min_cardinality_ec;
                 auto ec_entries = ec_table.entries_for_ec(ec);
-                for (const auto& ent : ec_entries) {
+                for (const auto ent : ec_entries) {
                     visit_ec(ent, fw_on_contig);
                 }  // all target oritentation pairs in this eq class
                 ++num_valid_hits;
