@@ -74,7 +74,7 @@ add_library(sshash_static STATIC
 target_include_directories(sshash_static PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/include)
 
 add_library(pesc_static STATIC
-  src/pesc_bulk.cpp src/pesc_sc.cpp src/hit_searcher.cpp src/FastxParser.cpp
+  src/pesc_bulk.cpp src/pesc_sc.cpp src/pesc_sc_atac.cpp src/hit_searcher.cpp src/FastxParser.cpp
 )
 target_include_directories(pesc_static PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/include ${ZLIB_INCLUDE_DIRS})
 
@@ -97,6 +97,10 @@ add_executable(query src/query.cpp ${SSHASH_SOURCES} ${Z_LIB_SOURCES})
 target_link_libraries(query z Threads::Threads)
 target_include_directories(query PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/include)
 
+add_executable(check-overlap src/check_overlap.cpp) 
+target_include_directories(check-overlap PUBLIC ${CMAKE_SOURCE_DIR}/include ${ZLIB_INCLUDE_DIRS})
+target_link_libraries(check-overlap pesc_static ZLIB::ZLIB Threads::Threads sshash_static ${MALLOC_LIB})
+
 add_executable(test_load src/test_load.cpp)
 target_include_directories(test_load PUBLIC ${CMAKE_SOURCE_DIR}/include ${ZLIB_INCLUDE_DIRS})
 target_link_libraries(test_load ZLIB::ZLIB sshash_static Threads::Threads)
@@ -107,7 +111,11 @@ target_link_libraries(pesc-sc pesc_static ZLIB::ZLIB Threads::Threads sshash_sta
 
 add_executable(pesc-bulk src/pesc_bulk_runner.cpp) 
 target_include_directories(pesc-bulk PUBLIC ${CMAKE_SOURCE_DIR}/include ${ZLIB_INCLUDE_DIRS})
-target_link_libraries(pesc-bulk pesc_static ZLIB::ZLIB Threads::Threads sshash_static ${MALLOC_LIB}) 
+target_link_libraries(pesc-bulk pesc_static ZLIB::ZLIB Threads::Threads sshash_static ${MALLOC_LIB})
+
+add_executable(pesc-sc-atac src/pesc_sc_atac_runner.cpp) 
+target_include_directories(pesc-sc-atac PUBLIC ${CMAKE_SOURCE_DIR}/include ${ZLIB_INCLUDE_DIRS})
+target_link_libraries(pesc-sc-atac pesc_static ZLIB::ZLIB Threads::Threads sshash_static ${MALLOC_LIB})
 
 #add_executable(mapper src/mapper.cpp src/hit_searcher.cpp) 
 #target_include_directories(mapper PUBLIC ${CMAKE_SOURCE_DIR}/include ${ZLIB_INCLUDE_DIRS})
@@ -124,15 +132,15 @@ target_link_libraries(evaluator ZLIB::ZLIB Threads::Threads sshash_static)
 #add_executable(test_parse src/test_parse_geo.cpp)
 #target_include_directories(evaluator PRIVATE ${CMAKE_SOURCE_DIR}/include)
 
-install(TARGETS build pesc-sc pesc-bulk 
+install(TARGETS build pesc-sc pesc-bulk pesc-sc-atac
         CONFIGURATIONS Debug
         RUNTIME DESTINATION Debug/bin)
 
-install(TARGETS build pesc-sc pesc-bulk
+install(TARGETS build pesc-sc pesc-bulk pesc-sc-atac
   CONFIGURATIONS Release
   RUNTIME DESTINATION Release/bin)
 
-install(TARGETS build pesc-sc pesc-bulk
+install(TARGETS build pesc-sc pesc-bulk pesc-sc-atac
         CONFIGURATIONS Debug
         RUNTIME DESTINATION Debug/bin)
 
