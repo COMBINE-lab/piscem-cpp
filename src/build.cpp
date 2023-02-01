@@ -4,8 +4,8 @@
 
 #include "../external/pthash/external/cmd_line_parser/include/parser.hpp"
 #include "../include/dictionary.hpp"
-#include "../include/spdlog/spdlog.h"
-#include "../include/spdlog/sinks/stdout_color_sinks.h"
+#include "../include/spdlog_piscem/spdlog.h"
+#include "../include/spdlog_piscem/sinks/stdout_color_sinks.h"
 #include "../include/cli11/CLI11.hpp"
 #include "bench_utils.hpp"
 #include "check_utils.hpp"
@@ -94,27 +94,27 @@ int run_build(int argc, char** argv) {
 
     CLI11_PARSE(app, argc, argv);
 
-    spdlog::drop_all();
-    // auto console_sink = std::make_shared<spdlog::sinks::stdout_color_sink_mt>();
-    auto logger = spdlog::create<spdlog::sinks::stdout_color_sink_mt>("");
+    spdlog_piscem::drop_all();
+    // auto console_sink = std::make_shared<spdlog_piscem::sinks::stdout_color_sink_mt>();
+    auto logger = spdlog_piscem::create<spdlog_piscem::sinks::stdout_color_sink_mt>("");
     logger->set_pattern("%+");
 
     if (quiet) {
-        logger->set_level(spdlog::level::warn);
+        logger->set_level(spdlog_piscem::level::warn);
         logger->warn("being quiet!");
     }
 
-    spdlog::set_default_logger(logger);
+    spdlog_piscem::set_default_logger(logger);
 
     // make sure the number of requested threads is OK
     if (build_config.num_threads == 0) {
-        spdlog::warn("specified 0 threads, defaulting to 1");
+        spdlog_piscem::warn("specified 0 threads, defaulting to 1");
         build_config.num_threads = 1;
     }
     uint64_t max_num_threads = std::thread::hardware_concurrency();
     if (build_config.num_threads > max_num_threads) {
         build_config.num_threads = max_num_threads;
-        spdlog::warn("too many threads specified, defaulting to {}", build_config.num_threads);
+        spdlog_piscem::warn("too many threads specified, defaulting to {}", build_config.num_threads);
     }
 
     // if it was passed in
@@ -133,9 +133,9 @@ int run_build(int argc, char** argv) {
         dict.build(input_seq, build_config);
         assert(dict.k() == k);
         auto output_seqidx = output_filename + ".sshash";
-        spdlog::info("saving data structure to disk...");
+        spdlog_piscem::info("saving data structure to disk...");
         essentials::save(dict, output_seqidx.c_str());
-        spdlog::info("DONE");
+        spdlog_piscem::info("DONE");
 
         if (check) {
             check_correctness_lookup_access(dict, input_seq);
@@ -152,6 +152,6 @@ int run_build(int argc, char** argv) {
     // now build the contig table
     bool ctab_ok =
         build_contig_table_main(input_files_basename, k, build_ec_table, output_filename);
-    spdlog::drop_all();
+    spdlog_piscem::drop_all();
     return ctab_ok;
 }

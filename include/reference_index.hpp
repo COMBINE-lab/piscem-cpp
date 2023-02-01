@@ -17,13 +17,13 @@
 #include "CanonicalKmerIterator.hpp"
 #include "projected_hits.hpp"
 #include "util.hpp"
-#include "spdlog/spdlog.h"
+#include "spdlog_piscem/spdlog.h"
 
 namespace mindex {
 class reference_index {
 public:
     reference_index(const std::string& basename, bool attempt_load_ec_map = false) {
-        spdlog::info("loading index from {}", basename);
+        spdlog_piscem::info("loading index from {}", basename);
         std::string dict_name = basename + ".sshash";
         essentials::load(m_dict, dict_name.c_str());
         std::string ctg_name = basename + ".ctab";
@@ -35,7 +35,7 @@ public:
                 m_has_ec_tab = true;
                 essentials::load(m_ec_tab, ectab_name.c_str());
             } else {
-                spdlog::warn(
+                spdlog_piscem::warn(
                     "user requested an option that required loading the ec map, but that was "
                     "not built for this index. The ec map will not be loaded, and any feature "
                     "requiring it "
@@ -58,7 +58,7 @@ public:
         std::fstream s{ref_info.c_str(), s.binary | s.in};
         auto state = bitsery::quickDeserialization<bitsery::InputStreamAdapter>(s, m_ref_names);
         state = bitsery::quickDeserialization<bitsery::InputStreamAdapter>(s, m_ref_lens);
-        spdlog::info("done loading index");
+        spdlog_piscem::info("done loading index");
     }
 
     projected_hits query(pufferfish::CanonicalKmerIterator kmit,

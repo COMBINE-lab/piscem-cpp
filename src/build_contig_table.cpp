@@ -12,7 +12,7 @@
 #include "../include/bitsery/adapter/stream.h"
 #include "../include/bitsery/brief_syntax/vector.h"
 #include "../include/bitsery/brief_syntax/string.h"
-#include "../include/spdlog/spdlog.h"
+#include "../include/spdlog_piscem/spdlog.h"
 #include "../include/json.hpp"
 #include "../external/pthash/include/utils/hasher.hpp"
 
@@ -79,7 +79,7 @@ bool build_contig_table(const std::string& input_filename, uint64_t k,
                 ++idx;
             }
         }
-        spdlog::info("computed all segment lengts");
+        spdlog_piscem::info("computed all segment lengts");
     }
 
     size_t num_refs = 0;
@@ -109,7 +109,7 @@ bool build_contig_table(const std::string& input_filename, uint64_t k,
 
                     if (!first) {
                         if (ref_names.empty()) {
-                            spdlog::error(
+                            spdlog_piscem::error(
                                 "ref_names is empty, but first is false; should not happen!");
                         }
                         auto rn = ref_names.back();
@@ -117,7 +117,7 @@ bool build_contig_table(const std::string& input_filename, uint64_t k,
                         ref_lens.push_back(len);
                         max_ref_len = std::max(static_cast<uint64_t>(max_ref_len), len);
                         if (refctr % 10000 == 0) {
-                            spdlog::info("finished processing reference #{} : {}, len : {}", refctr,
+                            spdlog_piscem::info("finished processing reference #{} : {}, len : {}", refctr,
                                          rn, len);
                         }
                         ++refctr;
@@ -135,7 +135,7 @@ bool build_contig_table(const std::string& input_filename, uint64_t k,
                         if ( tok.front() == 'N' ) { 
                           is_n_tile = true;
                         } else {
-                          spdlog::critical("Unless a tiling entry is an 'N' entry, it must end with '+' or '-'. "
+                          spdlog_piscem::critical("Unless a tiling entry is an 'N' entry, it must end with '+' or '-'. "
                                            "Found unexpected last character [{}] of tiling entry.",
                                            tok.back());
                           std::exit(1);
@@ -159,7 +159,7 @@ bool build_contig_table(const std::string& input_filename, uint64_t k,
 
                       auto rit = id_to_rank.find(id);
                       if (rit == id_to_rank.end()) {
-                        spdlog::critical(
+                        spdlog_piscem::critical(
                             "encountered segment {} that was not found in the id_to_rank "
                             "dictionary!",
                             id);
@@ -174,7 +174,7 @@ bool build_contig_table(const std::string& input_filename, uint64_t k,
             }
         }
         if (ref_names.empty()) {
-            spdlog::critical("ref_names is empty, but first is false; should not happen!");
+            spdlog_piscem::critical("ref_names is empty, but first is false; should not happen!");
             std::exit(1);
         }
         auto rn = ref_names.back();
@@ -201,7 +201,7 @@ bool build_contig_table(const std::string& input_filename, uint64_t k,
         }
 
         if (refctr % 10000 == 0) {
-            spdlog::info("finished processing reference #{} : {}, len : {}", refctr, rn, len);
+            spdlog_piscem::info("finished processing reference #{} : {}, len : {}", refctr, rn, len);
         }
 
         num_refs = ref_lens.size();
@@ -231,16 +231,16 @@ bool build_contig_table(const std::string& input_filename, uint64_t k,
     sshash::util::_ref_shift = ref_len_bits + 1;
     sshash::util::_pos_mask = sshash::util::pos_masks[ref_len_bits];
 
-    spdlog::info("completed first pass over paths.");
-    spdlog::info("there were {} segments.", id_to_rank.size());
-    spdlog::info("max ref len = {}, requires {} bits.", max_ref_len, ref_len_bits);
-    spdlog::info("max refs = {}, requires {} bits.", num_refs, num_ref_bits);
+    spdlog_piscem::info("completed first pass over paths.");
+    spdlog_piscem::info("there were {} segments.", id_to_rank.size());
+    spdlog_piscem::info("max ref len = {}, requires {} bits.", max_ref_len, ref_len_bits);
+    spdlog_piscem::info("max refs = {}, requires {} bits.", num_refs, num_ref_bits);
 
     uint64_t tot_seg_occ = 0;
     for (auto& kv : id_to_rank) { tot_seg_occ += kv.second.count; }
 
-    spdlog::info("there were {} total segment occurrences", tot_seg_occ);
-    spdlog::info("computing cumulative offset vector.");
+    spdlog_piscem::info("there were {} total segment occurrences", tot_seg_occ);
+    spdlog_piscem::info("computing cumulative offset vector.");
 
     basic_contig_table bct;
     bct.m_ref_len_bits = ref_len_bits;
@@ -261,14 +261,14 @@ bool build_contig_table(const std::string& input_filename, uint64_t k,
             contig_offsets.push_back(total_occ);
         }
 
-        spdlog::info("converting segment coutns to offsets.");
+        spdlog_piscem::info("converting segment coutns to offsets.");
         // now convert each `count` entry for each contig to
         // the current offset where its next entry will be written
         for (size_t i = 0; i < segment_order.size(); ++i) {
             auto seg_id = segment_order[i];
             id_to_rank[seg_id].count = contig_offsets[i];
             if (id_to_rank[seg_id].rank != i) {
-                spdlog::critical("expected segment {} to have rank {}, but it had rank {}", seg_id,
+                spdlog_piscem::critical("expected segment {} to have rank {}, but it had rank {}", seg_id,
                                  i, id_to_rank[seg_id].rank);
                 std::exit(1);
             }
@@ -283,7 +283,7 @@ bool build_contig_table(const std::string& input_filename, uint64_t k,
         // essentials::save(efo, cto_fname.c_str());
     }
 
-    spdlog::info("second pass over seq file to fill in contig entries.");
+    spdlog_piscem::info("second pass over seq file to fill in contig entries.");
     {
         // Finally, we'll go over the sequences of segments again
         // and build the final table.
@@ -302,7 +302,7 @@ bool build_contig_table(const std::string& input_filename, uint64_t k,
                 // this is a new reference
                 if (tok.compare(0, hlen, refstr) == 0) {
                     if (!first) { ++refctr; }
-                    if (refctr % 10000 == 0) { spdlog::info("processing reference #{}", refctr); }
+                    if (refctr % 10000 == 0) { spdlog_piscem::info("processing reference #{}", refctr); }
                     first = false;
                     current_offset = 0;
                 } else {  // this should be a segment entry
@@ -315,7 +315,7 @@ bool build_contig_table(const std::string& input_filename, uint64_t k,
                     } else if (tok.front() == 'N') {
                         is_n_tile = true;
                     } else {
-                        spdlog::critical("Unless a tiling entry is an 'N' entry, it must end with '+' or '-'. "
+                        spdlog_piscem::critical("Unless a tiling entry is an 'N' entry, it must end with '+' or '-'. "
                                          "Found unexpected last character [{}] of tiling entry.",
                                           tok.back());
                         std::exit(1);
@@ -518,7 +518,7 @@ int build_contig_table_main(const std::string& input_filename, uint64_t k,
                             const std::string& output_filename) {
     bool success = build_contig_table(input_filename, k, build_eq_table, output_filename);
     if (!success) {
-        spdlog::critical("failed to build contig table.");
+        spdlog_piscem::critical("failed to build contig table.");
         return 1;
     }
     return 0;
