@@ -517,8 +517,11 @@ int run_pesc_bulk(int argc, char** argv) {
     spdlog_piscem::drop_all();
     auto logger = spdlog_piscem::create<spdlog_piscem::sinks::stderr_color_sink_mt>("");
     logger->set_pattern("%+");
-    if (quiet) { logger->set_level(spdlog_piscem::level::warn); }
     spdlog_piscem::set_default_logger(logger);
+
+    if (quiet) {
+      spdlog_piscem::set_level(spdlog_piscem::level::warn);
+    }
 
     // start the timer
     auto start_t = std::chrono::high_resolution_clock::now();

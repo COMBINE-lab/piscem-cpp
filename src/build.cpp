@@ -95,16 +95,13 @@ int run_build(int argc, char** argv) {
     CLI11_PARSE(app, argc, argv);
 
     spdlog_piscem::drop_all();
-    // auto console_sink = std::make_shared<spdlog_piscem::sinks::stdout_color_sink_mt>();
-    auto logger = spdlog_piscem::create<spdlog_piscem::sinks::stdout_color_sink_mt>("");
+    auto logger = spdlog_piscem::create<spdlog_piscem::sinks::stderr_color_sink_mt>("");
     logger->set_pattern("%+");
+    spdlog_piscem::set_default_logger(logger);
 
     if (quiet) {
-        logger->set_level(spdlog_piscem::level::warn);
-        logger->warn("being quiet!");
+      spdlog_piscem::set_level(spdlog_piscem::level::warn);
     }
-
-    spdlog_piscem::set_default_logger(logger);
 
     // make sure the number of requested threads is OK
     if (build_config.num_threads == 0) {
