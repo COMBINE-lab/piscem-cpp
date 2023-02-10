@@ -228,8 +228,8 @@ bool build_contig_table(const std::string& input_filename, uint64_t k,
     uint64_t total_ctg_bits = ref_len_bits + num_ref_bits + 1;
 
     // to get to the ref we shift ref_len_bits + 1 (orientation bit)
-    sshash::util::_ref_shift = ref_len_bits + 1;
-    sshash::util::_pos_mask = sshash::util::pos_masks[ref_len_bits];
+    sshash::util::PiscemIndexUtils::ref_shift(ref_len_bits + 1);
+    sshash::util::PiscemIndexUtils::pos_mask(sshash::util::pos_masks[ref_len_bits]);
 
     spdlog_piscem::info("completed first pass over paths.");
     spdlog_piscem::info("there were {} segments.", id_to_rank.size());

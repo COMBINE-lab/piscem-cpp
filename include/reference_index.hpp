@@ -48,10 +48,10 @@ public:
         // read from the file, set the shift we have to perform on a
         // contig table entry to read off the reference id (= m_ref_len_bits + 1)
         // where the +1 is for the orientation bit.
-        sshash::util::_ref_shift = (m_bct.m_ref_len_bits + 1);
+        sshash::util::PiscemIndexUtils::ref_shift(m_bct.m_ref_len_bits + 1);
         // based on the value of m_ref_len_bits, select the appropriate mask to use
         // when decoding a reference position from a contig table entry.
-        sshash::util::_pos_mask = sshash::util::pos_masks[m_bct.m_ref_len_bits];
+        sshash::util::PiscemIndexUtils::pos_mask(sshash::util::pos_masks[m_bct.m_ref_len_bits]);
 
         std::string ref_info = basename + ".refinfo";
 
