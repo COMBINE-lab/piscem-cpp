@@ -1,4 +1,1 @@
 
-[submodule "external/pthash"]
-	path = external/pthash
-	url = https://github.com/jermp/pthash.git
