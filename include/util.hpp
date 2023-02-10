@@ -317,10 +317,10 @@ constexpr uint64_t pos_masks[] = {
 0x7fffffffffffffff};
 
 inline uint32_t transcript_id(uint64_t e) { 
-    return static_cast<uint32_t>((e >> IndexUtils::ref_shift() ));
+    return static_cast<uint32_t>((e >> PiscemIndexUtils::ref_shift() ));
 }
 inline uint32_t pos(uint64_t e) { 
-    return static_cast<uint32_t>((e >> 1) & IndexUtils::pos_mask() ); 
+    return static_cast<uint32_t>((e >> 1) & PiscemIndexUtils::pos_mask() ); 
 }
 inline bool orientation(uint64_t e) { return (e & 0x1); }
 
@@ -328,7 +328,7 @@ inline uint64_t encode_contig_entry(uint64_t refctr, uint64_t current_offset, bo
     // e starts out with the reference index
     uint64_t e = refctr;
     // we shift this left by _ref_shift (which is pos_bits + 1)
-    e <<= IndexUtils::ref_shift();
+    e <<= PiscemIndexUtils::ref_shift();
     // shift the current offset left by 1 and add it to the representation
     e |= (current_offset << 1);
     // set the orientation bit
