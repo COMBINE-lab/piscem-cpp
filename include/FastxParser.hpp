@@ -77,6 +77,18 @@ struct ReadQualPair {
   klibpp::KSeq second;
 };
 
+struct ReadTrip {
+  klibpp::KSeq first;
+  klibpp::KSeq second;
+  klibpp::KSeq third;
+};
+
+struct ReadQualTrip {
+  klibpp::KSeq first;
+  klibpp::KSeq second;
+  klibpp::KSeq third;
+};
+
 template <typename T> class ReadChunk {
 public:
   ReadChunk(size_t want) : group_(want), want_(want), have_(want) {}
@@ -128,6 +140,10 @@ public:
   FastxParser(std::vector<std::string> files, std::vector<std::string> files2,
               uint32_t numConsumers, uint32_t numParsers = 1,
               uint32_t chunkSize = 1000);
+
+  FastxParser(std::vector<std::string> files, std::vector<std::string> files2,
+              std::vector<std::string> files3, uint32_t numConsumers, uint32_t numParsers = 1,
+              uint32_t chunkSize = 1000);
   ~FastxParser();
   bool start();
   bool stop();
@@ -141,6 +157,7 @@ private:
 
   std::vector<std::string> inputStreams_;
   std::vector<std::string> inputStreams2_;
+  std::vector<std::string> inputStreams3_;
   uint32_t numParsers_;
   std::atomic<uint32_t> numParsing_;
 

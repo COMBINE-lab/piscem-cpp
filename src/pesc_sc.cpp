@@ -132,7 +132,7 @@ void do_map(mindex::reference_index& ri, fastx_parser::FastxParser<fastx_parser:
     rad_w << num_reads_in_chunk;
     rad_w << num_reads_in_chunk;
 
-    while (parser.refill(rg)) {
+    while (parser.refill(rg)) { // make sure to get triplets
         // Here, rg will contain a chunk of read pairs
         // we can process.
         for (auto& record : rg) {
@@ -147,7 +147,7 @@ void do_map(mindex::reference_index& ri, fastx_parser::FastxParser<fastx_parser:
             }
 
             // first extract the barcode
-            std::string* bc = protocol.extract_bc(record.first.seq, record.second.seq);
+            std::string* bc = protocol.extract_bc(record.first.seq, record.second.seq); // need to modify this
             // if we couldn't get it, don't bother with
             // anything else for this read.
             if (bc == nullptr) { continue; }
@@ -162,14 +162,14 @@ void do_map(mindex::reference_index& ri, fastx_parser::FastxParser<fastx_parser:
             bool bc_ok = bc_kmer.fromChars(*bc);
             if (!bc_ok) { continue; }
 
-            std::string* umi = protocol.extract_umi(record.first.seq, record.second.seq);
+            std::string* umi = protocol.extract_umi(record.first.seq, record.second.seq); //dont need this
             if (umi == nullptr) {
                 num_short_umi++;
                 continue;
             }
 
             // convert it to a k-mer type
-            umi_kmer_t umi_kmer;
+            umi_kmer_t umi_kmer; //dont need this
             bool umi_ok = umi_kmer.fromChars(*umi);
             if (!umi_ok) {
                 num_ambig_umi++;
@@ -179,14 +179,14 @@ void do_map(mindex::reference_index& ri, fastx_parser::FastxParser<fastx_parser:
             // alt_max_occ = 0;
             std::string* read_seq =
                 protocol.extract_mappable_read(record.first.seq, record.second.seq);
-
-            bool had_early_stop = mapping::util::map_read(read_seq, map_cache);
+            bool km=false;
+            bool had_early_stop = mapping::util::map_read(read_seq, map_cache, km);
             (void)had_early_stop;
 
             global_nhits += map_cache.accepted_hits.empty() ? 0 : 1;
             rad::util::write_to_rad_stream(bc_kmer, umi_kmer, map_cache.map_type,
                                            map_cache.accepted_hits, map_cache.unmapped_bc_map,
-                                           num_reads_in_chunk, rad_w);
+                                           num_reads_in_chunk, rad_w); //also have a look at bulk
 
             // dump buffer
             if (num_reads_in_chunk > max_chunk_reads) {

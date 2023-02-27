@@ -97,9 +97,9 @@ add_executable(query src/query.cpp ${SSHASH_SOURCES} ${Z_LIB_SOURCES})
 target_link_libraries(query z Threads::Threads)
 target_include_directories(query PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/include)
 
-add_executable(check-overlap src/check_overlap.cpp) 
-target_include_directories(check-overlap PUBLIC ${CMAKE_SOURCE_DIR}/include ${ZLIB_INCLUDE_DIRS})
-target_link_libraries(check-overlap pesc_static ZLIB::ZLIB Threads::Threads sshash_static ${MALLOC_LIB})
+# add_executable(check-overlap src/check_overlap.cpp) 
+# target_include_directories(check-overlap PUBLIC ${CMAKE_SOURCE_DIR}/include ${ZLIB_INCLUDE_DIRS})
+# target_link_libraries(check-overlap pesc_static ZLIB::ZLIB Threads::Threads sshash_static ${MALLOC_LIB})
 
 add_executable(test_load src/test_load.cpp)
 target_include_directories(test_load PUBLIC ${CMAKE_SOURCE_DIR}/include ${ZLIB_INCLUDE_DIRS})

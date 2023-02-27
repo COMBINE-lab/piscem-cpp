@@ -25,7 +25,9 @@ public:
     reference_index(const std::string& basename, bool attempt_load_ec_map = false) {
         spdlog::info("loading index from {}", basename);
         std::string dict_name = basename + ".sshash";
+        // spdlog::info("sshash loaded");
         essentials::load(m_dict, dict_name.c_str());
+        // spdlog::info("ctab loaded");
         std::string ctg_name = basename + ".ctab";
         essentials::load(m_bct, ctg_name.c_str());
 

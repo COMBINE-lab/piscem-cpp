@@ -490,7 +490,7 @@ public:
     uint32_t max_ec_card{256};
 };
 
-inline bool map_read(std::string* read_seq, mapping_cache_info& map_cache, bool verbose = false) {
+inline bool map_read(std::string* read_seq, mapping_cache_info& map_cache, bool& k_match, bool verbose = false) {
     map_cache.clear();
     // rebind map_cache variables to
     // local names
@@ -512,6 +512,7 @@ inline bool map_read(std::string* read_seq, mapping_cache_info& map_cache, bool 
 
     // if there were hits
     if (map_cache.has_matching_kmers) {
+        k_match = true;
         uint32_t num_valid_hits{0};
         uint64_t total_occs{0};
         uint64_t largest_occ{0};

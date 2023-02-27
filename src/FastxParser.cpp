@@ -71,6 +71,57 @@ FastxParser<T>::FastxParser(std::vector<std::string> files,
   }
 }
 
+template <typename T>
+FastxParser<T>::FastxParser(std::vector<std::string> files,
+                            std::vector<std::string> files2,
+                            std::vector<std::string> files3,
+                            uint32_t numConsumers, uint32_t numParsers,
+                            uint32_t chunkSize)
+    : inputStreams_(files), inputStreams2_(files2), inputStreams3_(files3), numParsing_(0),
+      blockSize_(chunkSize) {
+
+  if (numParsers > files.size()) {
+    std::cerr << "Can't make user of more parsing threads than file (triplets); "
+                 "setting # of parsing threads to "
+              << files.size();
+    numParsers = files.size();
+  }
+  numParsers_ = numParsers;
+
+  // nobody is parsing yet
+  numParsing_ = 0;
+
+  readQueue_ = moodycamel::ConcurrentQueue<std::unique_ptr<ReadChunk<T>>>(
+      4 * numConsumers, numParsers, 0);
+
+  seqContainerQueue_ =
+      moodycamel::ConcurrentQueue<std::unique_ptr<ReadChunk<T>>>(
+          4 * numConsumers, 1 + numConsumers, 0); //4??
+
+  workQueue_ = moodycamel::ConcurrentQueue<uint32_t>(numParsers_);
+
+  // push all file ids on the queue
+  for (size_t i = 0; i < files.size(); ++i) {
+    workQueue_.enqueue(i);
+  }
+
+  // every parsing thread gets a consumer token for the seqContainerQueue
+  // and a producer token for the readQueue.
+  for (size_t i = 0; i < numParsers_; ++i) {
+    consumeContainers_.emplace_back(
+        new moodycamel::ConsumerToken(seqContainerQueue_));
+    produceReads_.emplace_back(new moodycamel::ProducerToken(readQueue_));
+  }
+
+  // enqueue the appropriate number of read chunks so that we can start
+  // filling them once the parser has been started.
+  moodycamel::ProducerToken produceContainer(seqContainerQueue_);
+  for (size_t i = 0; i < 4 * numConsumers; ++i) { // need to ask about 4
+    auto chunk = make_unique<ReadChunk<T>>(blockSize_);
+    seqContainerQueue_.enqueue(produceContainer, std::move(chunk));
+  }
+}
+
 template <typename T> ReadGroup<T> FastxParser<T>::getReadGroup() {
   return ReadGroup<T>(getProducerToken_(), getConsumerToken_());
 }
@@ -216,6 +267,92 @@ int parse_reads(
   return 0;
 }
 
+// template <typename T>
+// int parse_reads(
+//     std::vector<std::string>& inputStreams, std::atomic<uint32_t>& numParsing,
+//     moodycamel::ConsumerToken* cCont, moodycamel::ProducerToken* pRead,
+//     moodycamel::ConcurrentQueue<uint32_t>& workQueue,
+//     moodycamel::ConcurrentQueue<std::unique_ptr<ReadChunk<T>>>&
+//         seqContainerQueue_,
+//     moodycamel::ConcurrentQueue<std::unique_ptr<ReadChunk<T>>>& readQueue_) {
+
+//   using namespace klibpp;
+//   using fastx_parser::thread_utils::MIN_BACKOFF_ITERS;
+//   auto curMaxDelay = MIN_BACKOFF_ITERS;
+//   T* s;
+
+//   uint32_t fn{0};
+//   while (workQueue.try_dequeue(fn)) {
+//     auto& file = inputStreams[fn];
+//     std::unique_ptr<ReadChunk<T>> local;
+//     while (!seqContainerQueue_.try_dequeue(*cCont, local)) {
+//       fastx_parser::thread_utils::backoffOrYield(curMaxDelay);
+//       // Think of a way to do this that wouldn't be loud (or would allow a user-definable logging mechanism)
+//       // std::cerr << "couldn't dequeue read chunk\n";
+//     }
+//     size_t numObtained{local->size()};
+//     // open the file and init the parser
+//     gzFile fp = gzopen(file.c_str(), "r");
+
+//     // The number of reads we have in the local vector
+//     size_t numWaiting{0};
+
+//     auto seq = make_kstream(fp, gzread, mode::in);
+
+//     s = &((*local)[numWaiting]);
+//     while ( seq >> *s ) { //ksv >= 0
+//       numWaiting++;
+//       // If we've filled the local vector, then dump to the concurrent queue
+//       if (numWaiting == numObtained) {
+//         curMaxDelay = MIN_BACKOFF_ITERS;
+//         while (!readQueue_.try_enqueue(std::move(local))) {
+//           fastx_parser::thread_utils::backoffOrYield(curMaxDelay);
+//         }
+//         numWaiting = 0;
+//         numObtained = 0;
+//         // And get more empty reads
+//         curMaxDelay = MIN_BACKOFF_ITERS;
+//         while (!seqContainerQueue_.try_dequeue(*cCont, local)) {
+//           fastx_parser::thread_utils::backoffOrYield(curMaxDelay);
+//         }
+//         numObtained = local->size();
+//       }
+//       s = &((*local)[numWaiting]);
+//     }
+
+//     // if we had an error in the stream
+//     if (seq.err()) {
+//       --numParsing;
+//       return -3;
+//     } else if (seq.tqs()) {
+//       // if we had a quality string of the wrong length
+//       // tqs == truncated quality string
+//       --numParsing;
+//       return -2;
+//     }
+
+//     // If we hit the end of the file and have any reads in our local buffer
+//     // then dump them here.
+//     if (numWaiting > 0) {
+//       local->have(numWaiting);
+//       curMaxDelay = MIN_BACKOFF_ITERS;
+//       while (!readQueue_.try_enqueue(*pRead, std::move(local))) {
+//         fastx_parser::thread_utils::backoffOrYield(curMaxDelay);
+//       }
+//       numWaiting = 0;
+//     } else if (numObtained > 0){
+//       curMaxDelay = MIN_BACKOFF_ITERS;
+//       while (!seqContainerQueue_.try_enqueue(std::move(local))) {
+//         fastx_parser::thread_utils::backoffOrYield(curMaxDelay);
+//       }
+//     }
+//     // destroy the parser and close the file
+//     gzclose(fp);
+//   }
+
+//   --numParsing;
+//   return 0;
+// }
 template <typename T>
 int parse_read_pairs(
     std::vector<std::string>& inputStreams,
@@ -305,6 +442,106 @@ int parse_read_pairs(
     // destroy the parser and close the file
     gzclose(fp);
     gzclose(fp2);
+  }
+
+  --numParsing;
+  return 0;
+}
+
+template <typename T>
+int parse_read_triplets(
+    std::vector<std::string>& inputStreams,
+    std::vector<std::string>& inputStreams2,
+    std::vector<std::string>& inputStreams3, std::atomic<uint32_t>& numParsing,
+    moodycamel::ConsumerToken* cCont, moodycamel::ProducerToken* pRead,
+    moodycamel::ConcurrentQueue<uint32_t>& workQueue,
+    moodycamel::ConcurrentQueue<std::unique_ptr<ReadChunk<T>>>&
+        seqContainerQueue_,
+    moodycamel::ConcurrentQueue<std::unique_ptr<ReadChunk<T>>>& readQueue_) {
+
+  using namespace klibpp;
+  using fastx_parser::thread_utils::MIN_BACKOFF_ITERS;
+  size_t curMaxDelay = MIN_BACKOFF_ITERS;
+  T* s;
+
+  uint32_t fn{0};
+  while (workQueue.try_dequeue(fn)) {
+    // for (size_t fn = 0; fn < inputStreams.size(); ++fn) {
+    auto& file = inputStreams[fn];
+    auto& file2 = inputStreams2[fn];
+    auto& file3 = inputStreams3[fn];
+
+    std::unique_ptr<ReadChunk<T>> local;
+    while (!seqContainerQueue_.try_dequeue(*cCont, local)) {
+      fastx_parser::thread_utils::backoffOrYield(curMaxDelay);
+      // Think of a way to do this that wouldn't be loud (or would allow a user-definable logging mechanism)
+      // std::cerr << "couldn't dequeue read chunk\n";
+    }
+    size_t numObtained{local->size()};
+
+    // open the file and init the parser
+    gzFile fp = gzopen(file.c_str(), "r");
+    gzFile fp2 = gzopen(file2.c_str(), "r");
+    gzFile fp3 = gzopen(file3.c_str(), "r");
+
+    // The number of reads we have in the local vector
+    size_t numWaiting{0};
+
+    auto seq = make_kstream(fp, gzread, mode::in);
+    auto seq2 = make_kstream(fp2, gzread, mode::in);
+    auto seq3 = make_kstream(fp3, gzread, mode::in);
+
+    s = &((*local)[numWaiting]);
+    while ( (seq >> s->first) and (seq2 >> s->second) and (seq3 >> s->third)) {//ksv >= 0 and ksv2 >= 0) {
+      numWaiting++;
+      // If we've filled the local vector, then dump to the concurrent queue
+      if (numWaiting == numObtained) {
+        curMaxDelay = MIN_BACKOFF_ITERS;
+        while (!readQueue_.try_enqueue(std::move(local))) {
+          fastx_parser::thread_utils::backoffOrYield(curMaxDelay);
+        }
+        numWaiting = 0;
+        numObtained = 0;
+        // And get more empty reads
+        curMaxDelay = MIN_BACKOFF_ITERS;
+        while (!seqContainerQueue_.try_dequeue(*cCont, local)) {
+          fastx_parser::thread_utils::backoffOrYield(curMaxDelay);
+        }
+        numObtained = local->size();
+      }
+      s = &((*local)[numWaiting]);
+    }
+
+    // if we had an error in the stream
+    if (seq.err() or seq2.err() or seq3.err()) {
+      --numParsing;
+      return -3;
+    } else if (seq.tqs() or seq2.tqs() or seq3.tqs()) {
+      // if we had a quality string of the wrong length
+      // tqs == truncated quality string
+      --numParsing;
+      return -2;
+    }
+
+    // If we hit the end of the file and have any reads in our local buffer
+    // then dump them here.
+    if (numWaiting > 0) {
+      local->have(numWaiting);
+      curMaxDelay = MIN_BACKOFF_ITERS;
+      while (!readQueue_.try_enqueue(*pRead, std::move(local))) {
+        fastx_parser::thread_utils::backoffOrYield(curMaxDelay);
+      }
+      numWaiting = 0;
+    } else if (numObtained > 0){
+      curMaxDelay = MIN_BACKOFF_ITERS;
+      while (!seqContainerQueue_.try_enqueue(std::move(local))) {
+        fastx_parser::thread_utils::backoffOrYield(curMaxDelay);
+      }
+    }
+    // destroy the parser and close the file
+    gzclose(fp);
+    gzclose(fp2);
+    gzclose(fp3);
   }
 
   --numParsing;
@@ -401,6 +638,77 @@ template <> bool FastxParser<ReadQualPair>::start() {
   }
 }
 
+template <> bool FastxParser<ReadTrip>::start() {
+  if (numParsing_ == 0) {
+    isActive_ = true;
+    // Some basic checking to ensure the read files look "sane".
+    if (inputStreams_.size() != inputStreams2_.size()) {
+      throw std::invalid_argument("There should be the same number "
+                                  "of files for the left and right reads");
+    }
+    for (size_t i = 0; i < inputStreams_.size(); ++i) {
+      auto& s1 = inputStreams_[i];
+      auto& s2 = inputStreams2_[i];
+      auto& s3 = inputStreams3_[i];
+      if (s1 == s2 || s1 == s3 || s3 == s2) {
+        throw std::invalid_argument("You provided the same file " + s1 +
+                                    " as both the three files");
+      }
+    }
+
+    threadResults_.resize(numParsers_);
+    std::fill(threadResults_.begin(), threadResults_.end(), 0);
+
+    for (size_t i = 0; i < numParsers_; ++i) {
+      ++numParsing_;
+      parsingThreads_.emplace_back(new std::thread([this, i]() {
+            this->threadResults_[i] = parse_read_triplets(this->inputStreams_, this->inputStreams2_,
+                      this->inputStreams3_, this->numParsing_, this->consumeContainers_[i].get(),
+                      this->produceReads_[i].get(), this->workQueue_,
+                      this->seqContainerQueue_, this->readQueue_);
+      }));
+    }
+    return true;
+  } else {
+    return false;
+  }
+}
+
+template <> bool FastxParser<ReadQualTrip>::start() {
+  if (numParsing_ == 0) {
+    isActive_ = true;
+    // Some basic checking to ensure the read files look "sane".
+    if (inputStreams_.size() != inputStreams2_.size() || inputStreams_.size() != inputStreams3_.size()) {
+      throw std::invalid_argument("There should be the same number "
+                                  "of files for the three read files");
+    }
+    for (size_t i = 0; i < inputStreams_.size(); ++i) {
+      auto& s1 = inputStreams_[i];
+      auto& s2 = inputStreams2_[i];
+      auto& s3 = inputStreams3_[i];
+      if (s1 == s2 || s1 == s3 || s2 == s3) {
+        throw std::invalid_argument("You provided the same file " + s1 +
+                                    " for all the three files");
+      }
+    }
+
+    threadResults_.resize(numParsers_);
+    std::fill(threadResults_.begin(), threadResults_.end(), 0);
+
+    for (size_t i = 0; i < numParsers_; ++i) {
+      ++numParsing_;
+      parsingThreads_.emplace_back(new std::thread([this, i]() {
+            this->threadResults_[i] = parse_read_triplets(this->inputStreams_, this->inputStreams2_,
+                      this->inputStreams3_, this->numParsing_, this->consumeContainers_[i].get(),
+                      this->produceReads_[i].get(), this->workQueue_,
+                      this->seqContainerQueue_, this->readQueue_);
+      }));
+    }
+    return true;
+  } else {
+    return false;
+  }
+}
 
 template <typename T> bool FastxParser<T>::refill(ReadGroup<T>& seqs) {
   finishedWithGroup(seqs);
@@ -424,6 +732,7 @@ template <typename T> void FastxParser<T>::finishedWithGroup(ReadGroup<T>& s) {
 
 template class FastxParser<ReadSeq>;
 template class FastxParser<ReadPair>;
-//template class FastxParser<ReadQual>;
 template class FastxParser<ReadQualPair>;
+template class FastxParser<ReadTrip>;
+template class FastxParser<ReadQualTrip>;
 }
