@@ -124,6 +124,7 @@ std::string getOverlap(std::string& seq1, std::string& seq2, bool dovetail, int 
         if (suffix_read[seed_start_position - si * seed_length + i] !=
             prefix_read[i]) {
           ++num_errors;
+          return frag_seq;
         }
         if (num_errors > error_threshold_for_merging) {
           can_merge = false;

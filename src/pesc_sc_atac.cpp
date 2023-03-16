@@ -77,7 +77,6 @@ bool map_fragment(fastx_parser::ReadTrip& record, mapping_cache_info& map_cache_
         bool read_map = mapping::util::map_read(&mov.frag, map_cache_out, km, false);
         if (km) {
             ++k_match;
-            // std::cout << "yo\n";
         }
         return read_map;
     }
@@ -88,7 +87,6 @@ bool map_fragment(fastx_parser::ReadTrip& record, mapping_cache_info& map_cache_
 
     if(km | right_km) {
         ++k_match;
-        // std::cout << "yo2\n";
     }
 
     int32_t left_len = static_cast<int32_t>(record.first.seq.length());
