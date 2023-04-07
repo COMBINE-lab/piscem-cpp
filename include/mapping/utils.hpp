@@ -219,6 +219,7 @@ struct sketch_hit_info {
             // this is a hit for a k-mer of rank > 0, so we already
             // have a set of active chains.
             process_hit(false, approx_map_pos, ref_pos, max_stretch, rc_chains, rc_hits, added);
+            if (added) { approx_pos_rc = approx_map_pos; }
         }
         return added;
         /*
@@ -363,7 +364,7 @@ private:
                                     [required_hits](chain_state& s) -> bool {
                                         // remove this chain if it doesn't satisfy
                                         // the hit constraint.
-                                        if (s.num_hits < required_hits) { return true; }
+                                        if (s.num_hits < required_hits) {  return true;  }
                                         // the current position becomes the
                                         // previous position for kmers of the
                                         // next rank, and the curr pos gets reset
@@ -427,6 +428,8 @@ private:
             if (chain_pos->curr_pos == -1) {
                 if (stretch < 15) {
                     // then extend this chain
+                    // std::cerr << "extending chain ending at " << chain_pos->prev_pos << " with hit at " 
+                    //          << next_hit_pos << " : " << " num hits = " << static_cast<uint32_t>(chain_pos->num_hits) << "\n";
                     chain_pos->curr_pos = next_hit_pos;
                     chain_pos->min_distortion = static_cast<uint8_t>(stretch);
                     // and increment the number of hits
@@ -537,7 +540,7 @@ inline bool map_read(std::string* read_seq, mapping_cache_info& map_cache, bool 
         int32_t signed_rl = static_cast<int32_t>(read_seq->length());
         auto collect_mappings_from_hits =
             [&max_stretch, &min_occ, &hit_map, &num_valid_hits, &total_occs, &largest_occ,
-             signed_rl, k, perform_ambig_filtering,
+             signed_rl, k, perform_ambig_filtering, &map_cache,
              verbose](auto& raw_hits, auto& prev_read_pos, auto& max_allowed_occ,
                       auto& ambiguous_hit_indices, auto& had_alt_max_occ) -> bool {
             (void)verbose;
@@ -566,9 +569,9 @@ inline bool map_read(std::string* read_seq, mapping_cache_info& map_cache, bool 
                         int32_t pos = static_cast<int32_t>(ref_pos_ori.pos);
                         bool ori = ref_pos_ori.isFW;
                         auto& target = hit_map[tid];
-
+                        
                         /*
-                        if (verbose) {
+                        if (true){//verbose) {
                             auto& tname = map_cache.hs.get_index()->ref_name(tid);
                             std::cerr << "\traw_hit [read_pos: " << read_pos << " ]:" << tname
                                       << ", " << pos << ", " << (ori ? "fw" : "rc") << "\n";
@@ -780,9 +783,11 @@ inline bool map_read(std::string* read_seq, mapping_cache_info& map_cache, bool 
     return early_stop;
 }
 
-inline void merge_se_mappings(mapping_cache_info& map_cache_left,
-                              mapping_cache_info& map_cache_right, int32_t left_len,
-                              int32_t right_len, mapping_cache_info& map_cache_out) {
+inline void merge_se_mappings(fastx_parser::ReadPair& record,
+    mapping_cache_info& map_cache_left,
+    mapping_cache_info& map_cache_right, int32_t left_len,
+    int32_t right_len, mapping_cache_info& map_cache_out) {
+
     map_cache_out.clear();
     auto& accepted_left = map_cache_left.accepted_hits;
     auto& accepted_right = map_cache_right.accepted_hits;
@@ -834,7 +839,7 @@ inline void merge_se_mappings(mapping_cache_info& map_cache_left,
         using iter_t = decltype(first_fw1);
         using out_iter_t = decltype(back_inserter);
 
-        auto merge_lists = [left_len, right_len](iter_t first1, iter_t last1, iter_t first2,
+        auto merge_lists = [left_len, right_len, &record](iter_t first1, iter_t last1, iter_t first2,
                                                  iter_t last2, out_iter_t out) -> out_iter_t {
             // https://en.cppreference.com/w/cpp/algorithm/set_intersection
             while (first1 != last1 && first2 != last2) {
@@ -846,7 +851,7 @@ inline void merge_se_mappings(mapping_cache_info& map_cache_left,
                         int32_t pos_fw = first1->is_fw ? first1->pos : first2->pos;
                         int32_t pos_rc = first1->is_fw ? first2->pos : first1->pos;
                         int32_t frag_len = (pos_rc - pos_fw);
-                        if ((-20 < frag_len) and (frag_len < 1000)) {
+                        if ((-32 < frag_len) and (frag_len < 2000)) {
                             // if left is fw and right is rc then
                             // fragment length is (right_pos + right_len - left_pos) + 1
                             // otherwise it is (left_pos + left_len - right_pos) + 1
@@ -857,7 +862,7 @@ inline void merge_se_mappings(mapping_cache_info& map_cache_left,
                             *out++ = {first1->is_fw, first2->is_fw, first1->pos, 0.0, 0,
                                       first1->tid,   first2->pos,   tlen};
                             ++first1;
-                        }
+                        } 
                     }
                     ++first2;
                 }

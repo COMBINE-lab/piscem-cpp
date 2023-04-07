@@ -79,7 +79,7 @@ bool map_fragment(fastx_parser::ReadPair& record, mapping_cache_info& map_cache_
     }
     */
 
-    mapping::util::merge_se_mappings(map_cache_left, map_cache_right, left_len, right_len,
+    mapping::util::merge_se_mappings(record, map_cache_left, map_cache_right, left_len, right_len,
                                      map_cache_out);
 
     return (early_exit_left or early_exit_right);
@@ -347,8 +347,8 @@ void do_map(mindex::reference_index& ri, fastx_parser::FastxParser<FragT>& parse
     mindex::hit_searcher hs(&ri);
     uint64_t read_num = 0;
     // SAM output
-    //uint64_t processed = 0;
-    //uint64_t buff_size = 10000;
+    // uint64_t processed = 0;
+    // uint64_t buff_size = 10000;
 
     // these don't really belong here
     std::string workstr_left;
@@ -390,7 +390,14 @@ void do_map(mindex::reference_index& ri, fastx_parser::FastxParser<FragT>& parse
                 iomut.unlock();
             }
             */
-
+            /*
+            if constexpr( std::is_same_v<FragT, fastx_parser::ReadSeq> ) {
+              if (map_cache_out.accepted_hits.empty()) {
+                std::cout << ">" << record.name << "\n";
+                std::cout << record.seq << "\n";
+              }
+            }
+            */
             // RAD output
             global_nhits += map_cache_out.accepted_hits.empty() ? 0 : 1;
             rad::util::write_to_rad_stream_bulk(map_cache_out.map_type, map_cache_out.accepted_hits,
@@ -415,10 +422,10 @@ void do_map(mindex::reference_index& ri, fastx_parser::FastxParser<FragT>& parse
 
             // SAM output
             /*
-            write_sam_mappings(map_cache_out, record, workstr_left, workstr_right, global_nhits,
-                               osstream);
+              write_sam_mappings(map_cache_out, record, workstr_left, workstr_right, global_nhits,
+                  osstream);
 
-            if (processed >= buff_size) {
+              if (processed >= buff_size) {
                 std::string o = osstream.str();
                 iomut.lock();
                 std::cout << o;
@@ -426,8 +433,9 @@ void do_map(mindex::reference_index& ri, fastx_parser::FastxParser<FragT>& parse
                 osstream.clear();
                 osstream.str("");
                 processed = 0;
-            }
+              }
             */
+            
         }
     }
 
@@ -447,14 +455,15 @@ void do_map(mindex::reference_index& ri, fastx_parser::FastxParser<FragT>& parse
     // SAM output
     // dump any remaining output
     /*
-    std::string o = osstream.str();
-    iomut.lock();
-    std::cout << o;
-    iomut.unlock();
-    osstream.clear();
+      std::string o = osstream.str();
+      iomut.lock();
+      std::cout << o;
+      iomut.unlock();
+      osstream.clear();
+    */
     // don't need this here because osstream goes away at end of scope
     // osstream.str("");
-    */
+    
 }
 
 #ifdef __cplusplus

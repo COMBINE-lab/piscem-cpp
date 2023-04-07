@@ -36,13 +36,13 @@ struct FastHitInfo {
 // be on the same contig bypass a hash lookup.
 struct SkipContext {
 
-  SkipContext(std::string& read, reference_index* pfi_in, int32_t k_in) : 
+  SkipContext(std::string& read, reference_index* pfi_in, int32_t k_in, uint32_t alt_skip_in) : 
     kit1(read), kit_tmp(read), pfi(pfi_in), 
     ref_contig_it( sshash::bit_vector_iterator(pfi_in->contigs(), 0) ),
     read_len(static_cast<int32_t>(read.length())),
     read_target_pos(0), read_current_pos(0), read_prev_pos(0), safe_skip(1),
     k(k_in), expected_cid(invalid_cid), last_skip_type(LastSkipType::NO_HIT), miss_it(0),
-    global_contig_pos(-1) { }
+    global_contig_pos(-1), alt_skip(alt_skip_in), hit_found(false) { }
   
   inline bool is_exhausted() {
     return kit1 == kit_end;
@@ -70,6 +70,7 @@ struct SkipContext {
 
     if (!found_match) {
       phits = pfi->query(kit1, qc);
+      hit_found = !phits.empty();
     }
 
     return !phits.empty();
@@ -324,6 +325,10 @@ struct SkipContext {
       }
   }
 
+  inline uint32_t alternative_skip_amount() const {
+    return hit_found ? alt_skip : 1;
+  }
+
   inline void advance_from_miss() {
       int32_t skip = 1;
 
@@ -335,7 +340,7 @@ struct SkipContext {
         // should move alt_skip at a time
         case LastSkipType::NO_HIT : {
           //int32_t dist_to_end = (read_len - (kit1->second + k));
-          kit1 += 5;
+          kit1 += alternative_skip_amount();
           return;
         }
         break;
@@ -436,6 +441,13 @@ struct SkipContext {
   int64_t global_contig_pos;
   projected_hits phits;
   static constexpr uint32_t invalid_cid{std::numeric_limits<uint32_t>::max()};
+  // the amount by which we skip on a missed lookup.
+  uint32_t alt_skip;
+  // this is false until we find the first hit on the read
+  // and is subsequently true. It is used to determine 
+  // the amount by which we should move forward on a miss
+  // (1 if no hit is found yet, else altSkip).
+  bool hit_found;
 };
 
 // This method performs k-mer / hit collection 
@@ -484,8 +496,8 @@ bool hit_searcher::get_raw_hits_sketch(std::string &read,
 
   CanonicalKmer::k(k);
   int32_t k = static_cast<int32_t>(CanonicalKmer::k());
-  SkipContext skip_ctx(read, pfi_, k);
-  
+  SkipContext skip_ctx(read, pfi_, k, altSkip);
+
   // while it is possible to search further
   while (!skip_ctx.is_exhausted()) {
     

@@ -1,4 +1,3 @@
-#include "../external/pthash/external/cmd_line_parser/include/parser.hpp"
 #include "../include/reference_index.hpp"
 #include "../include/CanonicalKmerIterator.hpp"
 #include "../include/Kmer.hpp"
@@ -187,6 +186,13 @@ void do_map(mindex::reference_index& ri, fastx_parser::FastxParser<fastx_parser:
             rad::util::write_to_rad_stream(bc_kmer, umi_kmer, map_cache.map_type,
                                            map_cache.accepted_hits, map_cache.unmapped_bc_map,
                                            num_reads_in_chunk, rad_w);
+
+            /*
+            if (map_cache.accepted_hits.empty()) {
+              std::cout << ">" << record.second.name << "\n";
+              std::cout << record.second.seq << "\n";
+            }
+            */
 
             // dump buffer
             if (num_reads_in_chunk > max_chunk_reads) {
