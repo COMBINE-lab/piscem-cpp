@@ -70,7 +70,7 @@ struct SkipContext {
 
     if (!found_match) {
       phits = pfi->query(kit1, qc);
-      hit_found = !phits.empty();
+      hit_found = (hit_found or !phits.empty());
     }
 
     return !phits.empty();
