@@ -79,7 +79,7 @@ bool map_fragment(fastx_parser::ReadPair& record, mapping_cache_info& map_cache_
     }
     */
 
-    mapping::util::merge_se_mappings(record, map_cache_left, map_cache_right, left_len, right_len,
+    mapping::util::merge_se_mappings(map_cache_left, map_cache_right, left_len, right_len,
                                      map_cache_out);
 
     return (early_exit_left or early_exit_right);

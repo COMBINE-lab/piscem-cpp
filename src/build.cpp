@@ -31,8 +31,6 @@ int run_build(int argc, char** argv) {
         std::min(target_threads, static_cast<uint32_t>(std::thread::hardware_concurrency())));
 
     bool quiet = false;
-    uint64_t k = 0;
-    uint64_t m = 0;
     bool build_ec_table = false;
     bool check = false;
     bool bench = false;
@@ -49,10 +47,10 @@ int run_build(int argc, char** argv) {
            "Must be the basename of input cuttlefish files (expected suffixes are .cf_seq and "
            ".cf_seg, possibly ending with '.gz'.)")
         ->required();
-    app.add_option("-k,--klen", k,
+    app.add_option("-k,--klen", build_config.k,
                    "K-mer length (must be <= " + std::to_string(constants::max_k) + ")")
         ->required();
-    app.add_option("-m,--minimizer-len", m, "Minimizer length (must be < k).")->required();
+    app.add_option("-m,--minimizer-len", build_config.m, "Minimizer length (must be < k).")->required();
     app.add_option("-o,--output", output_filename,
                    "path to output file prefix where the data strucutre will be serialized.")
         ->required();
@@ -128,7 +126,7 @@ int run_build(int argc, char** argv) {
         auto input_seq = input_files_basename + ".cf_seg";
         dictionary dict;
         dict.build(input_seq, build_config);
-        assert(dict.k() == k);
+        assert(dict.k() == build_config.k);
         auto output_seqidx = output_filename + ".sshash";
         spdlog_piscem::info("saving data structure to disk...");
         essentials::save(dict, output_seqidx.c_str());
@@ -148,7 +146,7 @@ int run_build(int argc, char** argv) {
 
     // now build the contig table
     bool ctab_ok =
-        build_contig_table_main(input_files_basename, k, build_ec_table, output_filename);
+        build_contig_table_main(input_files_basename, build_config.k, build_ec_table, output_filename);
     spdlog_piscem::drop_all();
     return ctab_ok;
 }

@@ -28,6 +28,8 @@ struct FastHitInfo {
   bool fast_check{false};
   int32_t offset{0};
   uint64_t ref_kmer{0};
+  KmerMatchType expected_match_type{KmerMatchType::NO_MATCH};
+  bool is_confirmatory{false};
 };
 
 // Idea is to move the logic of the search into here.
@@ -52,25 +54,44 @@ struct SkipContext {
     return kit1->first;
   }
 
-  inline bool query_kmer(sshash::streaming_query_canonical_parsing& qc) {
+  inline bool query_kmer(sshash::streaming_query_canonical_parsing& qc, bool& obtained_confirmatory_hit) {
     bool found_match = false;
     if (fast_hit.valid()) {
       auto keq = kit1->first.isEquivalent(fast_hit.ref_kmer);
-      if (keq != KmerMatchType::NO_MATCH) {
+      // if the k-mer we found at this position on the query matched 
+      // the reference k-mer on the contig at the position we expect 
+      // (in any orientation), then we know where this k-mer occurs in 
+      // the index. Note, if it doesn't match the expected orientation 
+      // then it might not be a confirmatory hit, but we can still avoid 
+      // having to query the index for it explicitly.
+      if (keq != KmerMatchType::NO_MATCH) { 
         found_match = true;
+        // if the hit is in the expected orientation, then it's a 
+        // confirmatory hit.
+        fast_hit.is_confirmatory &= (keq == fast_hit.expected_match_type);
         // how the k-mer hits the contig (true if k-mer in fwd orientation,
         // false otherwise)
         bool hit_fw = (keq == KmerMatchType::IDENTITY_MATCH);
         phits.contigOrientation_ = hit_fw;
         phits.globalPos_ += fast_hit.offset;
         phits.contigPos_ += fast_hit.offset;
-      }
+      } 
+      // the next query can't be resolved with a fast hit
       fast_hit.valid(false);
     }
-
+    
+    // if we didn't find the query k-mer at the expecte reference 
+    // position (or we were not set up to do a fast hit) then 
+    // query the index.
     if (!found_match) {
+      obtained_confirmatory_hit = false;
       phits = pfi->query(kit1, qc);
       hit_found = (hit_found or !phits.empty());
+    } else {
+      // we obtained a confirmatory result iff we satisfied 
+      // the query via a fast hit, and the match confirmed 
+      // our expectetation.
+      obtained_confirmatory_hit = fast_hit.is_confirmatory;
     }
 
     return !phits.empty();
@@ -301,27 +322,32 @@ struct SkipContext {
       // what we expect to see.
       if (expected_skip and (expected_cid != invalid_cid) and (kit1 != kit_end)) {
         /*
-      if (2*cCurrPos > ref_contig_it.size()) {
-        std::cout << "cCurrPos = " << 2*cCurrPos << ", ref_contig_len = " << ref_contig_it.size() << "\n";
-        std::cout << "expected_cid = " << expected_cid << ", skip = " << skip << "\n";
-      }
-      */
+        if (2*cCurrPos > ref_contig_it.size()) {
+          std::cout << "cCurrPos = " << 2*cCurrPos << ", ref_contig_len = " << ref_contig_it.size() << "\n";
+          std::cout << "expected_cid = " << expected_cid << ", skip = " << skip << "\n";
+        }
+        */
+        
+        // this will be eligible for a fast hit check
+        // and if we get one it will be purely confirmatory
+        fast_hit.is_confirmatory = true;
+        fast_hit.valid(true);
+
         if (phits.contigOrientation_) { 
           // if match is fw, go to the next k-mer in the contig
           cCurrPos += skip;
-          fast_hit.valid(true);
           fast_hit.offset = skip;
-          ref_contig_it.at(2*cCurrPos);
-          fast_hit.ref_kmer = ref_contig_it.read(2*k);
-          return;
+          fast_hit.expected_match_type = KmerMatchType::IDENTITY_MATCH;
         } else {
           cCurrPos -= skip;
-          fast_hit.valid(true);
           fast_hit.offset = -skip;
-          ref_contig_it.at(2*cCurrPos);
-          fast_hit.ref_kmer = ref_contig_it.read(2*k);
-          return;
+          fast_hit.expected_match_type = KmerMatchType::TWIN_MATCH;
         }
+
+        // set the ref contig iterator position and read off 
+        // the reference k-mer
+        ref_contig_it.at(2*cCurrPos);
+        fast_hit.ref_kmer = ref_contig_it.read(2*k);
       }
   }
 
@@ -397,10 +423,13 @@ struct SkipContext {
             if (phits.contigOrientation_) {
               fast_hit.offset += actual_skip;
               global_contig_pos += actual_skip;
+              fast_hit.expected_match_type = KmerMatchType::IDENTITY_MATCH;
             } else {
               fast_hit.offset -= actual_skip;
               global_contig_pos -= actual_skip;
+              fast_hit.expected_match_type = KmerMatchType::TWIN_MATCH;
             }
+            fast_hit.is_confirmatory = false;
             fast_hit.valid(true);
             ref_contig_it.at(2*global_contig_pos);
             fast_hit.ref_kmer = ref_contig_it.read(2*k);
@@ -502,7 +531,8 @@ bool hit_searcher::get_raw_hits_sketch(std::string &read,
   while (!skip_ctx.is_exhausted()) {
     
     // if we had a hit
-    if (skip_ctx.query_kmer(qc)) {
+    bool confirmatory_fast_hit = false;
+    if (skip_ctx.query_kmer(qc, confirmatory_fast_hit)) {
 
       // record this hit
       int32_t read_pos = skip_ctx.read_pos();
@@ -548,7 +578,8 @@ bool hit_searcher::get_raw_hits_sketch(std::string &read,
             // that we wanted to skip to, collecting the 
             // hits we find along the way.
             while (skip_ctx.advance_safe()) {
-              if (skip_ctx.query_kmer(qc)) {
+              bool confirmatory_fast_hit = false;
+              if (skip_ctx.query_kmer(qc, confirmatory_fast_hit)) {
                 raw_hits.push_back(
                     std::make_pair(skip_ctx.read_pos(), skip_ctx.proj_hits()));
               }
@@ -591,7 +622,9 @@ bool hit_searcher::get_raw_hits_sketch(std::string &read,
         // or the hit was in accordance with our expectation.
         
         // push this hit and advance
-        raw_hits.push_back(std::make_pair(read_pos, proj_hits));
+        if (!confirmatory_fast_hit) {
+          raw_hits.push_back(std::make_pair(read_pos, proj_hits));
+        }
         skip_ctx.advance_from_hit();
       }
     } else {

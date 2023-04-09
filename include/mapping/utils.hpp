@@ -207,7 +207,6 @@ struct sketch_hit_info {
 
             last_ref_pos_rc = ref_pos;
             last_read_pos_rc = read_pos;
-            added = true;
         }
 
         // if this is still a hit for the *first*
@@ -364,7 +363,7 @@ private:
                                     [required_hits](chain_state& s) -> bool {
                                         // remove this chain if it doesn't satisfy
                                         // the hit constraint.
-                                        if (s.num_hits < required_hits) {  return true;  }
+                                        if (s.num_hits < required_hits) { return true; }
                                         // the current position becomes the
                                         // previous position for kmers of the
                                         // next rank, and the curr pos gets reset
@@ -420,16 +419,24 @@ private:
             }
         }
 
+        // FOR DEBUG
+        // std::cerr << " === examining hit at ref pos : " << next_hit_pos << ", lower bound search
+        // found chain ending at : " << chain_pos->prev_pos << " =========\n";
+
         // if we found a valid chain to extend
-        if (chain_pos < chains.end()) {
+        int32_t tries = 0;
+        // if we don't find a valid chain in the expected place, look at *one* more
+        // predecessor (or successor in the reverse complement case) to see if we can
+        // extend that chain.
+        // NOTE: Think if # of tries should be an advanced parameter available to the user.
+        while ((chain_pos < chains.end()) and (chain_pos >= chains.begin()) and !added and
+               (tries < 2)) {
             auto stretch = std::abs(chain_pos->read_start_pos - read_start_pos);
             stretch = std::min(stretch, static_cast<decltype(stretch)>(max_distortion));
             // and if it hasn't yet been extended
             if (chain_pos->curr_pos == -1) {
                 if (stretch < 15) {
                     // then extend this chain
-                    // std::cerr << "extending chain ending at " << chain_pos->prev_pos << " with hit at " 
-                    //          << next_hit_pos << " : " << " num hits = " << static_cast<uint32_t>(chain_pos->num_hits) << "\n";
                     chain_pos->curr_pos = next_hit_pos;
                     chain_pos->min_distortion = static_cast<uint8_t>(stretch);
                     // and increment the number of hits
@@ -443,6 +450,14 @@ private:
                 chain_pos->min_distortion = static_cast<uint8_t>(stretch);
                 added = true;
             }
+            // the chain to check for forward strand hits is the predecessor
+            // and for reverse complement strand hits it's the successor.
+            if (is_fw_hit) {
+                chain_pos--;
+            } else {
+                chain_pos++;
+            }
+            tries++;
         }
     }
 };
@@ -569,9 +584,9 @@ inline bool map_read(std::string* read_seq, mapping_cache_info& map_cache, bool 
                         int32_t pos = static_cast<int32_t>(ref_pos_ori.pos);
                         bool ori = ref_pos_ori.isFW;
                         auto& target = hit_map[tid];
-                        
-                        /*
-                        if (true){//verbose) {
+
+                        /* FOR DEBUG
+                        if (verbose) {
                             auto& tname = map_cache.hs.get_index()->ref_name(tid);
                             std::cerr << "\traw_hit [read_pos: " << read_pos << " ]:" << tname
                                       << ", " << pos << ", " << (ori ? "fw" : "rc") << "\n";
@@ -629,6 +644,7 @@ inline bool map_read(std::string* read_seq, mapping_cache_info& map_cache, bool 
         // default) times, then collect the min occuring hits to get the mapping.
         if (attempt_occ_recover and (min_occ >= map_cache.max_occ_default) and
             (min_occ < map_cache.max_occ_recover)) {
+            num_valid_hits = 0;
             map_cache.ambiguous_hit_indices.clear();
             prev_read_pos = -1;
             uint64_t max_allowed_occ = min_occ;
@@ -640,6 +656,7 @@ inline bool map_read(std::string* read_seq, mapping_cache_info& map_cache, bool 
         // Further filtering of mappings by ambiguous k-mers
         if (perform_ambig_filtering and !hit_map.empty() and
             !map_cache.ambiguous_hit_indices.empty()) {
+            num_valid_hits = 0;
             phmap::flat_hash_set<uint64_t> observed_ecs;
             size_t min_cardinality_ec_size = std::numeric_limits<size_t>::max();
             uint64_t min_cardinality_ec = std::numeric_limits<size_t>::max();
@@ -783,11 +800,9 @@ inline bool map_read(std::string* read_seq, mapping_cache_info& map_cache, bool 
     return early_stop;
 }
 
-inline void merge_se_mappings(fastx_parser::ReadPair& record,
-    mapping_cache_info& map_cache_left,
-    mapping_cache_info& map_cache_right, int32_t left_len,
-    int32_t right_len, mapping_cache_info& map_cache_out) {
-
+inline void merge_se_mappings(mapping_cache_info& map_cache_left,
+                              mapping_cache_info& map_cache_right, int32_t left_len,
+                              int32_t right_len, mapping_cache_info& map_cache_out) {
     map_cache_out.clear();
     auto& accepted_left = map_cache_left.accepted_hits;
     auto& accepted_right = map_cache_right.accepted_hits;
@@ -839,7 +854,7 @@ inline void merge_se_mappings(fastx_parser::ReadPair& record,
         using iter_t = decltype(first_fw1);
         using out_iter_t = decltype(back_inserter);
 
-        auto merge_lists = [left_len, right_len, &record](iter_t first1, iter_t last1, iter_t first2,
+        auto merge_lists = [left_len, right_len](iter_t first1, iter_t last1, iter_t first2,
                                                  iter_t last2, out_iter_t out) -> out_iter_t {
             // https://en.cppreference.com/w/cpp/algorithm/set_intersection
             while (first1 != last1 && first2 != last2) {
@@ -862,7 +877,7 @@ inline void merge_se_mappings(fastx_parser::ReadPair& record,
                             *out++ = {first1->is_fw, first2->is_fw, first1->pos, 0.0, 0,
                                       first1->tid,   first2->pos,   tlen};
                             ++first1;
-                        } 
+                        }
                     }
                     ++first2;
                 }
