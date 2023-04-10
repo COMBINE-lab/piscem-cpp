@@ -68,7 +68,8 @@ struct SkipContext {
         found_match = true;
         // if the hit is in the expected orientation, then it's a 
         // confirmatory hit.
-        fast_hit.is_confirmatory &= (keq == fast_hit.expected_match_type);
+        // Note: consider if the below should actually be "&=" instead of "=" or not.
+        fast_hit.is_confirmatory = (keq == fast_hit.expected_match_type);
         // how the k-mer hits the contig (true if k-mer in fwd orientation,
         // false otherwise)
         bool hit_fw = (keq == KmerMatchType::IDENTITY_MATCH);
