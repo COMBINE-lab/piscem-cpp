@@ -1,5 +1,6 @@
 #pragma once
 
+#include <limits>
 #include "../dictionary.hpp"
 #include "../minimizer_enumerator.hpp"
 #include "../util.hpp"
@@ -29,7 +30,7 @@ struct streaming_query_canonical_parsing {
         , m_end(0)
         , m_pos_in_window(0)
         , m_window_size(0)
-        , m_prev_query_offset(0)
+        , m_prev_query_offset(std::numeric_limits<int32_t>::lowest())
 
         , m_reverse(false)
 
@@ -42,6 +43,12 @@ struct streaming_query_canonical_parsing {
 
     inline void start() { m_start = true; }
 
+    inline void reset_state() {
+        m_minimizer_not_found = false;
+        m_prev_query_offset = std::numeric_limits<int32_t>::lowest();
+        start();
+    }
+
     lookup_result get_contig_pos(const uint64_t km, const uint64_t km_rc,
                                  const uint64_t query_offset) {
         return lookup_advanced(km, km_rc, query_offset);
@@ -52,17 +59,15 @@ struct streaming_query_canonical_parsing {
         m_kmer = km;
         m_kmer_rc = km_rc;
 
-        // std::cout << "== query for kmer='" << util::uint64_to_string_no_reverse(m_kmer, m_k)
-        //           << "', rc='" << util::uint64_to_string_no_reverse(m_kmer_rc, m_k) << "'"
-        //           << std::endl;
-
         // if the current query offset position is
         // the next position after the stored query
         // offset position, then we can apply the
         // relevant optimizations.  Otherwise, we
         // should consider this as basically a "new"
         // query
-        if (!m_start) { m_start = (m_prev_query_offset + 1) != query_offset; }
+        if (!m_start) {
+            if ((m_prev_query_offset + 1) != query_offset) { reset_state(); }
+        }
         m_prev_query_offset = query_offset;
 
         return do_lookup_advanced();
@@ -109,6 +114,7 @@ struct streaming_query_canonical_parsing {
                 }
             }
         } else {
+            m_minimizer_not_found = false;
             locate_bucket();
             if (extends()) { /* Try to extend matching even when we change minimizer. */
                 extend();
@@ -122,6 +128,7 @@ struct streaming_query_canonical_parsing {
         m_start = false;
 
         assert(equal_lookup_result(m_dict->lookup_uint64_canonical_parsing(m_kmer), m_res));
+
         return m_res;
     }
 
@@ -220,8 +227,6 @@ private:
                         m_minimizer_not_found = true;
                         m_res = lookup_result();
                         return;
-                    } else {
-                        m_minimizer_not_found = false;
                     }
                 }
 
