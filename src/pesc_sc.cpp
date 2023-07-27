@@ -1,36 +1,35 @@
-#include "../include/reference_index.hpp"
 #include "../include/CanonicalKmerIterator.hpp"
-#include "../include/Kmer.hpp"
-#include "../include/query/streaming_query_canonical_parsing.hpp"
-#include "../include/projected_hits.hpp"
-#include "../include/util.hpp"
-#include "../include/mapping/utils.hpp"
-#include "../include/parallel_hashmap/phmap.h"
 #include "../include/FastxParser.hpp"
-#include "../include/rad/rad_writer.hpp"
-#include "../include/rad/rad_header.hpp"
-#include "../include/rad/util.hpp"
-#include "../include/ghc/filesystem.hpp"
+#include "../include/Kmer.hpp"
 #include "../include/cli11/CLI11.hpp"
-#include "../include/sc/util.hpp"
-#include "../include/spdlog_piscem/spdlog.h"
-#include "../include/spdlog_piscem/sinks/stdout_color_sinks.h"
-#include "../include/meta_info.hpp"
+#include "../include/ghc/filesystem.hpp"
 #include "../include/mapping/utils.hpp"
+#include "../include/meta_info.hpp"
+#include "../include/parallel_hashmap/phmap.h"
+#include "../include/projected_hits.hpp"
+#include "../include/query/streaming_query_canonical_parsing.hpp"
+#include "../include/rad/rad_header.hpp"
+#include "../include/rad/rad_writer.hpp"
+#include "../include/rad/util.hpp"
+#include "../include/reference_index.hpp"
+#include "../include/sc/util.hpp"
+#include "../include/spdlog_piscem/sinks/stdout_color_sinks.h"
+#include "../include/spdlog_piscem/spdlog.h"
+#include "../include/util.hpp"
 //#include "FastxParser.cpp"
 //#include "hit_searcher.cpp"
 #include "zlib.h"
 
 #include <atomic>
 #include <chrono>
+#include <cstdio>
 #include <iostream>
-#include <vector>
 #include <memory>
 #include <numeric>
 #include <optional>
-#include <cstdio>
-#include <thread>
 #include <sstream>
+#include <thread>
+#include <vector>
 
 using namespace klibpp;
 using BarCodeRecovered = single_cell::util::BarCodeRecovered;
@@ -252,7 +251,8 @@ bool set_geometry(std::string& library_geometry, protocol_t& pt,
             bc_kmer_t::k(p->get_bc_len());
             pt = protocol_t::CUSTOM;
         } else {
-            spdlog_piscem::critical("could not parse custom geometry description [{}]", library_geometry);
+            spdlog_piscem::critical("could not parse custom geometry description [{}]",
+                                    library_geometry);
             return false;
         }
     }
@@ -306,9 +306,7 @@ int run_pesc_sc(int argc, char** argv) {
     logger->set_pattern("%+");
     spdlog_piscem::set_default_logger(logger);
 
-    if (po.quiet) {
-      spdlog_piscem::set_level(spdlog_piscem::level::warn);
-    }
+    if (po.quiet) { spdlog_piscem::set_level(spdlog_piscem::level::warn); }
 
     // start the timer
     auto start_t = std::chrono::high_resolution_clock::now();
@@ -436,6 +434,17 @@ int run_pesc_sc(int argc, char** argv) {
     }
 
     out_info.unmapped_bc_file.close();
+    // Same as the RAD file stream above, check to make
+    // sure the output is properly written.
+    if (!out_info.unmapped_bc_file) {
+        spdlog_piscem::critical(
+            "The unmapped barcode file stream had an invalid status after "
+            "close; so some operation(s) may"
+            "have failed!\nA common cause for this is lack "
+            "of output disk space.\n"
+            "Consequently, the output may be corrupted.\n\n");
+        return 1;
+    }
 
     auto end_t = std::chrono::high_resolution_clock::now();
     auto num_sec = std::chrono::duration_cast<std::chrono::seconds>(end_t - start_t);
