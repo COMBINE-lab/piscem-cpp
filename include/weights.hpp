@@ -4,7 +4,7 @@
 #include <unordered_map>  // count the distinct weights with freq information
 
 #include "ef_sequence.hpp"
-#include "spdlog/spdlog.h"
+#include "spdlog_piscem/spdlog.h"
 
 namespace sshash {
 
@@ -35,11 +35,11 @@ struct weights {
             assert(
                 std::is_sorted(m_weight_interval_lengths.begin(), m_weight_interval_lengths.end()));
 
-            spdlog::info("num_weight_intervals {}", num_weight_intervals());
+            spdlog_piscem::info("num_weight_intervals {}", num_weight_intervals());
 
             uint64_t num_distinct_weights = m_weights_map.size();
 
-            spdlog::info("found {} distinct weights (ceil(log2({})) = {})", num_distinct_weights, num_distinct_weights, std::ceil(std::log2(num_distinct_weights)));
+            spdlog_piscem::info("found {} distinct weights (ceil(log2({})) = {})", num_distinct_weights, num_distinct_weights, std::ceil(std::log2(num_distinct_weights)));
 
             m_weights.reserve(num_distinct_weights);
             uint64_t n = 0;
@@ -51,10 +51,10 @@ struct weights {
             }
             assert(largest_weight > 0);
 
-            spdlog::info("largest_weight+1 = {} (ceil(log2(largest_weight + 1)) = {}", largest_weight+1, std::ceil(std::log2(largest_weight + 1)));
+            spdlog_piscem::info("largest_weight+1 = {} (ceil(log2(largest_weight + 1)) = {}", largest_weight+1, std::ceil(std::log2(largest_weight + 1)));
 
             if (n != num_kmers) {
-              spdlog::critical("expected {} kmers but got {}", num_kmers, n);
+              spdlog_piscem::critical("expected {} kmers but got {}", num_kmers, n);
                 throw std::runtime_error("file is malformed");
             }
 
@@ -64,7 +64,7 @@ struct weights {
             });
 
             uint64_t rest = num_kmers - m_weights.front().second;
-            spdlog::info("kmers that do not have the most frequent weight: {} ({}%)", rest, (rest * 100.0) / num_kmers); 
+            spdlog_piscem::info("kmers that do not have the most frequent weight: {} ({}%)", rest, (rest * 100.0) / num_kmers); 
 
             m_weight_dictionary_builder.resize(num_distinct_weights,
                                                std::ceil(std::log2(largest_weight + 1)));
@@ -118,11 +118,11 @@ struct weights {
                 entropy_weights += prob * std::log2(1.0 / prob);
                 print += 1;
                 if (print <= 10) {
-                  spdlog::info("weight: {} freq: {} ({}%)", p.first, p.second, (p.second * 100.0) / num_kmers); 
+                  spdlog_piscem::info("weight: {} freq: {} ({}%)", p.first, p.second, (p.second * 100.0) / num_kmers); 
                 }
             }
-            spdlog::info("expected_weight {}", expected_weight); 
-            spdlog::info("entropy_weights {} [bits/kmer]", entropy_weights); 
+            spdlog_piscem::info("expected_weight {}", expected_weight); 
+            spdlog_piscem::info("entropy_weights {} [bits/kmer]", entropy_weights); 
             return entropy_weights;
         }
 
@@ -152,9 +152,9 @@ struct weights {
     }
 
     void print_space_breakdown(uint64_t num_kmers) const {
-      spdlog::info("    weight_interval_values: {} [bits/kmer]", static_cast<double>(m_weight_interval_values.bytes() * 8) / num_kmers);
-      spdlog::info("    weight_interval_lengths: {} [bits/kmer]", static_cast<double>(m_weight_interval_lengths.num_bits()) / num_kmers);
-      spdlog::info("    weight_dictionary: {} [bits/kmer]", static_cast<double>(m_weight_dictionary.bytes() * 8) / num_kmers);
+      spdlog_piscem::info("    weight_interval_values: {} [bits/kmer]", static_cast<double>(m_weight_interval_values.bytes() * 8) / num_kmers);
+      spdlog_piscem::info("    weight_interval_lengths: {} [bits/kmer]", static_cast<double>(m_weight_interval_lengths.num_bits()) / num_kmers);
+      spdlog_piscem::info("    weight_dictionary: {} [bits/kmer]", static_cast<double>(m_weight_dictionary.bytes() * 8) / num_kmers);
     }
 
     template <typename Visitor>

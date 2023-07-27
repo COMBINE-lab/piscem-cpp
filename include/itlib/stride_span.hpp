@@ -1,11 +1,11 @@
-// itlib-stride_span v1.00
+// itlib-stride_span v1.01
 //
 // A C++11 implementation C++20's of std::span with a dynamic extent
 // and an associated stride.
 //
 // SPDX-License-Identifier: MIT
 // MIT License:
-// Copyright(c) 2022 Borislav Stanimirov
+// Copyright(c) 2022-2023 Borislav Stanimirov
 //
 // Permission is hereby granted, free of charge, to any person obtaining
 // a copy of this software and associated documentation files(the
@@ -29,6 +29,7 @@
 //
 //                  VERSION HISTORY
 //
+//  1.01 (2023-02-27) Proper iterator support
 //  1.00 (2022-05-15) Initial release
 //
 //
@@ -36,7 +37,7 @@
 //
 // Simply include this file wherever you need.
 //
-// This class is designed very similar to std::span from C++20 witha a dynamic
+// This class is designed very similar to std::span from C++20 with a dynamic
 // extent. For a reference of std::span see here:
 // https://en.cppreference.com/w/cpp/container/span
 //
@@ -69,6 +70,7 @@
 
 #include <cstddef>
 #include <cstdint>
+#include <iterator>
 #include <type_traits>
 
 #if defined(ITLIB_STRIDE_SPAN_NO_DEBUG_BOUNDS_CHECK)
@@ -188,18 +190,28 @@ public:
     template <typename CT>
     class t_iterator
     {
-        byte_t* p = 0;
+        byte_t* p = nullptr;
         size_t stride = sizeof(T);
 
         friend class stride_span;
         t_iterator(byte_t* p, size_t stride) noexcept : p(p), stride(stride) {}
     public:
+        using iterator_category = std::random_access_iterator_tag;
+        using value_type = CT;
+        using difference_type = std::ptrdiff_t;
+        using pointer = CT*;
+        using reference = CT&;
+
         t_iterator() noexcept = default;
         CT& operator*() const noexcept { return *reinterpret_cast<T*>(p); }
+        CT* operator->() const noexcept { return reinterpret_cast<T*>(p); }
         t_iterator& operator++() noexcept { p += stride; return *this; }
         t_iterator& operator--() noexcept { p -= stride; return *this; }
+        t_iterator& operator+=(const ptrdiff_t diff) noexcept { p += diff * stride; return *this; }
+        t_iterator& operator-=(const ptrdiff_t diff) noexcept { p -= diff * stride; return *this; }
         t_iterator operator+(const ptrdiff_t diff) const noexcept { return t_iterator(p + stride * diff, stride); }
         t_iterator operator-(const ptrdiff_t diff) const noexcept { return t_iterator(p - stride * diff, stride); }
+        ptrdiff_t operator-(const t_iterator& other) const noexcept { return (p - other.p) / stride; }
         bool operator==(const t_iterator& other) const noexcept { return p == other.p; }
         bool operator!=(const t_iterator& other) const noexcept { return p != other.p; }
         bool operator<(const t_iterator& other) const noexcept { return p < other.p; }
@@ -210,21 +222,8 @@ public:
 
     using iterator = t_iterator<T>;
     using const_iterator = t_iterator<const T>;
-
-    template <typename Iter>
-    class t_rev_iterator
-    {
-        Iter iter;
-    public:
-        explicit t_rev_iterator(Iter i) noexcept : iter(i) {}
-        auto operator*() noexcept -> decltype(*std::declval<Iter>()) { return *(iter - 1); }
-        t_rev_iterator& operator++() noexcept { --iter; return *this; }
-        bool operator==(const t_rev_iterator& other) const noexcept { return iter == other.iter; }
-        bool operator!=(const t_rev_iterator& other) const noexcept { return iter != other.iter; }
-    };
-
-    using reverse_iterator = t_rev_iterator<iterator>;
-    using const_reverse_iterator = t_rev_iterator<const_iterator>;
+    using reverse_iterator = std::reverse_iterator<iterator>;
+    using const_reverse_iterator = std::reverse_iterator<const_iterator>;
 
     iterator begin() noexcept
     {

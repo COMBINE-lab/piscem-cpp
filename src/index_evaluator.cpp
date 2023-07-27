@@ -41,7 +41,7 @@ int main(int argc, char* argv[]) {
 
     /* mandatory arguments */
     parser.add("input_filename",
-               "input index prefix.");
+               "input index prefix.", "-i", true);
     if (!parser.parse()) return 1;
 
 	auto index_prefix = parser.get<std::string>("input_filename");

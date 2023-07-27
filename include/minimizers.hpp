@@ -1,5 +1,6 @@
 #pragma once
 
+#include <algorithm>
 #include "util.hpp"
 
 namespace sshash {
@@ -15,8 +16,16 @@ struct minimizers {
         mphf_config.minimal_output = true;
         mphf_config.verbose_output = false;
         mphf_config.num_threads = build_config.num_threads;
-        //uint64_t num_threads = ;//std::thread::hardware_concurrency() >= 8 ? 8 : 1;
-        //if (size >= num_threads) mphf_config.num_threads = num_threads;
+        // Fall back to a maximum that Giulio has upstream. Check with him where this 
+        // value comes from and when / if it may make sense to let it go higher.
+        uint64_t num_threads = std::min(build_config.num_threads, static_cast<uint64_t>(8));
+        // the number of threads should not exceed the number of 
+        // minimizers.
+        if (size >= num_threads) {
+          mphf_config.num_threads = num_threads;
+        } else {
+          mphf_config.num_threads = std::max(static_cast<uint64_t>(1), size);
+        }
         mphf_config.ram = 2 * essentials::GB;
         mphf_config.tmp_dir = build_config.tmp_dirname;
         m_mphf.build_in_external_memory(begin, size, mphf_config);

@@ -207,7 +207,6 @@ struct sketch_hit_info {
 
             last_ref_pos_rc = ref_pos;
             last_read_pos_rc = read_pos;
-            added = true;
         }
 
         // if this is still a hit for the *first*
@@ -219,6 +218,7 @@ struct sketch_hit_info {
             // this is a hit for a k-mer of rank > 0, so we already
             // have a set of active chains.
             process_hit(false, approx_map_pos, ref_pos, max_stretch, rc_chains, rc_hits, added);
+            if (added) { approx_pos_rc = approx_map_pos; }
         }
         return added;
         /*
@@ -419,8 +419,18 @@ private:
             }
         }
 
+        // FOR DEBUG
+        // std::cerr << " === examining hit at ref pos : " << next_hit_pos << ", lower bound search
+        // found chain ending at : " << chain_pos->prev_pos << " =========\n";
+
         // if we found a valid chain to extend
-        if (chain_pos < chains.end()) {
+        int32_t tries = 0;
+        // if we don't find a valid chain in the expected place, look at *one* more
+        // predecessor (or successor in the reverse complement case) to see if we can
+        // extend that chain.
+        // NOTE: Think if # of tries should be an advanced parameter available to the user.
+        while ((chain_pos < chains.end()) and (chain_pos >= chains.begin()) and !added and
+               (tries < 2)) {
             auto stretch = std::abs(chain_pos->read_start_pos - read_start_pos);
             stretch = std::min(stretch, static_cast<decltype(stretch)>(max_distortion));
             // and if it hasn't yet been extended
@@ -440,6 +450,14 @@ private:
                 chain_pos->min_distortion = static_cast<uint8_t>(stretch);
                 added = true;
             }
+            // the chain to check for forward strand hits is the predecessor
+            // and for reverse complement strand hits it's the successor.
+            if (is_fw_hit) {
+                chain_pos--;
+            } else {
+                chain_pos++;
+            }
+            tries++;
         }
     }
 };
@@ -537,9 +555,10 @@ inline bool map_read(std::string* read_seq, mapping_cache_info& map_cache, bool 
         int32_t signed_rl = static_cast<int32_t>(read_seq->length());
         auto collect_mappings_from_hits =
             [&max_stretch, &min_occ, &hit_map, &num_valid_hits, &total_occs, &largest_occ,
-             &early_stop, signed_rl, k, &map_cache, perform_ambig_filtering,
+             signed_rl, k, perform_ambig_filtering, &map_cache,
              verbose](auto& raw_hits, auto& prev_read_pos, auto& max_allowed_occ,
                       auto& ambiguous_hit_indices, auto& had_alt_max_occ) -> bool {
+            (void)verbose;
             int32_t hit_idx{0};
 
             for (auto& raw_hit : raw_hits) {
@@ -566,7 +585,7 @@ inline bool map_read(std::string* read_seq, mapping_cache_info& map_cache, bool 
                         bool ori = ref_pos_ori.isFW;
                         auto& target = hit_map[tid];
 
-                        /*
+                        /* FOR DEBUG
                         if (verbose) {
                             auto& tname = map_cache.hs.get_index()->ref_name(tid);
                             std::cerr << "\traw_hit [read_pos: " << read_pos << " ]:" << tname
@@ -625,6 +644,7 @@ inline bool map_read(std::string* read_seq, mapping_cache_info& map_cache, bool 
         // default) times, then collect the min occuring hits to get the mapping.
         if (attempt_occ_recover and (min_occ >= map_cache.max_occ_default) and
             (min_occ < map_cache.max_occ_recover)) {
+            num_valid_hits = 0;
             map_cache.ambiguous_hit_indices.clear();
             prev_read_pos = -1;
             uint64_t max_allowed_occ = min_occ;
@@ -636,6 +656,7 @@ inline bool map_read(std::string* read_seq, mapping_cache_info& map_cache, bool 
         // Further filtering of mappings by ambiguous k-mers
         if (perform_ambig_filtering and !hit_map.empty() and
             !map_cache.ambiguous_hit_indices.empty()) {
+            num_valid_hits = 0;
             phmap::flat_hash_set<uint64_t> observed_ecs;
             size_t min_cardinality_ec_size = std::numeric_limits<size_t>::max();
             uint64_t min_cardinality_ec = std::numeric_limits<size_t>::max();
@@ -694,7 +715,7 @@ inline bool map_read(std::string* read_seq, mapping_cache_info& map_cache, bool 
                 }
                 if (ec_entries.size() > max_ec_ambig) { continue; }
                 ++visited;
-                for (const auto& ent : ec_entries) {
+                for (const auto ent : ec_entries) {
                     visit_ec(ent, fw_on_contig);
                 }  // all target oritentation pairs in this eq class
                 ++num_valid_hits;
@@ -710,7 +731,7 @@ inline bool map_read(std::string* read_seq, mapping_cache_info& map_cache, bool 
 
                 uint64_t ec = min_cardinality_ec;
                 auto ec_entries = ec_table.entries_for_ec(ec);
-                for (const auto& ent : ec_entries) {
+                for (const auto ent : ec_entries) {
                     visit_ec(ent, fw_on_contig);
                 }  // all target oritentation pairs in this eq class
                 ++num_valid_hits;
@@ -845,7 +866,7 @@ inline void merge_se_mappings(mapping_cache_info& map_cache_left,
                         int32_t pos_fw = first1->is_fw ? first1->pos : first2->pos;
                         int32_t pos_rc = first1->is_fw ? first2->pos : first1->pos;
                         int32_t frag_len = (pos_rc - pos_fw);
-                        if ((-20 < frag_len) and (frag_len < 1000)) {
+                        if ((-32 < frag_len) and (frag_len < 2000)) {
                             // if left is fw and right is rc then
                             // fragment length is (right_pos + right_len - left_pos) + 1
                             // otherwise it is (left_pos + left_len - right_pos) + 1

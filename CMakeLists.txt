@@ -17,24 +17,56 @@ endif ()
 
 MESSAGE(STATUS "CMAKE_BUILD_TYPE: " ${CMAKE_BUILD_TYPE})
 
+# if CONDA_BUILD is defined AND true, then set a local variable for this
+if (CONDA_BUILD)
+  # it's already true, we don't have to do anything
+else()
+  if ($ENV{CONDA_BUILD})
+    # if it wasn't passed in but is an environment variable
+    set(CONDA_BUILD TRUE)
+  endif()
+endif()
+
+if (CONDA_BUILD)
+  message(STATUS "Building in the context of CONDA_BUILD = TRUE")
+else()
+  message(STATUS "Building in the context of CONDA_BUILD = FALSE")
+endif()
+
+set(CUSTOM_INSTRUCTION_FLAGS "")
+
 set(CMAKE_RUNTIME_OUTPUT_DIRECTORY ${CMAKE_BINARY_DIR})
+MESSAGE(STATUS "Compiling for processor: " ${CMAKE_HOST_SYSTEM_PROCESSOR})
+if (UNIX AND (CMAKE_HOST_SYSTEM_PROCESSOR STREQUAL "x86_64"))
+  
+  set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -msse4.2") # for vectorized instructions
+  list(APPEND CUSTOM_INSTRUCTION_FLAGS "-msse4.2")
+
+  if (NOT CONDA_BUILD) 
+    set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -march=native")
+    list(APPEND CUSTOM_INSTRUCTION_FLAGS "-march=native")
+  endif()
+
+  if(NOT NO_BMI2)
+    set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -mbmi2") # for hardware popcount and pdep
+    list(APPEND CUSTOM_INSTRUCTION_FLAGS "-mbmi2")
+  endif()
+  MESSAGE(STATUS "Compiling with custom instruction flags: ${CUSTOM_INSTRUCTION_FLAGS}")
+endif()
+## figure out what we might want / need to put here if we have a non x86_64 arch.
 
 if (UNIX)
 
   set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -std=c++17")
   set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -O3")
-  set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -march=native")
   set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -ggdb")
   set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -Wall -Wextra -Wno-missing-braces")
 
   # Flags for PTHash:
-  set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -mbmi2 -msse4.2") # for hardware popcount and pdep
-
-  # should not be required with the find_package below
-  # *and* with the `THREADS_PREFER_PTHREAD_FLAG` set.
-  # set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -pthread")        # for multi-threading
+  set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -pthread")        # for multi-threading
 
   if (SSHASH_USE_SANITIZERS)
+    message(STATUS "Using sanitizers. Compiling with flags: -fsanitize=address -fno-omit-frame-pointer")
     set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -fsanitize=address -fno-omit-frame-pointer")
   endif()
 
@@ -86,20 +118,20 @@ target_include_directories(build_static PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/incl
 #target_link_libraries(build sshash_static z ${MALLOC_LIB})
 #target_include_directories(build PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/include)
 
-add_executable(bench src/bench.cpp ${SSHASH_SOURCES})
-target_include_directories(bench PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/include)
+#add_executable(bench src/bench.cpp ${SSHASH_SOURCES})
+#target_include_directories(bench PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/include)
 
 add_executable(check src/check.cpp src/FastxParser.cpp) 
 target_link_libraries(check ZLIB::ZLIB sshash_static Threads::Threads)
 target_include_directories(check PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/include ${ZLIB_INCLUDE_DIRS})
 
-add_executable(query src/query.cpp ${SSHASH_SOURCES} ${Z_LIB_SOURCES})
-target_link_libraries(query z Threads::Threads)
-target_include_directories(query PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/include)
+#add_executable(query src/query.cpp ${SSHASH_SOURCES} ${Z_LIB_SOURCES})
+#target_link_libraries(query z Threads::Threads)
+#target_include_directories(query PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/include)
 
-add_executable(test_load src/test_load.cpp)
-target_include_directories(test_load PUBLIC ${CMAKE_SOURCE_DIR}/include ${ZLIB_INCLUDE_DIRS})
-target_link_libraries(test_load ZLIB::ZLIB sshash_static Threads::Threads)
+#add_executable(test_load src/test_load.cpp)
+#target_include_directories(test_load PUBLIC ${CMAKE_SOURCE_DIR}/include ${ZLIB_INCLUDE_DIRS})
+#target_link_libraries(test_load ZLIB::ZLIB sshash_static Threads::Threads)
 
 add_executable(pesc-sc src/pesc_sc_runner.cpp) 
 target_include_directories(pesc-sc PUBLIC ${CMAKE_SOURCE_DIR}/include ${ZLIB_INCLUDE_DIRS})

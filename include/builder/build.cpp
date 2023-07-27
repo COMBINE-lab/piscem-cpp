@@ -1,6 +1,6 @@
 #include "../dictionary.hpp"
 #include "../../external/pthash/external/essentials/include/essentials.hpp"
-#include "../spdlog/spdlog.h"
+#include "../spdlog_piscem/spdlog.h"
 #include "util.hpp"
 
 /** build steps **/
@@ -58,8 +58,8 @@ void dictionary::build(std::string const& filename, build_configuration const& b
         if (build_config.verbose) {
             double entropy_weights = data.weights_builder.print_info(data.num_kmers);
             double avg_bits_per_weight = static_cast<double>(m_weights.num_bits()) / data.num_kmers;
-            spdlog::info("weights: {} [bits/kmer]", avg_bits_per_weight);
-            spdlog::info("  ({}x smaller than the empirical entropy)", entropy_weights / avg_bits_per_weight);
+            spdlog_piscem::info("weights: {} [bits/kmer]", avg_bits_per_weight);
+            spdlog_piscem::info("  ({}x smaller than the empirical entropy)", entropy_weights / avg_bits_per_weight);
         }
     }
 

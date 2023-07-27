@@ -17,13 +17,13 @@
 #include "CanonicalKmerIterator.hpp"
 #include "projected_hits.hpp"
 #include "util.hpp"
-#include "spdlog/spdlog.h"
+#include "spdlog_piscem/spdlog.h"
 
 namespace mindex {
 class reference_index {
 public:
     reference_index(const std::string& basename, bool attempt_load_ec_map = false) {
-        spdlog::info("loading index from {}", basename);
+        spdlog_piscem::info("loading index from {}", basename);
         std::string dict_name = basename + ".sshash";
         essentials::load(m_dict, dict_name.c_str());
         std::string ctg_name = basename + ".ctab";
@@ -35,7 +35,7 @@ public:
                 m_has_ec_tab = true;
                 essentials::load(m_ec_tab, ectab_name.c_str());
             } else {
-                spdlog::warn(
+                spdlog_piscem::warn(
                     "user requested an option that required loading the ec map, but that was "
                     "not built for this index. The ec map will not be loaded, and any feature "
                     "requiring it "
@@ -48,17 +48,17 @@ public:
         // read from the file, set the shift we have to perform on a
         // contig table entry to read off the reference id (= m_ref_len_bits + 1)
         // where the +1 is for the orientation bit.
-        sshash::util::_ref_shift = (m_bct.m_ref_len_bits + 1);
+        sshash::util::PiscemIndexUtils::ref_shift(m_bct.m_ref_len_bits + 1);
         // based on the value of m_ref_len_bits, select the appropriate mask to use
         // when decoding a reference position from a contig table entry.
-        sshash::util::_pos_mask = sshash::util::pos_masks[m_bct.m_ref_len_bits];
+        sshash::util::PiscemIndexUtils::pos_mask(sshash::util::pos_masks[m_bct.m_ref_len_bits]);
 
         std::string ref_info = basename + ".refinfo";
 
         std::fstream s{ref_info.c_str(), s.binary | s.in};
         auto state = bitsery::quickDeserialization<bitsery::InputStreamAdapter>(s, m_ref_names);
         state = bitsery::quickDeserialization<bitsery::InputStreamAdapter>(s, m_ref_lens);
-        spdlog::info("done loading index");
+        spdlog_piscem::info("done loading index");
     }
 
     projected_hits query(pufferfish::CanonicalKmerIterator kmit,
@@ -79,7 +79,8 @@ public:
         // std::cout << "contig_size " << qres.contig_size << '\n';
 
         if (is_member) {
-            qres.contig_size += m_dict.k() - 1;
+            const auto k = m_dict.k();
+            qres.contig_size += k - 1;
             auto start_pos = m_bct.m_ctg_offsets.access(qres.contig_id);
             auto end_pos = m_bct.m_ctg_offsets.access(qres.contig_id + 1);
             size_t len = end_pos - start_pos;
@@ -97,12 +98,16 @@ public:
                                          : static_cast<uint32_t>(qres.contig_size);
 
             bool is_forward = (qres.kmer_orientation == sshash::constants::forward_orientation);
-
+            
+            // because the query gives us a global 
+            // ID and not a global offset, we have to 
+            // adjust it here.
+            uint64_t global_offset = qres.kmer_id + (contig_id * (k-1));
             return projected_hits{contig_id,
                                   contig_offset,
                                   is_forward,
                                   contig_length,
-                                  qres.kmer_id,
+                                  global_offset, // qres.kmer_id (<- id, not contig offset!)
                                   static_cast<uint32_t>(m_dict.k()),
                                   s};
         } else {

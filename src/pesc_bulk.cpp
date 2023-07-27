@@ -1,8 +1,8 @@
 #include "../include/reference_index.hpp"
 #include "../include/util.hpp"
 #include "../include/mapping/utils.hpp"
-#include "../include/spdlog/spdlog.h"
-#include "../include/spdlog/sinks/stdout_color_sinks.h"
+#include "../include/spdlog_piscem/spdlog.h"
+#include "../include/spdlog_piscem/sinks/stdout_color_sinks.h"
 #include "../include/rad/rad_writer.hpp"
 #include "../include/rad/rad_header.hpp"
 #include "../include/rad/util.hpp"
@@ -301,28 +301,28 @@ template <typename FragT>
 void do_map(mindex::reference_index& ri, fastx_parser::FastxParser<FragT>& parser,
             std::atomic<uint64_t>& global_nr, std::atomic<uint64_t>& global_nhits,
             mapping_output_info& out_info, std::mutex& iomut) {
-    auto log_level = spdlog::get_level();
+    auto log_level = spdlog_piscem::get_level();
     auto write_mapping_rate = false;
     switch (log_level) {
-        case spdlog::level::level_enum::trace:
+        case spdlog_piscem::level::level_enum::trace:
             write_mapping_rate = true;
             break;
-        case spdlog::level::level_enum::debug:
+        case spdlog_piscem::level::level_enum::debug:
             write_mapping_rate = true;
             break;
-        case spdlog::level::level_enum::info:
+        case spdlog_piscem::level::level_enum::info:
             write_mapping_rate = true;
             break;
-        case spdlog::level::level_enum::warn:
+        case spdlog_piscem::level::level_enum::warn:
             write_mapping_rate = false;
             break;
-        case spdlog::level::level_enum::err:
+        case spdlog_piscem::level::level_enum::err:
             write_mapping_rate = false;
             break;
-        case spdlog::level::level_enum::critical:
+        case spdlog_piscem::level::level_enum::critical:
             write_mapping_rate = false;
             break;
-        case spdlog::level::level_enum::off:
+        case spdlog_piscem::level::level_enum::off:
             write_mapping_rate = false;
             break;
         default:
@@ -347,8 +347,8 @@ void do_map(mindex::reference_index& ri, fastx_parser::FastxParser<FragT>& parse
     mindex::hit_searcher hs(&ri);
     uint64_t read_num = 0;
     // SAM output
-    //uint64_t processed = 0;
-    //uint64_t buff_size = 10000;
+    // uint64_t processed = 0;
+    // uint64_t buff_size = 10000;
 
     // these don't really belong here
     std::string workstr_left;
@@ -390,7 +390,14 @@ void do_map(mindex::reference_index& ri, fastx_parser::FastxParser<FragT>& parse
                 iomut.unlock();
             }
             */
-
+            /*
+            if constexpr( std::is_same_v<FragT, fastx_parser::ReadSeq> ) {
+              if (map_cache_out.accepted_hits.empty()) {
+                std::cout << ">" << record.name << "\n";
+                std::cout << record.seq << "\n";
+              }
+            }
+            */
             // RAD output
             global_nhits += map_cache_out.accepted_hits.empty() ? 0 : 1;
             rad::util::write_to_rad_stream_bulk(map_cache_out.map_type, map_cache_out.accepted_hits,
@@ -415,10 +422,10 @@ void do_map(mindex::reference_index& ri, fastx_parser::FastxParser<FragT>& parse
 
             // SAM output
             /*
-            write_sam_mappings(map_cache_out, record, workstr_left, workstr_right, global_nhits,
-                               osstream);
+              write_sam_mappings(map_cache_out, record, workstr_left, workstr_right, global_nhits,
+                  osstream);
 
-            if (processed >= buff_size) {
+              if (processed >= buff_size) {
                 std::string o = osstream.str();
                 iomut.lock();
                 std::cout << o;
@@ -426,8 +433,9 @@ void do_map(mindex::reference_index& ri, fastx_parser::FastxParser<FragT>& parse
                 osstream.clear();
                 osstream.str("");
                 processed = 0;
-            }
+              }
             */
+            
         }
     }
 
@@ -447,14 +455,15 @@ void do_map(mindex::reference_index& ri, fastx_parser::FastxParser<FragT>& parse
     // SAM output
     // dump any remaining output
     /*
-    std::string o = osstream.str();
-    iomut.lock();
-    std::cout << o;
-    iomut.unlock();
-    osstream.clear();
+      std::string o = osstream.str();
+      iomut.lock();
+      std::cout << o;
+      iomut.unlock();
+      osstream.clear();
+    */
     // don't need this here because osstream goes away at end of scope
     // osstream.str("");
-    */
+    
 }
 
 #ifdef __cplusplus
@@ -514,11 +523,14 @@ int run_pesc_bulk(int argc, char** argv) {
     auto input_filename = index_basename;
     auto read_filename = single_read_filenames;
 
-    spdlog::drop_all();
-    auto logger = spdlog::create<spdlog::sinks::stderr_color_sink_mt>("");
+    spdlog_piscem::drop_all();
+    auto logger = spdlog_piscem::create<spdlog_piscem::sinks::stderr_color_sink_mt>("");
     logger->set_pattern("%+");
-    if (quiet) { logger->set_level(spdlog::level::warn); }
-    spdlog::set_default_logger(logger);
+    spdlog_piscem::set_default_logger(logger);
+
+    if (quiet) {
+      spdlog_piscem::set_level(spdlog_piscem::level::warn);
+    }
 
     // start the timer
     auto start_t = std::chrono::high_resolution_clock::now();
@@ -540,7 +552,7 @@ int run_pesc_bulk(int argc, char** argv) {
 
     std::ofstream rad_file(rad_file_path.string());
     if (!rad_file.good()) {
-        spdlog::critical("Could not open {} for writing.", rad_file_path.string());
+        spdlog_piscem::critical("Could not open {} for writing.", rad_file_path.string());
         throw std::runtime_error("error creating output file.");
     }
 
@@ -599,7 +611,7 @@ int run_pesc_bulk(int argc, char** argv) {
         rparser.stop();
     }
 
-    spdlog::info("finished mapping.");
+    spdlog_piscem::info("finished mapping.");
 
     // rewind to the start of the file and write the number of
     // chunks that we actually produced.
@@ -617,7 +629,7 @@ int run_pesc_bulk(int argc, char** argv) {
     // expected. see :
     // https://stackoverflow.com/questions/28342660/error-handling-in-stdofstream-while-writing-data
     if (!out_info.rad_file) {
-        spdlog::critical(
+        spdlog_piscem::critical(
             "The RAD file stream had an invalid status after "
             "close; so some operation(s) may"
             "have failed!\nA common cause for this is lack "
@@ -636,7 +648,7 @@ int run_pesc_bulk(int argc, char** argv) {
 
     ghc::filesystem::path map_info_file_path = output_stem + ".map_info.json";
     bool info_ok = piscem::meta_info::write_map_info(rs, map_info_file_path);
-    if (!info_ok) { spdlog::critical("failed to write map_info.json file"); }
+    if (!info_ok) { spdlog_piscem::critical("failed to write map_info.json file"); }
 
     return 0;
 }

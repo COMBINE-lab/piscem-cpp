@@ -1,6 +1,6 @@
 #pragma once
 
-#include "../spdlog/spdlog.h"
+#include "../spdlog_piscem/spdlog.h"
 #include "../gz/zip_stream.hpp"
 
 namespace sshash {
@@ -86,7 +86,7 @@ void parse_file_from_cuttlefish(std::istream& is, parse_data& data,
         if (sequence.size() < k) continue;
 
         if (++num_sequences % 100000 == 0) {
-            spdlog::info("read {} sequences, {} bases, {}, kmers", num_sequences, num_bases,
+            spdlog_piscem::info("read {} sequences, {} bases, {}, kmers", num_sequences, num_bases,
                          data.num_kmers);
         }
 
@@ -97,7 +97,7 @@ void parse_file_from_cuttlefish(std::istream& is, parse_data& data,
         num_bases += sequence.size();
 
         if (build_config.weighted and seq_len != sequence.size()) {
-            spdlog::critical("expected a sequence of length {}, but got one of length {}.", seq_len,
+            spdlog_piscem::critical("expected a sequence of length {}, but got one of length {}.", seq_len,
                              sequence.length());
             throw std::runtime_error("file is malformed");
         }
@@ -133,16 +133,16 @@ void parse_file_from_cuttlefish(std::istream& is, parse_data& data,
     builder.finalize();
     builder.build(data.strings);
 
-    spdlog::info("read {} sequences, {} bases, {} kmers.", num_sequences, num_bases,
+    spdlog_piscem::info("read {} sequences, {} bases, {} kmers.", num_sequences, num_bases,
                  data.num_kmers);
-    spdlog::info("num_super_kmers {}", data.strings.num_super_kmers());
-    spdlog::info("num_pieces {} (+{} [bits/kmer])", data.strings.pieces.size(),
+    spdlog_piscem::info("num_super_kmers {}", data.strings.num_super_kmers());
+    spdlog_piscem::info("num_pieces {} (+{} [bits/kmer])", data.strings.pieces.size(),
                  (2.0 * data.strings.pieces.size() * (k - 1)) / data.num_kmers);
 
     assert(data.strings.pieces.size() == num_sequences + 1);
 
     if (build_config.weighted) {
-        spdlog::info("sum_of_weights {}", sum_of_weights);
+        spdlog_piscem::info("sum_of_weights {}", sum_of_weights);
         data.weights_builder.push_weight_interval(weight_value, weight_length);
         data.weights_builder.finalize(data.num_kmers);
     }
@@ -151,7 +151,7 @@ void parse_file_from_cuttlefish(std::istream& is, parse_data& data,
 parse_data parse_file(std::string const& filename, build_configuration const& build_config) {
     std::ifstream is(filename.c_str());
     if (!is.good()) throw std::runtime_error("error in opening the file '" + filename + "'");
-    spdlog::info("reading file '{}'...", filename);
+    spdlog_piscem::info("reading file '{}'...", filename);
     parse_data data(build_config.tmp_dirname);
     if (util::ends_with(filename, ".gz")) {
         zip_istream zis(is);

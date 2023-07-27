@@ -272,15 +272,34 @@ struct ec_span {
     inline size_t size() const { return len; }
 };
 
-// the amount we have to shift right
-// to get just the reference on which
-// the hit occurs
-static uint64_t _ref_shift;
+class PiscemIndexUtils {
+  public:
 
-// once we shift 1 bit (to get rid of position)
-// the maks we have to apply to remove the 
-// upper reference bits
-static uint64_t _pos_mask;
+  inline static uint64_t ref_shift(uint64_t ref_shift_in) {
+    std::swap(_ref_shift, ref_shift_in);
+    return ref_shift_in;
+  }
+
+  inline static uint64_t ref_shift() { return _ref_shift; }
+
+  inline static uint64_t pos_mask(uint64_t pos_mask_in) {
+    std::swap(_pos_mask, pos_mask_in);
+    return pos_mask_in;
+  }
+
+  inline static uint64_t pos_mask() { return _pos_mask; }
+  
+  private:
+  // the amount we have to shift right
+  // to get just the reference on which
+  // the hit occurs
+  inline static uint64_t _ref_shift;
+
+  // once we shift 1 bit (to get rid of position)
+  // the maks we have to apply to remove the 
+  // upper reference bits
+  inline static uint64_t _pos_mask;
+};
 
 constexpr uint64_t pos_masks[] = {
 0x0, 0x1, 0x3, 0x7, 0xf, 0x1f, 0x3f, 0x7f, 0xff, 0x1ff, 0x3ff,
@@ -298,10 +317,10 @@ constexpr uint64_t pos_masks[] = {
 0x7fffffffffffffff};
 
 inline uint32_t transcript_id(uint64_t e) { 
-    return static_cast<uint32_t>((e >> _ref_shift));
+    return static_cast<uint32_t>((e >> PiscemIndexUtils::ref_shift() ));
 }
 inline uint32_t pos(uint64_t e) { 
-    return static_cast<uint32_t>((e >> 1) & _pos_mask); 
+    return static_cast<uint32_t>((e >> 1) & PiscemIndexUtils::pos_mask() ); 
 }
 inline bool orientation(uint64_t e) { return (e & 0x1); }
 
@@ -309,7 +328,7 @@ inline uint64_t encode_contig_entry(uint64_t refctr, uint64_t current_offset, bo
     // e starts out with the reference index
     uint64_t e = refctr;
     // we shift this left by _ref_shift (which is pos_bits + 1)
-    e <<= _ref_shift;
+    e <<= PiscemIndexUtils::ref_shift();
     // shift the current offset left by 1 and add it to the representation
     e |= (current_offset << 1);
     // set the orientation bit
