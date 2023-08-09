@@ -87,7 +87,9 @@ struct sketch_hit_info {
         // then simply count the number of hits we see in
         // the given orientation (being careful to count
         // a k-mer of a given rank only one time).
+        // std::cout<<"val of ignore struct constraints" <<  ignore_struct_constraints_fw << std::endl;
         if (ignore_struct_constraints_fw) {
+            // std::cout << ignore_struct_constraints_fw << std::endl;
             if (read_pos > last_read_pos_fw) {
                 if (last_read_pos_fw == -1) { approx_pos_fw = approx_map_pos; }
                 last_ref_pos_fw = ref_pos;
@@ -103,6 +105,7 @@ struct sketch_hit_info {
         // If this is a k-mer of a new rank
         if (read_pos > last_read_pos_fw) {
             // if this is the first k-mer we are seeing
+            // std::cout << "yy2" << std::endl;
             if (last_read_pos_fw == -1) {
                 approx_pos_fw = approx_map_pos;
             } else {
@@ -490,7 +493,7 @@ public:
     uint32_t max_ec_card{256};
 };
 
-inline bool map_read(std::string* read_seq, mapping_cache_info& map_cache, bool verbose = false) {
+inline bool map_read(std::string* read_seq, mapping_cache_info& map_cache, bool& k_match, bool verbose = false) {
     map_cache.clear();
     // rebind map_cache variables to
     // local names
@@ -512,6 +515,7 @@ inline bool map_read(std::string* read_seq, mapping_cache_info& map_cache, bool 
 
     // if there were hits
     if (map_cache.has_matching_kmers) {
+        k_match = true;
         uint32_t num_valid_hits{0};
         uint64_t total_occs{0};
         uint64_t largest_occ{0};
@@ -564,8 +568,12 @@ inline bool map_read(std::string* read_seq, mapping_cache_info& map_cache, bool 
                         uint32_t tid = sshash::util::transcript_id(v);
                         int32_t pos = static_cast<int32_t>(ref_pos_ori.pos);
                         bool ori = ref_pos_ori.isFW;
+                        // if(hit_map.find(tid) == hit_map.end()) {
+                        //     // std::cout<<"you suck" << target.max_hits_for_target() <<std::endl;
+                        //     // auto& target = hit_map[tid];                        
+                        // }
                         auto& target = hit_map[tid];
-
+                        
                         /*
                         if (verbose) {
                             auto& tname = map_cache.hs.get_index()->ref_name(tid);
@@ -584,11 +592,14 @@ inline bool map_read(std::string* read_seq, mapping_cache_info& map_cache, bool 
                         // max_hits_for_target() > num_valid_hits. So, we must allow for
                         // that here.
                         if (target.max_hits_for_target() >= num_valid_hits) {
+                            // std::cout<<"you suck a lot" <<  target.ignore_struct_constraints_fw << std::endl;
                             if (ori) {
-                                target.add_fw(pos, static_cast<int32_t>(read_pos), signed_rl, k,
+                                    target.ignore_struct_constraints_fw = true;
+                                    target.add_fw(pos, static_cast<int32_t>(read_pos), signed_rl, k,
                                               max_stretch, score_inc);
                             } else {
-                                target.add_rc(pos, static_cast<int32_t>(read_pos), signed_rl, k,
+                                    target.ignore_struct_constraints_rc = true;
+                                    target.add_rc(pos, static_cast<int32_t>(read_pos), signed_rl, k,
                                               max_stretch, score_inc);
                             }
 
