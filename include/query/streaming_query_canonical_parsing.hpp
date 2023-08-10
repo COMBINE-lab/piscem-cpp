@@ -46,6 +46,9 @@ struct streaming_query_canonical_parsing {
     inline void reset_state() {
         m_minimizer_not_found = false;
         m_prev_query_offset = std::numeric_limits<int32_t>::lowest();
+        m_curr_minimizer = constants::invalid_uint64;
+        m_prev_minimizer = constants::invalid_uint64;
+        m_kmer = constants::invalid_uint64;
         start();
     }
 
@@ -107,12 +110,12 @@ struct streaming_query_canonical_parsing {
             lookup_advanced();
         } else if (same_minimizer()) {
             if (minimizer_found()) {
-                if (extends()) {
+                if ( (m_res.kmer_id != constants::invalid_uint64) and extends() ) {
                     extend();
                 } else {
                     lookup_advanced();
                 }
-            }
+            } 
         } else {
             m_minimizer_not_found = false;
             locate_bucket();

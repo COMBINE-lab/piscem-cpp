@@ -37,21 +37,41 @@ std::vector<uint64_t> histogram(mindex::reference_index& ri){
 int main(int argc, char* argv[]) {
 
 	std::ios_base::sync_with_stdio(false);
-    cmd_line_parser::parser parser(argc, argv);
+  cmd_line_parser::parser parser(argc, argv);
 
-    /* mandatory arguments */
-    parser.add("input_filename",
-               "input index prefix.", "-i", true);
-    if (!parser.parse()) return 1;
+  /* mandatory arguments */
+  parser.add("input_filename",
+             "input index prefix.", "-i", true);
+  parser.add("verbose",
+             "output extra information from the index.", "-v", true);
+ 
+  if (!parser.parse()) return 1;
 
 	auto index_prefix = parser.get<std::string>("input_filename");
 
 	mindex::reference_index ri(index_prefix);
 
-	auto freqs = histogram(ri);
-	for (size_t i = 0; i < freqs.size(); ++i) {
-		std::cout << freqs[i];
-		if (i != freqs.size()-1) { std::cout << "\t"; }
-	}
-	std::cout << "\n";
+  auto num_refs = ri.num_refs(); 
+  if (parser.get<bool>("verbose")) {
+    std::cout << "{\n";
+    std::cout << "\"num_refs\": " << num_refs << ",\n";
+    std::cout << "\"ref_entries\": {\n";
+    for (size_t i = 0; i < num_refs; ++i) {
+      auto& ni = ri.ref_name(i);
+      std::cout << "\"" << ni << "\": " << ri.ref_len(i);
+      if (i < num_refs - 1) { 
+        std::cout << ",\n";
+      }
+    }
+    std::cout << "},\n";
+    std::cout << "histogram : [";
+    auto freqs = histogram(ri);
+    for (size_t i = 0; i < freqs.size(); ++i) {
+      std::cout << freqs[i];
+      if (i != freqs.size()-1) { std::cout << ", "; }
+    }
+    std::cout << "],\n";
+    std::cout << "}\n"; 
+  }
+
 }
