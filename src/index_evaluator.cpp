@@ -3,6 +3,7 @@
 #include "../include/util.hpp"
 #include "../include/mapping/utils.hpp"
 #include "../include/parallel_hashmap/phmap.h"
+#include "spdlog_piscem/spdlog.h"
 
 #include <iostream>
 #include <vector>
@@ -37,13 +38,14 @@ std::vector<uint64_t> histogram(mindex::reference_index& ri){
 int main(int argc, char* argv[]) {
 
 	std::ios_base::sync_with_stdio(false);
+  spdlog_piscem::set_level(spdlog_piscem::level::warn);
   cmd_line_parser::parser parser(argc, argv);
 
   /* mandatory arguments */
   parser.add("input_filename",
              "input index prefix.", "-i", true);
   parser.add("verbose",
-             "output extra information from the index.", "-v", true);
+             "output extra information from the index.", "-v", false, true);
  
   if (!parser.parse()) return 1;
 

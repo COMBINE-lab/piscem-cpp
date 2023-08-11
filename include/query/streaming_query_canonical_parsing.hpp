@@ -118,15 +118,16 @@ struct streaming_query_canonical_parsing {
             locate_bucket();
             lookup_advanced();
         } else if (same_minimizer()) {
+            bool prev_kmer_found = (m_res.kmer_id != constants::invalid_uint64);
             if (minimizer_found()) {
                 // NOTE: Technically, I don't believe this additional check 
                 // that we are attempting to extend from a prior search that did
-                // not result in a hit (i.e. m_res.kmer_id != constants::invalid_uint64)
-                // is necessary. However, until we can convince oursleves of this reliably 
+                // not result in a hit (i.e. prev_kmer_found) is necessary. 
+                // However, until we can convince oursleves of this reliably 
                 // @jermp, I am going to keep it. If and when we are convinced of this
                 // we can replace it with the simpler line below.
                 // if (extends()) {
-                if ( (m_res.kmer_id != constants::invalid_uint64) and extends() ) {
+                if ( prev_kmer_found and extends() ) {
                     extend();
                 } else {
                     lookup_advanced();
