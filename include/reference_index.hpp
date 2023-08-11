@@ -70,17 +70,19 @@ public:
 
         bool is_member = (qres.kmer_id != sshash::constants::invalid_uint64);
 
-        //if (is_member && (qres.contig_id == invalid_u32)) {
-        //  std::cerr << "qres.contig_id = " << qres.contig_id << ", but qres.kmerid = " << qres.kmer_id << "\n";
-        //  std::cerr << "== ANSWER\n";
-        //  std::cerr << "seq = " << kmit.seq() << "\n";
-        //  std::cerr << "read position = " << kmit->second << "\n";
-        //  std::cerr << "kmer_id " << qres.kmer_id << '\n';
-        //  std::cerr << "kmer_id_in_contig " << qres.kmer_id_in_contig << '\n';
-        //  std::cerr << "kmer_orientation " << qres.kmer_orientation << '\n';
-        //  std::cerr << "contig_id " << qres.contig_id << '\n';
-        //  std::cerr << "contig_size " << qres.contig_size << '\n';
-        //}
+        /*
+        if (is_member && (qres.contig_id == invalid_u32)) {
+          std::cerr << "qres.contig_id = " << qres.contig_id << ", but qres.kmerid = " << qres.kmer_id << "\n";
+          std::cerr << "== ANSWER\n";
+          std::cerr << "seq = " << kmit.seq() << "\n";
+          std::cerr << "read position = " << kmit->second << "\n";
+          std::cerr << "kmer_id " << qres.kmer_id << '\n';
+          std::cerr << "kmer_id_in_contig " << qres.kmer_id_in_contig << '\n';
+          std::cerr << "kmer_orientation " << qres.kmer_orientation << '\n';
+          std::cerr << "contig_id " << qres.contig_id << '\n';
+          std::cerr << "contig_size " << qres.contig_size << '\n';
+        }
+        */
 
         if (is_member) {
             const auto k = m_dict.k();

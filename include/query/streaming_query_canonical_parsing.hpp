@@ -44,12 +44,21 @@ struct streaming_query_canonical_parsing {
     inline void start() { m_start = true; }
 
     inline void reset_state() {
+        // reset all of the relevant state
         m_minimizer_not_found = false;
-        m_prev_query_offset = std::numeric_limits<int32_t>::lowest();
+        start();
         m_curr_minimizer = constants::invalid_uint64;
         m_prev_minimizer = constants::invalid_uint64;
         m_kmer = constants::invalid_uint64;
-        start();
+        
+        m_string_iterator.at(0);
+        m_begin = 0;
+        m_end = 0;
+        m_pos_in_window = 0;
+        m_window_size = 0;
+
+        m_reverse = false;
+        m_prev_query_offset = std::numeric_limits<int32_t>::lowest();
     }
 
     lookup_result get_contig_pos(const uint64_t km, const uint64_t km_rc,
@@ -110,11 +119,18 @@ struct streaming_query_canonical_parsing {
             lookup_advanced();
         } else if (same_minimizer()) {
             if (minimizer_found()) {
+                // NOTE: Technically, I don't believe this additional check 
+                // that we are attempting to extend from a prior search that did
+                // not result in a hit (i.e. m_res.kmer_id != constants::invalid_uint64)
+                // is necessary. However, until we can convince oursleves of this reliably 
+                // @jermp, I am going to keep it. If and when we are convinced of this
+                // we can replace it with the simpler line below.
+                // if (extends()) {
                 if ( (m_res.kmer_id != constants::invalid_uint64) and extends() ) {
                     extend();
                 } else {
                     lookup_advanced();
-                }
+                } 
             } 
         } else {
             m_minimizer_not_found = false;
@@ -288,6 +304,7 @@ private:
             }
             return false;
         }
+
         if (m_pos_in_window == m_window_size) return false;
         if (m_kmer == m_string_iterator.read(2 * m_k)) {
             ++m_num_extensions;
