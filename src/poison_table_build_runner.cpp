@@ -1,12 +1,11 @@
 #ifdef __cplusplus
 extern "C" {
 #endif
-  int run_build(int argc, char** argv);
+  int run_build_poison_table(int argc, char** argv);
 #ifdef __cplusplus
 }
 #endif
 
 int main(int argc, char** argv) {
-  return run_build(argc, argv);
+  return run_build_poison_table(argc, argv);
 }
-

@@ -10,6 +10,8 @@
 #include "../include/cli11/CLI11.hpp"
 #include "../include/meta_info.hpp"
 #include "../include/FastxParser.hpp"
+#include "../include/parallel_hashmap/phmap.h"
+#include "../include/parallel_hashmap/phmap_dump.h"
 #include "zlib.h"
 //#include "FastxParser.cpp"
 //#include "../src/hit_searcher.cpp"
@@ -24,6 +26,7 @@
 
 using namespace klibpp;
 using mapping::util::mapping_cache_info;
+using poison_map_t = phmap::flat_hash_set<uint64_t>;
 
 // utility class that wraps the information we will
 // need access to when writing output within each thread
@@ -299,6 +302,8 @@ std::string& get_name(fastx_parser::ReadPair& rs) { return rs.first.name; }
 
 template <typename FragT>
 void do_map(mindex::reference_index& ri, fastx_parser::FastxParser<FragT>& parser,
+            poison_map_t& poison_map,
+            std::atomic<uint64_t>& global_npoisned,
             std::atomic<uint64_t>& global_nr, std::atomic<uint64_t>& global_nhits,
             mapping_output_info& out_info, std::mutex& iomut) {
     auto log_level = spdlog_piscem::get_level();
@@ -328,6 +333,31 @@ void do_map(mindex::reference_index& ri, fastx_parser::FastxParser<FragT>& parse
         default:
             write_mapping_rate = false;
     }
+    
+    bool use_poison = !poison_map.empty();
+        
+    pufferfish::CanonicalKmerIterator kit_end;
+    auto pmap_end = poison_map.end();
+    
+    // checks if a read is "poisned", returns true if it is
+    // and false otherwise.
+    auto is_poisned = [&](const std::string& seq) -> bool {
+      pufferfish::CanonicalKmerIterator kit(seq);
+      while (kit != kit_end) {
+        // current canonical k-mer
+        if (kit->first.is_homopolymer()) { 
+          kit++;
+          continue; 
+        }
+
+        auto pmap_it = poison_map.find(kit->first.getCanonicalWord());
+        if (pmap_it != pmap_end) {
+          return true;
+        }
+        ++kit;
+      }
+      return false;
+    };
 
 
     mapping_cache_info map_cache_left(ri);
@@ -374,14 +404,27 @@ void do_map(mindex::reference_index& ri, fastx_parser::FastxParser<FragT>& parse
                 std::cerr << "\rprocessed (" << rctr << ") reads; (" << hctr << ") had mappings.";
                 iomut.unlock();
             }
-
+            
+            bool was_poisoned = false;
+            if (use_poison) {
+              if constexpr(std::is_same_v<fastx_parser::ReadSeq, FragT>) {
+                  was_poisoned = is_poisned(record.seq);
+              } else if constexpr(std::is_same_v<fastx_parser::ReadPair, FragT>) {
+          
+              }
+            }
             // this *overloaded* function will just do the right thing.
             // If record is single-end, just map that read, otherwise, map both and look
             // for proper pairs.
             bool had_early_stop =
                 map_fragment(record, map_cache_left, map_cache_right, map_cache_out);
             (void)had_early_stop;
-
+            if (!map_cache_out.accepted_hits.empty() and was_poisoned) {
+              global_npoisned++;
+              if (global_npoisned > 0 and global_npoisned % 100000 == 0) {
+                spdlog_piscem::info("number of mapped poisned reads {}", global_npoisned);
+              }
+            }
             // to write unmapped names
             /*
             if (map_cache_out.accepted_hits.empty()) {
@@ -566,7 +609,20 @@ int run_pesc_bulk(int argc, char** argv) {
     CanonicalKmer::k(ri.k());
     std::atomic<uint64_t> global_nr{0};
     std::atomic<uint64_t> global_nh{0};
+    std::atomic<uint64_t> global_np{0};
     uint32_t np = 1;
+
+    // load a poison map if we had one
+    poison_map_t poison_map;
+    std::string pmap_file = input_filename + ".poison";
+    if (ghc::filesystem::exists(pmap_file)) {
+      spdlog_piscem::info("Loading poison k-mer map...");
+      phmap::BinaryInputArchive ar_in(pmap_file.c_str());
+      poison_map.phmap_load(ar_in);
+      spdlog_piscem::info("done");
+    } else {
+      spdlog_piscem::info("No poison k-mer map exists");
+    }
 
     // if we have paired-end data
     if (read_opt->empty()) {
@@ -582,8 +638,8 @@ int run_pesc_bulk(int argc, char** argv) {
 
         for (size_t i = 0; i < nthread; ++i) {
             workers.push_back(
-                std::thread([&ri, &rparser, &global_nr, &global_nh, &out_info, &iomut]() {
-                    do_map(ri, rparser, global_nr, global_nh, out_info, iomut);
+                std::thread([&ri, &rparser, &poison_map, &global_np, &global_nr, &global_nh, &out_info, &iomut]() {
+                    do_map(ri, rparser, poison_map, global_np, global_nr, global_nh, out_info, iomut);
                 }));
         }
 
@@ -602,8 +658,8 @@ int run_pesc_bulk(int argc, char** argv) {
 
         for (size_t i = 0; i < nthread; ++i) {
             workers.push_back(
-                std::thread([&ri, &rparser, &global_nr, &global_nh, &out_info, &iomut]() {
-                    do_map(ri, rparser, global_nr, global_nh, out_info, iomut);
+                std::thread([&ri, &rparser, &poison_map, &global_np, &global_nr, &global_nh, &out_info, &iomut]() {
+                    do_map(ri, rparser, poison_map, global_np, global_nr, global_nh, out_info, iomut);
                 }));
         }
 
@@ -612,7 +668,9 @@ int run_pesc_bulk(int argc, char** argv) {
     }
 
     spdlog_piscem::info("finished mapping.");
-
+    if (!poison_map.empty()) {
+      spdlog_piscem::info("number of mapped reads discarded because of poison k-mers: {}", global_np);
+    }
     // rewind to the start of the file and write the number of
     // chunks that we actually produced.
     out_info.rad_file.seekp(chunk_offset);

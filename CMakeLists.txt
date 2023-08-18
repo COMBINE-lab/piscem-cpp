@@ -111,7 +111,8 @@ add_library(pesc_static STATIC
 target_include_directories(pesc_static PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/include ${ZLIB_INCLUDE_DIRS})
 
 add_library(build_static STATIC
-  src/build.cpp)
+  src/build.cpp
+  src/poison_table_builder.cpp)
 target_include_directories(build_static PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/include ${ZLIB_INCLUDE_DIRS})
 
 #add_executable(build src/build.cpp)
@@ -153,18 +154,27 @@ add_executable(evaluator src/index_evaluator.cpp)
 target_include_directories(evaluator PUBLIC ${CMAKE_SOURCE_DIR}/include ${ZLIB_INCLUDE_DIRS})
 target_link_libraries(evaluator ZLIB::ZLIB Threads::Threads sshash_static) 
 
+add_executable(build-poison-table src/poison_table_build_runner.cpp) 
+target_include_directories(build-poison-table PUBLIC ${CMAKE_SOURCE_DIR}/include ${ZLIB_INCLUDE_DIRS})
+target_link_libraries(build-poison-table Threads::Threads build_static sshash_static pesc_static ZLIB::ZLIB ${MALLOC_LIB})
+
+add_executable(poison_filter src/poison_read_filter.cpp) 
+target_include_directories(poison_filter PUBLIC ${CMAKE_SOURCE_DIR}/include ${ZLIB_INCLUDE_DIRS})
+target_link_libraries(poison_filter Threads::Threads sshash_static pesc_static ZLIB::ZLIB) 
+
+
 #add_executable(test_parse src/test_parse_geo.cpp)
 #target_include_directories(evaluator PRIVATE ${CMAKE_SOURCE_DIR}/include)
 
-install(TARGETS build pesc-sc pesc-bulk 
+install(TARGETS build build-poison-table pesc-sc pesc-bulk 
         CONFIGURATIONS Debug
         RUNTIME DESTINATION Debug/bin)
 
-install(TARGETS build pesc-sc pesc-bulk
+install(TARGETS build build-poison-table pesc-sc pesc-bulk
   CONFIGURATIONS Release
   RUNTIME DESTINATION Release/bin)
 
-install(TARGETS build pesc-sc pesc-bulk
+install(TARGETS build build-poison-table pesc-sc pesc-bulk
         CONFIGURATIONS Debug
         RUNTIME DESTINATION Debug/bin)
 
