@@ -316,7 +316,7 @@ std::string& get_name(fastx_parser::ReadPair& rs) { return rs.first.name; }
 template <typename FragT>
 void do_map(mindex::reference_index& ri, fastx_parser::FastxParser<FragT>& parser,
             poison_map_t& poison_map,
-            std::atomic<uint64_t>& global_npoisned,
+            std::atomic<uint64_t>& global_npoisoned,
             std::atomic<uint64_t>& global_nr, std::atomic<uint64_t>& global_nhits,
             mapping_output_info& out_info, std::mutex& iomut) {
     auto log_level = spdlog_piscem::get_level();
@@ -354,7 +354,7 @@ void do_map(mindex::reference_index& ri, fastx_parser::FastxParser<FragT>& parse
     
     // checks if a read is "poisned", returns true if it is
     // and false otherwise.
-    auto is_poisned = [&](const std::string& seq) -> bool {
+    auto is_poisoned = [&](const std::string& seq) -> bool {
       pufferfish::CanonicalKmerIterator kit(seq);
       while (kit != kit_end) {
         // current canonical k-mer
@@ -427,10 +427,10 @@ void do_map(mindex::reference_index& ri, fastx_parser::FastxParser<FragT>& parse
             poison_state.clear();
             if (use_poison) {
               if constexpr(std::is_same_v<fastx_parser::ReadSeq, FragT>) {
-                  poison_state.poisoned_left = is_poisned(record.seq);
+                  poison_state.poisoned_left = is_poisoned(record.seq);
               } else if constexpr(std::is_same_v<fastx_parser::ReadPair, FragT>) {
-                   poison_state.poisoned_left = is_poisned(record.first.seq);
-                   poison_state.poisoned_right = is_poisned(record.second.seq);
+                   poison_state.poisoned_left = is_poisoned(record.first.seq);
+                   poison_state.poisoned_right = is_poisoned(record.second.seq);
               }
             }
             // this *overloaded* function will just do the right thing.
@@ -440,7 +440,7 @@ void do_map(mindex::reference_index& ri, fastx_parser::FastxParser<FragT>& parse
                 map_fragment(record, poison_state, map_cache_left, map_cache_right, map_cache_out);
             (void)had_early_stop;
             if (poison_state.poisoned_left) {
-              global_npoisned++;
+              global_npoisoned++;
               //if (global_npoisned > 0 and global_npoisned % 100000 == 0) {
               // spdlog_piscem::info("number of mapped poisned reads {}", global_npoisned);
               //}
@@ -550,20 +550,21 @@ int run_pesc_bulk(int argc, char** argv) {
     std::string output_stem;
     size_t nthread{16};
     bool quiet{false};
+    bool no_poison{false};
 
-    CLI::App app{"Mapper"};
-    app.add_option("-i,--index", index_basename, "input index prefix")->required();
+    CLI::App app{"Bulk mapper"};
+    app.add_option("-i,--index", index_basename, "Input index prefix")->required();
 
     auto ogroup = app.add_option_group("input reads", "provide input reads");
 
     CLI::Option* read_opt =
-        ogroup->add_option("-r,--reads", single_read_filenames, "path to list of single-end files")
+        ogroup->add_option("-r,--reads", single_read_filenames, "Path to list (comma separated) of single-end files")
             ->delimiter(',');
     CLI::Option* paired_left_opt =
-        ogroup->add_option("-1,--read1", left_read_filenames, "path to list of read 1 files")
+        ogroup->add_option("-1,--read1", left_read_filenames, "Path to list (comma separated) of read 1 files")
             ->delimiter(',');
     CLI::Option* paired_right_opt =
-        ogroup->add_option("-2,--read2", right_read_filenames, "path to list of read 2 files")
+        ogroup->add_option("-2,--read2", right_read_filenames, "Path to list (comma separated) of read 2 files")
             ->delimiter(',');
 
     paired_left_opt->excludes(read_opt);
@@ -574,12 +575,13 @@ int run_pesc_bulk(int argc, char** argv) {
 
     ogroup->require_option(1, 2);
 
-    app.add_option("-o,--output", output_stem, "the file stem where output should be written.")
+    app.add_option("-o,--output", output_stem, "The file stem where output should be written.")
         ->required();
     app.add_option("-t,--threads", nthread,
-                   "An integer that specifies the number of threads to use")
+                   "An integer that specifies the number of threads to use.")
         ->default_val(16);
-    app.add_flag("--quiet", quiet, "try to be quiet in terms of console output");
+    app.add_flag("--no-poison", no_poison, "Do not filter reads for poison k-mers, even if a poison table exists for the index");
+    app.add_flag("--quiet", quiet, "Try to be quiet in terms of console output");
 
     CLI11_PARSE(app, argc, argv);
 
@@ -635,13 +637,13 @@ int run_pesc_bulk(int argc, char** argv) {
     // load a poison map if we had one
     poison_map_t poison_map;
     std::string pmap_file = input_filename + ".poison";
-    if (ghc::filesystem::exists(pmap_file)) {
+    if (!no_poison and ghc::filesystem::exists(pmap_file)) {
       spdlog_piscem::info("Loading poison k-mer map...");
       phmap::BinaryInputArchive ar_in(pmap_file.c_str());
       poison_map.phmap_load(ar_in);
       spdlog_piscem::info("done");
     } else {
-      spdlog_piscem::info("No poison k-mer map exists");
+      spdlog_piscem::info("No poison k-mer map exists, or it was requested not to be used");
     }
 
     // if we have paired-end data
@@ -722,6 +724,7 @@ int run_pesc_bulk(int argc, char** argv) {
     rs.cmd_line(cmdline);
     rs.num_reads(global_nr.load());
     rs.num_hits(global_nh.load());
+    rs.num_poisoned(global_np.load());
     rs.num_seconds(num_sec.count());
 
     ghc::filesystem::path map_info_file_path = output_stem + ".map_info.json";

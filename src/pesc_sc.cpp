@@ -16,8 +16,8 @@
 #include "../include/spdlog_piscem/sinks/stdout_color_sinks.h"
 #include "../include/spdlog_piscem/spdlog.h"
 #include "../include/util.hpp"
-//#include "FastxParser.cpp"
-//#include "hit_searcher.cpp"
+#include "../include/parallel_hashmap/phmap.h"
+#include "../include/parallel_hashmap/phmap_dump.h"
 #include "zlib.h"
 
 #include <atomic>
@@ -35,6 +35,7 @@ using namespace klibpp;
 using BarCodeRecovered = single_cell::util::BarCodeRecovered;
 using umi_kmer_t = rad::util::umi_kmer_t;
 using bc_kmer_t = rad::util::bc_kmer_t;
+using poison_map_t = phmap::flat_hash_set<uint64_t, sshash::RobinHoodHash>;
 
 enum class protocol_t : uint8_t { CHROM_V2, CHROM_V3, CUSTOM };
 
@@ -46,6 +47,7 @@ struct pesc_options {
     std::string library_geometry;
     protocol_t pt{protocol_t::CUSTOM};
     std::unique_ptr<custom_protocol> p{nullptr};
+    bool no_poison{false};
     bool quiet{false};
     bool check_ambig_hits{false};
     uint32_t max_ec_card{256};
@@ -79,8 +81,12 @@ public:
 
 template <typename Protocol>
 void do_map(mindex::reference_index& ri, fastx_parser::FastxParser<fastx_parser::ReadPair>& parser,
-            const Protocol& p, const pesc_options& po, std::atomic<uint64_t>& global_nr,
-            std::atomic<uint64_t>& global_nhits, pesc_output_info& out_info, std::mutex& iomut) {
+            poison_map_t& poison_map,
+            const Protocol& p, const pesc_options& po, 
+            std::atomic<uint64_t>& global_nr,
+            std::atomic<uint64_t>& global_nhits, 
+            std::atomic<uint64_t>& global_npoisoned,
+            pesc_output_info& out_info, std::mutex& iomut) {
     auto log_level = spdlog_piscem::get_level();
     auto write_mapping_rate = false;
     switch (log_level) {
@@ -108,6 +114,31 @@ void do_map(mindex::reference_index& ri, fastx_parser::FastxParser<fastx_parser:
         default:
             write_mapping_rate = false;
     }
+
+    bool use_poison = !poison_map.empty();
+    auto pmap_end = poison_map.end();
+    mapping::util::poison_state_t poison_state;
+    pufferfish::CanonicalKmerIterator kit_end;
+
+    // checks if a read is "poisned", returns true if it is
+    // and false otherwise.
+    auto is_poisoned = [&](const std::string& seq) -> bool {
+      pufferfish::CanonicalKmerIterator kit(seq);
+      while (kit != kit_end) {
+        // current canonical k-mer
+        if (kit->first.is_homopolymer()) { 
+          kit++;
+          continue; 
+        }
+
+        auto pmap_it = poison_map.find(kit->first.getCanonicalWord());
+        if (pmap_it != pmap_end) {
+          return true;
+        }
+        ++kit;
+      }
+      return false;
+    };
 
     // put these in struct
     size_t num_short_umi{0};
@@ -178,7 +209,18 @@ void do_map(mindex::reference_index& ri, fastx_parser::FastxParser<fastx_parser:
             std::string* read_seq =
                 protocol.extract_mappable_read(record.first.seq, record.second.seq);
 
-            bool had_early_stop = mapping::util::map_read(read_seq, map_cache);
+            poison_state.clear();
+            if (use_poison) {
+              poison_state.poisoned_left = is_poisoned(*read_seq);
+            }
+
+            bool had_early_stop = false;
+            if (poison_state.is_poisoned()) {
+              ++global_npoisoned;
+              map_cache.clear();
+            } else {
+              mapping::util::map_read(read_seq, map_cache);
+            }
             (void)had_early_stop;
 
             global_nhits += map_cache.accepted_hits.empty() ? 0 : 1;
@@ -275,28 +317,29 @@ int run_pesc_sc(int argc, char** argv) {
 
     pesc_options po;
     CLI::App app{"PESC — single-cell RNA-seq mapper for alevin-fry"};
-    app.add_option("-i,--index", po.index_basename, "input index prefix")->required();
-    app.add_option("-1,--read1", po.left_read_filenames, "path to list of read 1 files")
+    app.add_option("-i,--index", po.index_basename, "Input index prefix")->required();
+    app.add_option("-1,--read1", po.left_read_filenames, "Path to list of (comma separated) read 1 files")
         ->required()
         ->delimiter(',');
-    app.add_option("-2,--read2", po.right_read_filenames, "path to list of read 2 files")
+    app.add_option("-2,--read2", po.right_read_filenames, "Path to list of (comma separated) read 2 files")
         ->required()
         ->delimiter(',');
-    app.add_option("-o,--output", po.output_dirname, "path to output directory")->required();
-    app.add_option("-g,--geometry", po.library_geometry, "geometry of barcode, umi and read")
+    app.add_option("-o,--output", po.output_dirname, "Path to output directory")->required();
+    app.add_option("-g,--geometry", po.library_geometry, "Geometry of barcode, umi and read")
         ->required();
     app.add_option("-t,--threads", po.nthread,
                    "An integer that specifies the number of threads to use")
         ->default_val(16);
-    app.add_flag("--quiet", po.quiet, "try to be quiet in terms of console output");
+    app.add_flag("--no-poison", po.no_poison, "Do not filter reads for poison k-mers, even if a poison table exists for the index");
+    app.add_flag("--quiet", po.quiet, "Try to be quiet in terms of console output");
     auto check_ambig =
         app.add_flag("--check-ambig-hits", po.check_ambig_hits,
-                     "check the existence of highly-frequent hits in mapped targets, rather than "
-                     "ignoring them.");
+                     "Check the existence of highly-frequent hits in mapped targets, rather than "
+                     "ignoring them");
     app.add_option("--max-ec-card", po.max_ec_card,
-                   "determines the maximum cardinality equivalence class "
+                   "Determines the maximum cardinality equivalence class "
                    "(number of (txp, orientation status) pairs) to examine "
-                   "if performing check-ambig-hits.")
+                   "if performing check-ambig-hits")
         ->needs(check_ambig)
         ->default_val(256);
     CLI11_PARSE(app, argc, argv);
@@ -317,16 +360,29 @@ int run_pesc_sc(int argc, char** argv) {
         return 1;
     }
 
+    // load a poison map if we had one
+    poison_map_t poison_map;
+    std::string pmap_file = po.index_basename + ".poison";
+    if (!po.no_poison and ghc::filesystem::exists(pmap_file)) {
+      spdlog_piscem::info("Loading poison k-mer map...");
+      phmap::BinaryInputArchive ar_in(pmap_file.c_str());
+      poison_map.phmap_load(ar_in);
+      spdlog_piscem::info("done");
+    } else {
+      spdlog_piscem::info("No poison k-mer map exists, or it was requested not to be used");
+    }
+
+    // load the main index
+    bool attempt_load_ec_map = po.check_ambig_hits;
+    mindex::reference_index ri(po.index_basename, attempt_load_ec_map);
+
     // RAD file path
     ghc::filesystem::path output_path(po.output_dirname);
     ghc::filesystem::create_directories(output_path);
 
     ghc::filesystem::path rad_file_path = output_path / "map.rad";
     ghc::filesystem::path unmapped_bc_file_path = output_path / "unmapped_bc_count.bin";
-
-    bool attempt_load_ec_map = po.check_ambig_hits;
-    mindex::reference_index ri(po.index_basename, attempt_load_ec_map);
-
+   
     std::string cmdline;
     size_t narg = static_cast<size_t>(argc);
     for (size_t i = 0; i < narg; ++i) {
@@ -374,29 +430,30 @@ int run_pesc_sc(int argc, char** argv) {
 
     std::atomic<uint64_t> global_nr{0};
     std::atomic<uint64_t> global_nh{0};
+    std::atomic<uint64_t> global_np{0};
     std::vector<std::thread> workers;
     for (size_t i = 0; i < po.nthread; ++i) {
         switch (po.pt) {
             case protocol_t::CHROM_V2: {
                 chromium_v2 prot;
                 workers.push_back(std::thread(
-                    [&ri, &rparser, &prot, &po, &global_nr, &global_nh, &iomut, &out_info]() {
-                        do_map(ri, rparser, prot, po, global_nr, global_nh, out_info, iomut);
+                    [&ri, &rparser, &poison_map, &prot, &po, &global_nr, &global_nh, &global_np, &iomut, &out_info]() {
+                        do_map(ri, rparser, poison_map, prot, po, global_nr, global_nh, global_np, out_info, iomut);
                     }));
                 break;
             }
             case protocol_t::CHROM_V3: {
                 chromium_v3 prot;
                 workers.push_back(std::thread(
-                    [&ri, &rparser, &prot, &po, &global_nr, &global_nh, &iomut, &out_info]() {
-                        do_map(ri, rparser, prot, po, global_nr, global_nh, out_info, iomut);
+                    [&ri, &rparser, &poison_map, &prot, &po, &global_nr, &global_nh, &global_np, &iomut, &out_info]() {
+                        do_map(ri, rparser, poison_map, prot, po, global_nr, global_nh, global_np, out_info, iomut);
                     }));
                 break;
             }
             case protocol_t::CUSTOM: {
                 workers.push_back(
-                    std::thread([&ri, &rparser, &po, &global_nr, &global_nh, &iomut, &out_info]() {
-                        do_map(ri, rparser, *(po.p), po, global_nr, global_nh, out_info, iomut);
+                    std::thread([&ri, &rparser, &poison_map, &po, &global_nr, &global_nh, &global_np, &iomut, &out_info]() {
+                        do_map(ri, rparser, poison_map, *(po.p), po, global_nr, global_nh, global_np, out_info, iomut);
                     }));
                 break;
             }
@@ -452,6 +509,7 @@ int run_pesc_sc(int argc, char** argv) {
     rs.cmd_line(cmdline);
     rs.num_reads(global_nr.load());
     rs.num_hits(global_nh.load());
+    rs.num_poisoned(global_np.load());
     rs.num_seconds(num_sec.count());
 
     ghc::filesystem::path map_info_file_path = output_path / "map_info.json";
