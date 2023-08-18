@@ -23,6 +23,7 @@
 #include <cstdio>
 #include <thread>
 #include <sstream>
+#include <type_traits>
 
 using namespace klibpp;
 using mapping::util::mapping_cache_info;
@@ -62,7 +63,7 @@ bool map_fragment(fastx_parser::ReadSeq& record, poison_state_t& poison_state, m
                   mapping_cache_info& map_cache_right, mapping_cache_info& map_cache_out) {
     (void)map_cache_left;
     (void)map_cache_right;
-    if (poison_state.poisoned_left) {
+    if (poison_state.is_poisoned()) {
       map_cache_out.clear();
       return false;
     } else {
@@ -73,6 +74,12 @@ bool map_fragment(fastx_parser::ReadSeq& record, poison_state_t& poison_state, m
 // paried-end
 bool map_fragment(fastx_parser::ReadPair& record, poison_state_t& poison_state, mapping_cache_info& map_cache_left,
                   mapping_cache_info& map_cache_right, mapping_cache_info& map_cache_out) {
+    // don't map a poisned read pair
+    if (poison_state.is_poisoned()) {
+      map_cache_out.clear();
+      return false;
+    }
+
     bool early_exit_left = mapping::util::map_read(&record.first.seq, map_cache_left, false);
     bool early_exit_right = mapping::util::map_read(&record.second.seq, map_cache_right, false);
 
@@ -370,6 +377,11 @@ void do_map(mindex::reference_index& ri, fastx_parser::FastxParser<FragT>& parse
     mapping_cache_info map_cache_right(ri);
     mapping_cache_info map_cache_out(ri);
     poison_state_t poison_state;
+    
+    // the reads are paired
+    if constexpr(std::is_same_v<fastx_parser::ReadPair, FragT>) {
+      poison_state.paired_for_mapping = true;
+    }
 
     rad_writer rad_w;
     size_t max_chunk_reads = 5000;
@@ -417,7 +429,8 @@ void do_map(mindex::reference_index& ri, fastx_parser::FastxParser<FragT>& parse
               if constexpr(std::is_same_v<fastx_parser::ReadSeq, FragT>) {
                   poison_state.poisoned_left = is_poisned(record.seq);
               } else if constexpr(std::is_same_v<fastx_parser::ReadPair, FragT>) {
-          
+                   poison_state.poisoned_left = is_poisned(record.first.seq);
+                   poison_state.poisoned_right = is_poisned(record.second.seq);
               }
             }
             // this *overloaded* function will just do the right thing.

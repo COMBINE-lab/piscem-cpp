@@ -467,9 +467,18 @@ struct poison_state_t {
     poisoned_left = false;
     poisoned_right = false;
   }
+  
+  inline bool is_poisoned() const {
+    if (paired_for_mapping) {
+      return poisoned_left or poisoned_right;
+    } else {
+      return poisoned_left;
+    }
+  }
 
   bool poisoned_left{false};
   bool poisoned_right{false};
+  bool paired_for_mapping{false};
 };
 
 struct mapping_cache_info {
