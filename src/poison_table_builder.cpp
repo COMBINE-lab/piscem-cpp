@@ -23,7 +23,7 @@ int run_build_poison_table(int argc, char** argv);
 }
 #endif
 
-using poison_map_t = phmap::flat_hash_set<uint64_t>;
+using poison_map_t = phmap::flat_hash_set<uint64_t, sshash::RobinHoodHash>;
 using pufferfish::CanonicalKmerIterator;
 
 struct poison_kmer_state_strict {

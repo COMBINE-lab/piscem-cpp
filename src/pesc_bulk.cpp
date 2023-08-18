@@ -26,7 +26,8 @@
 
 using namespace klibpp;
 using mapping::util::mapping_cache_info;
-using poison_map_t = phmap::flat_hash_set<uint64_t>;
+using mapping::util::poison_state_t;
+using poison_map_t = phmap::flat_hash_set<uint64_t, sshash::RobinHoodHash>;
 
 // utility class that wraps the information we will
 // need access to when writing output within each thread
@@ -57,15 +58,20 @@ void print_header(mindex::reference_index& ri, std::string& cmdline) {
 }
 
 // single-end
-bool map_fragment(fastx_parser::ReadSeq& record, mapping_cache_info& map_cache_left,
+bool map_fragment(fastx_parser::ReadSeq& record, poison_state_t& poison_state, mapping_cache_info& map_cache_left,
                   mapping_cache_info& map_cache_right, mapping_cache_info& map_cache_out) {
     (void)map_cache_left;
     (void)map_cache_right;
-    return mapping::util::map_read(&record.seq, map_cache_out, false);
+    if (poison_state.poisoned_left) {
+      map_cache_out.clear();
+      return false;
+    } else {
+      return mapping::util::map_read(&record.seq, map_cache_out, false);
+    }
 }
 
 // paried-end
-bool map_fragment(fastx_parser::ReadPair& record, mapping_cache_info& map_cache_left,
+bool map_fragment(fastx_parser::ReadPair& record, poison_state_t& poison_state, mapping_cache_info& map_cache_left,
                   mapping_cache_info& map_cache_right, mapping_cache_info& map_cache_out) {
     bool early_exit_left = mapping::util::map_read(&record.first.seq, map_cache_left, false);
     bool early_exit_right = mapping::util::map_read(&record.second.seq, map_cache_right, false);
@@ -363,6 +369,7 @@ void do_map(mindex::reference_index& ri, fastx_parser::FastxParser<FragT>& parse
     mapping_cache_info map_cache_left(ri);
     mapping_cache_info map_cache_right(ri);
     mapping_cache_info map_cache_out(ri);
+    poison_state_t poison_state;
 
     rad_writer rad_w;
     size_t max_chunk_reads = 5000;
@@ -405,10 +412,10 @@ void do_map(mindex::reference_index& ri, fastx_parser::FastxParser<FragT>& parse
                 iomut.unlock();
             }
             
-            bool was_poisoned = false;
+            poison_state.clear();
             if (use_poison) {
               if constexpr(std::is_same_v<fastx_parser::ReadSeq, FragT>) {
-                  was_poisoned = is_poisned(record.seq);
+                  poison_state.poisoned_left = is_poisned(record.seq);
               } else if constexpr(std::is_same_v<fastx_parser::ReadPair, FragT>) {
           
               }
@@ -417,13 +424,13 @@ void do_map(mindex::reference_index& ri, fastx_parser::FastxParser<FragT>& parse
             // If record is single-end, just map that read, otherwise, map both and look
             // for proper pairs.
             bool had_early_stop =
-                map_fragment(record, map_cache_left, map_cache_right, map_cache_out);
+                map_fragment(record, poison_state, map_cache_left, map_cache_right, map_cache_out);
             (void)had_early_stop;
-            if (!map_cache_out.accepted_hits.empty() and was_poisoned) {
+            if (poison_state.poisoned_left) {
               global_npoisned++;
-              if (global_npoisned > 0 and global_npoisned % 100000 == 0) {
-                spdlog_piscem::info("number of mapped poisned reads {}", global_npoisned);
-              }
+              //if (global_npoisned > 0 and global_npoisned % 100000 == 0) {
+              // spdlog_piscem::info("number of mapped poisned reads {}", global_npoisned);
+              //}
             }
             // to write unmapped names
             /*
@@ -669,7 +676,7 @@ int run_pesc_bulk(int argc, char** argv) {
 
     spdlog_piscem::info("finished mapping.");
     if (!poison_map.empty()) {
-      spdlog_piscem::info("number of mapped reads discarded because of poison k-mers: {}", global_np);
+      spdlog_piscem::info("number of reads discarded because of poison k-mers: {}", global_np);
     }
     // rewind to the start of the file and write the number of
     // chunks that we actually produced.

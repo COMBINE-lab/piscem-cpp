@@ -462,6 +462,16 @@ private:
     }
 };
 
+struct poison_state_t {
+  inline void clear() {
+    poisoned_left = false;
+    poisoned_right = false;
+  }
+
+  bool poisoned_left{false};
+  bool poisoned_right{false};
+};
+
 struct mapping_cache_info {
 public:
     mapping_cache_info(mindex::reference_index& ri) : k(ri.k()), q(ri.get_dict()), hs(&ri) {}
