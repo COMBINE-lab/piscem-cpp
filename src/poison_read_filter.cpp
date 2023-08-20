@@ -15,7 +15,7 @@
 #include <numeric>
 #include <cstdio>
 
-using poison_map_t = phmap::flat_hash_set<uint64_t, sshash::RobinHoodHash>;
+using poison_map_t = phmap::flat_hash_map<uint64_t, uint64_t, sshash::RobinHoodHash>;
 
 void filter_poison_reads(poison_map_t& poison_map, 
                          std::vector<std::string>& read_filenames,

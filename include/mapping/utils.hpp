@@ -7,8 +7,8 @@
 #include "../include/projected_hits.hpp"
 #include "../include/FastxParser.hpp"
 #include "../include/itlib/small_vector.hpp"
-
 #include "../include/hit_searcher.hpp"
+#include "../include/poison_table.hpp"
 
 #include <algorithm>
 #include <limits>
@@ -475,10 +475,58 @@ struct poison_state_t {
       return poisoned_left;
     }
   }
+  
+  // std::vector<std::pair<int, projected_hits>>& g
+  // returns true if poisoned, false otherwise
+  bool scan_raw_hits(std::string& s, uint32_t k, std::vector<std::pair<int, projected_hits>>& h) {
+    bool was_poisoned = false;
+    // scan up to the first hit
+    if (h.empty()) { return was_poisoned; }
+    auto first_pos = h.front().first;
+    pufferfish::CanonicalKmerIterator kit_end;
+    pufferfish::CanonicalKmerIterator kit(s);
+
+    while (kit->second < first_pos) {
+      if (ptab->key_exists(kit->first.getCanonicalWord())) {
+        was_poisoned = true;
+        return was_poisoned;
+      }
+      ++kit;
+    }
+
+    // at this point, we got to the first hit on the read
+    // now we scan intervals.
+    auto start_it = h.begin();
+    auto end_it = ++start_it;
+    while ((start_it != h.end()) and (kit != kit_end)) {
+      // the first unitig to which the poison kmer can belog
+      auto u1 = start_it->second.contig_id();
+      auto u2 = (end_it != h.end()) ? end_it->second.contig_id() : u1;
+      auto p1 = start_it->first;
+      auto p2 = (end_it != h.end()) ? end_it->first : static_cast<int>(s.length() - k + 1);
+      
+      while (kit != kit_end and kit->second <= p2) {
+        if (end_it != h.end()) {
+          was_poisoned = ptab->key_occurs_in_unitigs(kit->first.getCanonicalWord(), u1, u2);
+          if (was_poisoned) { return was_poisoned; }
+        } else {
+          was_poisoned = ptab->key_exists(kit->first.getCanonicalWord());
+          if (was_poisoned) { return was_poisoned; }
+        }
+        ++kit;
+      }
+      ++start_it;
+      if (end_it != h.end()) { ++end_it; }
+    }
+    return was_poisoned;
+  }
+
+  inline bool is_valid() const { return ptab != nullptr; }
 
   bool poisoned_left{false};
   bool poisoned_right{false};
   bool paired_for_mapping{false};
+  poison_table* ptab{nullptr};
 };
 
 struct mapping_cache_info {
@@ -527,7 +575,7 @@ public:
     uint32_t max_ec_card{256};
 };
 
-inline bool map_read(std::string* read_seq, mapping_cache_info& map_cache, bool verbose = false) {
+inline bool map_read(std::string* read_seq, mapping_cache_info& map_cache, poison_state_t& poison_state, bool verbose = false) {
     map_cache.clear();
     // rebind map_cache variables to
     // local names
@@ -539,6 +587,7 @@ inline bool map_read(std::string* read_seq, mapping_cache_info& map_cache, bool 
     const bool attempt_occ_recover = map_cache.attempt_occ_recover;
     const bool perform_ambig_filtering = map_cache.hs.get_index()->has_ec_table();
     auto k = map_cache.k;
+    bool apply_poison_filter = poison_state.is_valid();
 
     map_cache.has_matching_kmers = hs.get_raw_hits_sketch(*read_seq, q, true, false);
     bool early_stop = false;
@@ -553,6 +602,16 @@ inline bool map_read(std::string* read_seq, mapping_cache_info& map_cache, bool 
         uint64_t total_occs{0};
         uint64_t largest_occ{0};
         auto& raw_hits = hs.get_left_hits();
+
+        // if we are applying a poison filter, do it here.
+        if (apply_poison_filter) {
+          bool was_poisoned = poison_state.scan_raw_hits(*read_seq, k, raw_hits);
+          if (was_poisoned) {
+            poison_state.poisoned_left = true;
+            map_type = mapping::util::MappingType::UNMAPPED;
+            return true;
+          }
+        }
 
         // SANITY
         decltype(raw_hits[0].first) prev_read_pos = -1;

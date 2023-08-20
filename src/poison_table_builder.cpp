@@ -23,8 +23,9 @@ int run_build_poison_table(int argc, char** argv);
 }
 #endif
 
-using poison_map_t = phmap::flat_hash_set<uint64_t, sshash::RobinHoodHash>;
 using pufferfish::CanonicalKmerIterator;
+using sshash::poison_occ_t;
+using poison_map_t = phmap::flat_hash_map<uint64_t, uint64_t, sshash::RobinHoodHash>;
 
 struct poison_kmer_state_strict {
 public:
@@ -37,11 +38,13 @@ public:
   // determine if the current or former k-mer is poison.
   inline bool inspect_and_update(CanonicalKmerIterator& kit, mindex::reference_index& ri, 
                           sshash::streaming_query_canonical_parsing& cache, 
+                          std::vector<poison_occ_t>& poison_occs,
                           poison_map_t& poison_kmers) {
     bool added_poison = false;
     // current canonical k-mer
     auto kmer = kit->first;
     auto phits = ri.query(kit, cache);
+    uint32_t k = ri.k();
 
     // The condition for being poison is that either
     // (i) : The predecessor was present but the current k-mer 
@@ -52,12 +55,18 @@ public:
     bool present = !phits.empty();
     if (predecessor_present and !present) {
       // (case i) -> current k-mer is poison
-      auto it = poison_kmers.insert(kmer.getCanonicalWord());
-      added_poison = it.second;
+      //auto it = poison_kmers.insert({kmer.getCanonicalWord(), 1});
+      //added_poison = it.second;
+      int64_t cpos = phits.contig_pos();
+      cpos = std::min(cpos + 1, static_cast<int64_t>(phits.contig_len() - k));
+      poison_occs.push_back({kmer.getCanonicalWord(), phits.contig_id(), static_cast<uint32_t>(cpos)});
     } else if (!predecessor_present and present) {
       // (case ii) -> predecessor k-mer is poison
-      auto it = poison_kmers.insert(predecessor_kmer);
-      added_poison = it.second;
+      //auto it = poison_kmers.insert({predecessor_kmer, 1});
+      //added_poison = it.second;
+      int64_t cpos = phits.contig_pos();
+      cpos = std::max(static_cast<int64_t>(0), cpos - 1);
+      poison_occs.push_back({predecessor_kmer, phits.contig_id(), static_cast<uint32_t>(cpos)});
     } 
 
     predecessor_kmer = kmer.getCanonicalWord();
@@ -78,6 +87,7 @@ public:
   // determine if the current or former k-mer is poison.
   inline bool inspect_and_update(CanonicalKmerIterator& kit, mindex::reference_index& ri, 
                           sshash::streaming_query_canonical_parsing& cache, 
+                          std::vector<poison_occ_t>& poison_occs,
                           poison_map_t& poison_kmers) {
     auto* dict = ri.get_dict();
     // current canonical k-mer
@@ -98,7 +108,7 @@ public:
       neighbor.shiftFw(n);
       bool neighbor_present = dict->is_member_uint64(neighbor.getCanonicalWord());
       if (neighbor_present) {
-        poison_kmers.insert(kmer.getCanonicalWord());
+        poison_kmers.insert({kmer.getCanonicalWord(), 1});
         return true;
       }
     }
@@ -109,7 +119,7 @@ public:
       neighbor.shiftBw(n);
       bool neighbor_present = dict->is_member_uint64(neighbor.getCanonicalWord());
       if (neighbor_present) {
-        auto it = poison_kmers.insert(kmer.getCanonicalWord());
+        auto it = poison_kmers.insert({kmer.getCanonicalWord(), 1});
         return it.second;
       }
     }
@@ -121,6 +131,7 @@ template <typename poison_state_t>
 void find_poison_kmers(mindex::reference_index& ri, 
                       fastx_parser::FastxParser<fastx_parser::ReadSeq>& rparser,
                       std::atomic<uint64_t>& global_nk,
+                      std::vector<poison_occ_t>& poison_kmer_occs,
                       poison_map_t& poison_kmers) {
   pufferfish::CanonicalKmerIterator kit_end;
   sshash::streaming_query_canonical_parsing cache(ri.get_dict());
@@ -142,7 +153,7 @@ void find_poison_kmers(mindex::reference_index& ri,
       pufferfish::CanonicalKmerIterator kit(record.seq);
       while (kit != kit_end) {
 
-        bool inserted_locally = pstate.inspect_and_update(kit, ri, cache, poison_kmers);
+        bool inserted_locally = pstate.inspect_and_update(kit, ri, cache, poison_kmer_occs, poison_kmers);
         (void) inserted_locally;
         ++kit;
         ++global_nk;
@@ -211,7 +222,10 @@ int run_build_poison_table(int argc, char* argv[]) {
   }
 
   std::vector<poison_map_t> poison_kmer_maps;
+  std::vector<std::vector<poison_occ_t>> poison_kmer_occs;
+
   poison_kmer_maps.resize(po.nthreads);
+  poison_kmer_occs.resize(po.nthreads);
 
   std::atomic<uint64_t> global_nk{0};
   std::atomic<uint64_t> global_np{0};
@@ -223,17 +237,19 @@ int run_build_poison_table(int argc, char* argv[]) {
   if (po.poison_method == "edge") {
     for (size_t i = 0; i < po.nthreads; ++i) {
       workers.push_back(
-        std::thread([i, &poison_kmer_maps, &ri, &rparser, &global_nk]() {
+        std::thread([i, &poison_kmer_maps, &poison_kmer_occs, &ri, &rparser, &global_nk]() {
           auto& pkmap = poison_kmer_maps[i];
-          find_poison_kmers<poison_kmer_state_strict>(ri, rparser, global_nk, pkmap);
+          auto& pkoccs = poison_kmer_occs[i];
+          find_poison_kmers<poison_kmer_state_strict>(ri, rparser, global_nk, pkoccs, pkmap);
         }));
     }
   } else {
     for (size_t i = 0; i < po.nthreads; ++i) {
       workers.push_back(
-        std::thread([i, &poison_kmer_maps, &ri, &rparser, &global_nk]() {
+        std::thread([i, &poison_kmer_maps, &poison_kmer_occs, &ri, &rparser, &global_nk]() {
           auto& pkmap = poison_kmer_maps[i];
-          find_poison_kmers<poison_kmer_state_permissive>(ri, rparser, global_nk, pkmap);
+          auto& pkoccs = poison_kmer_occs[i];
+          find_poison_kmers<poison_kmer_state_permissive>(ri, rparser, global_nk, pkoccs, pkmap);
         }));
     }
   }
@@ -241,20 +257,111 @@ int run_build_poison_table(int argc, char* argv[]) {
   for (auto& w : workers) { w.join(); }
   rparser.stop();
 
-  poison_map_t poison_map;
-  while (!poison_kmer_maps.empty()) {
-    auto& local_map = poison_kmer_maps.back();
-
-    for (auto elem : local_map) {
-      poison_map.insert(elem);
+  // combine the vectors
+  size_t smallest_idx = 0;
+  size_t smallest = std::numeric_limits<size_t>::max();
+  for (size_t i = 0; i < poison_kmer_occs.size(); ++i) {
+    if (poison_kmer_occs[i].size() < smallest) {
+      smallest_idx = i;
     }
-    poison_kmer_maps.pop_back();
+  }
+
+  std::vector<poison_occ_t> poison_occs(
+    poison_kmer_occs[smallest_idx].begin(), 
+    poison_kmer_occs[smallest_idx].end());
+
+  poison_kmer_occs[smallest_idx].clear();
+  poison_kmer_occs[smallest_idx].shrink_to_fit();
+  for (size_t i = 0; i < poison_kmer_occs.size(); ++i) {
+    poison_occs.insert(poison_occs.end(), poison_kmer_occs[i].begin(), poison_kmer_occs[i].end());
+    poison_kmer_occs[i].clear();
+    poison_kmer_occs[i].shrink_to_fit();
+  }
+
+  // we will build a map from each k-mer to the list of 
+  // unitigs and positions where it occurs.  Therefore, here 
+  // we want to sort by k-mer, then by unitig, then position
+  std::sort(poison_occs.begin(), poison_occs.end(),
+            [](const poison_occ_t& a, const poison_occ_t& b) -> bool {
+              if (a.canonical_kmer == b.canonical_kmer) {
+                if (a.unitig_id == b.unitig_id) {
+                  return a.unitig_pos < b.unitig_pos;
+                } else {
+                  return a.unitig_id < b.unitig_id;
+                }
+              } else {
+                return a.canonical_kmer < b.canonical_kmer;
+              }
+            });
+  // remove duplicates
+  poison_occs.erase( std::unique(poison_occs.begin(), poison_occs.end()), poison_occs.end());
+  spdlog_piscem::info("Total number of distinct poison k-mer occs: {}", poison_occs.size());
+
+  // build the overall map
+  poison_map_t poison_map;
+  std::vector<uint64_t> offsets;
+  offsets.reserve(poison_occs.size()+1);
+
+  size_t max_range = 0;
+  auto occ_it = poison_occs.begin();
+  auto range_start_it = occ_it;
+  offsets.push_back(0);
+  poison_map[occ_it->canonical_kmer] = 0;
+  while (occ_it != poison_occs.end()) {
+    // we started a new range, push back the starting point of 
+    // the this range.
+    if (occ_it->canonical_kmer != range_start_it->canonical_kmer) {
+      size_t range_len = std::distance(range_start_it, occ_it);
+      max_range = std::max(range_len, max_range);
+
+      uint64_t dist_from_start = std::distance(poison_occs.begin(), occ_it);
+      offsets.push_back(dist_from_start);
+      poison_map[occ_it->canonical_kmer] = dist_from_start;
+      range_start_it = occ_it;
+    }
+    occ_it++;
+  }
+  // don't forget the last one
+  uint64_t dist_from_start = std::distance(poison_occs.begin(), occ_it);
+  if (!offsets.empty() and (dist_from_start != offsets.back())) {
+    offsets.push_back(dist_from_start); 
+  }
+  offsets.shrink_to_fit();
+
+  spdlog_piscem::info("The most frequently occuring poison k-mer appeared in {} distinct unitig positions.", max_range);
+
+  {
+    std::string poc_filename = po.output_file + "_occs";
+    std::ofstream poc_file(poc_filename, std::ios::binary);
+    if (!poc_file.good()) {
+      spdlog_piscem::critical("could not open occ output file {}", poc_filename);
+    }
+
+    size_t s = offsets.size();
+    poc_file.write(reinterpret_cast<char*>(&s), sizeof(s));
+    poc_file.write(reinterpret_cast<char*>(offsets.data()), s * sizeof(uint64_t));
+
+    s = poison_occs.size();
+    poc_file.write(reinterpret_cast<char*>(&s), sizeof(s));
+    poc_file.write(reinterpret_cast<char*>(poison_occs.data()), s * sizeof(poison_occ_t));
   }
 
   spdlog_piscem::info("FINAL: Examined {} total decoy k-mers, recorded {} poison k-mers.", global_nk, poison_map.size()); 
 
   phmap::BinaryOutputArchive ar_out(po.output_file.c_str());
   poison_map.phmap_dump(ar_out);
+
+  std::ofstream ofile("poison_kmers.fa");
+  size_t pnum{0};
+  CanonicalKmer kmer;
+  for (auto& km : poison_map) {
+    kmer.fromNum(km.first);
+    ofile << ">"
+          << "poison." << pnum << "\n"
+          << kmer.to_str() << "\n";
+    ++pnum;
+  }
+  ofile.close();
 
   return 0;
 }

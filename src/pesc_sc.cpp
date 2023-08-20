@@ -35,7 +35,7 @@ using namespace klibpp;
 using BarCodeRecovered = single_cell::util::BarCodeRecovered;
 using umi_kmer_t = rad::util::umi_kmer_t;
 using bc_kmer_t = rad::util::bc_kmer_t;
-using poison_map_t = phmap::flat_hash_set<uint64_t, sshash::RobinHoodHash>;
+//using poison_map_t = phmap::flat_hash_map<uint64_t, uint64_t, sshash::RobinHoodHash>;
 
 enum class protocol_t : uint8_t { CHROM_V2, CHROM_V3, CUSTOM };
 
@@ -81,7 +81,7 @@ public:
 
 template <typename Protocol>
 void do_map(mindex::reference_index& ri, fastx_parser::FastxParser<fastx_parser::ReadPair>& parser,
-            poison_map_t& poison_map,
+            poison_table& poison_map,
             const Protocol& p, const pesc_options& po, 
             std::atomic<uint64_t>& global_nr,
             std::atomic<uint64_t>& global_nhits, 
@@ -116,7 +116,7 @@ void do_map(mindex::reference_index& ri, fastx_parser::FastxParser<fastx_parser:
     }
 
     bool use_poison = !poison_map.empty();
-    auto pmap_end = poison_map.end();
+    auto pmap_end = poison_map.kmer_end();
     mapping::util::poison_state_t poison_state;
     pufferfish::CanonicalKmerIterator kit_end;
 
@@ -131,7 +131,7 @@ void do_map(mindex::reference_index& ri, fastx_parser::FastxParser<fastx_parser:
           continue; 
         }
 
-        auto pmap_it = poison_map.find(kit->first.getCanonicalWord());
+        auto pmap_it = poison_map.find_kmer(kit->first.getCanonicalWord());
         if (pmap_it != pmap_end) {
           return true;
         }
@@ -219,7 +219,7 @@ void do_map(mindex::reference_index& ri, fastx_parser::FastxParser<fastx_parser:
               ++global_npoisoned;
               map_cache.clear();
             } else {
-              mapping::util::map_read(read_seq, map_cache);
+              mapping::util::map_read(read_seq, map_cache, poison_state);
             }
             (void)had_early_stop;
 
@@ -361,13 +361,17 @@ int run_pesc_sc(int argc, char** argv) {
     }
 
     // load a poison map if we had one
-    poison_map_t poison_map;
-    std::string pmap_file = po.index_basename + ".poison";
-    if (!po.no_poison and ghc::filesystem::exists(pmap_file)) {
+    // load a poison map if we had one
+    poison_table ptab;
+    if (!po.no_poison and poison_table::exists(po.index_basename)) {
+      /*
       spdlog_piscem::info("Loading poison k-mer map...");
       phmap::BinaryInputArchive ar_in(pmap_file.c_str());
       poison_map.phmap_load(ar_in);
       spdlog_piscem::info("done");
+      */
+      poison_table ptab_tmp(po.index_basename);
+      ptab = std::move(ptab_tmp);
     } else {
       spdlog_piscem::info("No poison k-mer map exists, or it was requested not to be used");
     }
@@ -437,23 +441,23 @@ int run_pesc_sc(int argc, char** argv) {
             case protocol_t::CHROM_V2: {
                 chromium_v2 prot;
                 workers.push_back(std::thread(
-                    [&ri, &rparser, &poison_map, &prot, &po, &global_nr, &global_nh, &global_np, &iomut, &out_info]() {
-                        do_map(ri, rparser, poison_map, prot, po, global_nr, global_nh, global_np, out_info, iomut);
+                    [&ri, &rparser, &ptab, &prot, &po, &global_nr, &global_nh, &global_np, &iomut, &out_info]() {
+                        do_map(ri, rparser, ptab, prot, po, global_nr, global_nh, global_np, out_info, iomut);
                     }));
                 break;
             }
             case protocol_t::CHROM_V3: {
                 chromium_v3 prot;
                 workers.push_back(std::thread(
-                    [&ri, &rparser, &poison_map, &prot, &po, &global_nr, &global_nh, &global_np, &iomut, &out_info]() {
-                        do_map(ri, rparser, poison_map, prot, po, global_nr, global_nh, global_np, out_info, iomut);
+                    [&ri, &rparser, &ptab, &prot, &po, &global_nr, &global_nh, &global_np, &iomut, &out_info]() {
+                        do_map(ri, rparser, ptab, prot, po, global_nr, global_nh, global_np, out_info, iomut);
                     }));
                 break;
             }
             case protocol_t::CUSTOM: {
                 workers.push_back(
-                    std::thread([&ri, &rparser, &poison_map, &po, &global_nr, &global_nh, &global_np, &iomut, &out_info]() {
-                        do_map(ri, rparser, poison_map, *(po.p), po, global_nr, global_nh, global_np, out_info, iomut);
+                    std::thread([&ri, &rparser, &ptab, &po, &global_nr, &global_nh, &global_np, &iomut, &out_info]() {
+                        do_map(ri, rparser, ptab, *(po.p), po, global_nr, global_nh, global_np, out_info, iomut);
                     }));
                 break;
             }

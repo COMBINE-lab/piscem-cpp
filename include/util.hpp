@@ -48,6 +48,22 @@ struct RobinHoodHash {
   }
 };
 
+// an occurrence of a poison k-mer
+struct poison_occ_t {
+  // we need to know what unitig this occurs on
+  // what position on that unitig
+  // and what the k-mer is (maybe also orientation?)
+  uint64_t canonical_kmer{std::numeric_limits<uint64_t>::max()};
+  uint32_t unitig_id{std::numeric_limits<uint32_t>::max()};
+  uint32_t unitig_pos{std::numeric_limits<uint32_t>::max()};
+};
+
+inline bool operator==(const poison_occ_t& a, const poison_occ_t& b) {
+  return (a.canonical_kmer == b.canonical_kmer) and 
+         (a.unitig_id == b.unitig_id) and
+         (a.unitig_pos == b.unitig_pos);
+}
+
 struct streaming_query_report {
     streaming_query_report()
         : num_kmers(0), num_positive_kmers(0), num_searches(0), num_extensions(0) {}
