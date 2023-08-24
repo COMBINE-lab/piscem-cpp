@@ -57,6 +57,7 @@ struct streaming_query_canonical_parsing {
         m_pos_in_window = 0;
         m_window_size = 0;
 
+        m_res.kmer_id = constants::invalid_uint64;
         m_reverse = false;
         m_prev_query_offset = std::numeric_limits<int32_t>::lowest();
     }
@@ -78,7 +79,7 @@ struct streaming_query_canonical_parsing {
         // should consider this as basically a "new"
         // query
         if (!m_start) {
-            if ((m_prev_query_offset + 1) != query_offset) { reset_state(); }
+          if ((m_prev_query_offset + 1) != query_offset) { reset_state(); }
         }
         m_prev_query_offset = query_offset;
 
@@ -89,7 +90,7 @@ struct streaming_query_canonical_parsing {
         /* 1. validation */
         bool is_valid = m_start ? util::is_valid(kmer, m_k) : util::is_valid(kmer[m_k - 1]);
         if (!is_valid) {
-            m_start = true;
+            reset_state();
             return lookup_result();
         }
 
@@ -112,13 +113,13 @@ struct streaming_query_canonical_parsing {
         uint64_t minimizer_rc = m_minimizer_enum_rc.next<reverse>(m_kmer_rc, m_start);
         assert(minimizer_rc == util::compute_minimizer(m_kmer_rc, m_k, m_m, m_seed));
         m_curr_minimizer = std::min<uint64_t>(m_curr_minimizer, minimizer_rc);
+        bool prev_kmer_found = (m_res.kmer_id != constants::invalid_uint64);
 
         /* 3. compute result */
         if (m_start) {
             locate_bucket();
             lookup_advanced();
         } else if (same_minimizer()) {
-            bool prev_kmer_found = (m_res.kmer_id != constants::invalid_uint64);
             if (minimizer_found()) {
                 // NOTE: Technically, I don't believe this additional check 
                 // that we are attempting to extend from a prior search that did
@@ -136,7 +137,7 @@ struct streaming_query_canonical_parsing {
         } else {
             m_minimizer_not_found = false;
             locate_bucket();
-            if (extends()) { /* Try to extend matching even when we change minimizer. */
+            if (prev_kmer_found and extends()) { /* Try to extend matching even when we change minimizer. */
                 extend();
             } else {
                 lookup_advanced();
