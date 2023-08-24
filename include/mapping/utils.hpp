@@ -486,7 +486,7 @@ struct poison_state_t {
     pufferfish::CanonicalKmerIterator kit_end;
     pufferfish::CanonicalKmerIterator kit(s);
 
-    while (kit->second < first_pos) {
+    while ((kit != kit_end) and (kit->second < first_pos)) {
       if (ptab->key_exists(kit->first.getCanonicalWord())) {
         was_poisoned = true;
         return was_poisoned;
@@ -496,17 +496,50 @@ struct poison_state_t {
 
     // at this point, we got to the first hit on the read
     // now we scan intervals.
+    /*
+    itlib::small_vector<uint32_t> uids;
+    for (auto& hit : h) {
+      uids.push_back(hit.second.contig_id());
+    }
+    std::sort(uids.begin(), uids.end());
+    uids.erase( std::unique(uids.begin(), uids.end()), uids.end() );
+    while (kit != kit_end) {
+      was_poisoned = ptab->key_occurs_in_unitigs(kit->first.getCanonicalWord(), uids);
+      if (was_poisoned) { return was_poisoned; }
+      ++kit;
+    }
+    */
+
     auto start_it = h.begin();
-    auto end_it = ++start_it;
+    auto end_it = start_it+1;
+    int last_pos;
     while ((start_it != h.end()) and (kit != kit_end)) {
       // the first unitig to which the poison kmer can belog
       auto u1 = start_it->second.contig_id();
       auto u2 = (end_it != h.end()) ? end_it->second.contig_id() : u1;
       auto p1 = start_it->first;
       auto p2 = (end_it != h.end()) ? end_it->first : static_cast<int>(s.length() - k + 1);
-      
-      while (kit != kit_end and kit->second <= p2) {
-        if (end_it != h.end()) {
+      bool right_bound_resulted_from_open_search = (end_it != h.end()) ? end_it->second.resulted_from_open_search : true;
+      last_pos = p2;
+      bool last_interval = (end_it == h.end());
+      while (kit != kit_end and kit->second < p2) {
+        if (!last_interval and (u1 == u2) and (!right_bound_resulted_from_open_search)) {
+          /*
+          uint32_t dist_to_end{0};
+          // dist if fw
+          if (start_it->second.hit_fw_on_contig()) {
+            dist_to_end = start_it->second.contig_len() - k;
+          } else { // dist if rc
+            dist_to_end = start_it->second.contig_pos();
+          }
+          if (std::abs(p2 - p1) <= dist_to_end) {
+            was_poisoned = ptab->key_exists(kit->first.getCanonicalWord());
+          } else {
+            was_poisoned = ptab->key_exists(kit->first.getCanonicalWord());
+            //was_poisoned = ptab->key_occurs_in_unitigs(kit->first.getCanonicalWord(), u1, u2);
+          }
+          if (was_poisoned) { return was_poisoned; }
+          */
           was_poisoned = ptab->key_occurs_in_unitigs(kit->first.getCanonicalWord(), u1, u2);
           if (was_poisoned) { return was_poisoned; }
         } else {
@@ -518,6 +551,25 @@ struct poison_state_t {
       ++start_it;
       if (end_it != h.end()) { ++end_it; }
     }
+
+    if (kit != kit_end) {
+      std::cerr << "not at last positon!\n";
+      std::cerr << "length: " << s.length() << "\n";
+      std::cerr << "kit pos : " << kit->second << "\n";
+      std::cerr << "last pos : " << last_pos << "\n";
+    }
+    /*
+    while (kit != kit_end) {
+      if (ptab->key_exists(kit->first.getCanonicalWord())) {
+        was_poisoned = true;
+        return was_poisoned;
+      }
+      ++kit;
+    }
+    */
+
+
+    
     return was_poisoned;
   }
 

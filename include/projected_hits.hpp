@@ -21,6 +21,8 @@ struct projected_hits {
     uint32_t k_;
 
     sshash::util::contig_span refRange;
+    
+    bool resulted_from_open_search{false};
 
     inline bool empty() { return refRange.empty(); }
 

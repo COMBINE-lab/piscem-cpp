@@ -57,6 +57,20 @@ struct SkipContext {
 
     inline CanonicalKmer& curr_kmer() { return kit1->first; }
 
+    // tries to increment the iterator by a single nucleotide, but returns 
+    // the number of nucleotides we actually advanced. It could be greater 
+    // than 1 because of `N`s.
+    inline int increment_read_iter() {
+      auto pos_before_advancement = kit1->second;
+      ++kit1;
+      return (kit1->second - pos_before_advancement);
+    }
+    
+    // 
+    inline KmerMatchType check_match() {
+      return kit1->first.isEquivalent(fast_hit.ref_kmer);
+    }
+
     inline bool query_kmer(sshash::streaming_query_canonical_parsing& qc,
                            bool& obtained_confirmatory_hit) {
         bool found_match = false;
@@ -85,7 +99,7 @@ struct SkipContext {
             fast_hit.valid(false);
         }
 
-        // if we didn't find the query k-mer at the expecte reference
+        // if we didn't find the query k-mer at the expected reference
         // position (or we were not set up to do a fast hit) then
         // query the index.
         if (!found_match) {
@@ -117,7 +131,7 @@ struct SkipContext {
     //   jump that is _beyond_ the current hit's position on the read.
     // * False if the current hit is at the position to which
     //   the jump was intended.
-    // This value can be used to determine the appropriate courese
+    // This value can be used to determine the appropriate course
     // of action during safe skipping.
     inline bool hit_is_before_target_pos() {
         return (miss_it > 0 and read_target_pos > kit1->second);
@@ -206,7 +220,7 @@ struct SkipContext {
     inline void fast_forward() {
         // NOTE: normally we would assume that
         // kit1->second >= kit_tmp->second
-        // but, this be violated if we skipped farther than we asked in the iterator
+        // but, this can be violated if we skipped farther than we asked in the iterator
         // because there were 'N's in the read.
         // in that case case, ignore the fact that fast forward
         // could be a rewind.  We always want to skip back to
@@ -241,12 +255,21 @@ struct SkipContext {
      * (3) preserve the current hit iterator state in kit_tmp
      * (4) set up the appropriate context for a fast hit check if appropriate
      */
-    inline void advance_from_hit() {
+    inline void advance_from_hit(bool switching_unitig = false) {
         int32_t skip = 1;
         // the offset of the hit on the read
         int32_t read_offset = kit1->second;
         // the skip that would take us to the last queryable position of the read
         int32_t read_skip = (read_len - k) - read_offset;
+
+        if (switching_unitig) {
+          skip = 1;
+          kit1 += skip;
+          kit_tmp = kit1;
+          clear_miss_counter();
+          clear_expectation();
+          return;
+        }
 
         // If we got here after a miss, and we have an expectation, and this hit
         // matches it, then we want to avoid replaying this whole scenario again.
@@ -255,8 +278,9 @@ struct SkipContext {
         // found what we expected, but after 1 or more misses.  In that case,
         // we're satisfied with the rest of this unitig so we simply move on
         // to the position after our original skip position.
-        if ((miss_it > 0) and (expected_cid != invalid_cid) and
-            (expected_cid == phits.contigIdx_)) {
+        if ( 
+            ((miss_it > 0) and (expected_cid != invalid_cid) and
+             (expected_cid == phits.contigIdx_))) {
             skip = read_target_pos - read_offset + 1;
             skip = (skip < 1) ? 1 : skip;
             kit1 += skip;
@@ -441,7 +465,7 @@ struct SkipContext {
                 // we no longer have an expectation of what
                 // we should see.
                 if (kit1->second >= read_target_pos) {
-                    // fast_hit.valid(false);
+                    //fast_hit.valid(false);
                     clear_expectation();
                 }
                 // increment the miss iterator
@@ -481,6 +505,8 @@ struct SkipContext {
     bool hit_found;
 };
 
+
+
 // This method performs k-mer / hit collection
 // using a custom implementation of the corresponding
 // part of the pseudoalignment algorithm as described in (1).
@@ -518,6 +544,172 @@ struct SkipContext {
 // Nat Biotechnol. 2016;34(5):525-527.
 //
 bool hit_searcher::get_raw_hits_sketch(std::string& read,
+                                       sshash::streaming_query_canonical_parsing& qc, bool isLeft,
+                                       bool verbose) {
+  (void)verbose;
+  projected_hits phits;
+  auto& raw_hits = isLeft ? left_rawHits : right_rawHits;
+
+  CanonicalKmer::k(k);
+  int32_t k = static_cast<int32_t>(CanonicalKmer::k());
+  SkipContext skip_ctx(read, pfi_, k, altSkip);
+
+  // for this new read, restart the streaming query
+  qc.reset_state();
+  
+  int32_t dist_to_contig_end = 0;
+  // while it is possible to search further
+  while (!skip_ctx.is_exhausted()) {
+    // check if the search was a hit
+    bool confirmatory_fast_hit = false;
+    skip_ctx.fast_hit.valid(false);
+    if (skip_ctx.query_kmer(qc, confirmatory_fast_hit)) {
+      // the position on the read of the hit
+      auto read_pos = skip_ctx.read_pos();
+      // the projected hits object for this hit
+      auto phit_info = skip_ctx.proj_hits();
+     
+      // compute the relevant information about this hit
+      // where the contig starts and ends, and where our 
+      // hit is on the contig.
+      size_t cStartPos = phit_info.globalPos_ - phit_info.contigPos_;
+      size_t cEndPos = cStartPos + phit_info.contigLen_;
+      int64_t cCurrPos = static_cast<int64_t>(phit_info.globalPos_);
+      
+      // determine if we should add this hit 
+      if (raw_hits.empty() or (read_pos > raw_hits.back().first)) {
+        auto proj_hits = skip_ctx.proj_hits();
+        proj_hits.resulted_from_open_search = true;
+        raw_hits.push_back({read_pos, proj_hits});
+      }
+
+      // determine the distance to the end of the contig 
+      // and try to walk the k-mers from the current position
+      // to the contig end.
+      int32_t direction = 1;
+      // fw ori
+      if (phit_info.contigOrientation_) {
+        dist_to_contig_end = static_cast<int64_t>(cEndPos) - (static_cast<int64_t>(cCurrPos + k));
+      } else {  // rc ori
+        dist_to_contig_end = static_cast<int32_t>(phit_info.contigPos_);
+        direction = -1;
+      }
+
+      bool matches = true;
+      bool ended_on_match = false;
+      std::pair<int, projected_hits> last_valid_hit = raw_hits.back();
+      while (!skip_ctx.is_exhausted() and matches and dist_to_contig_end > 0) {
+        int inc_amt = skip_ctx.increment_read_iter();
+        dist_to_contig_end -= inc_amt;
+        // check to make sure this last move didn't overshoot
+        if (dist_to_contig_end >= 0) {
+          int32_t inc_offset = (direction * inc_amt);
+          cCurrPos += inc_offset;
+          if (cCurrPos < 0) {
+            std::cerr << "should not happen!\n";
+            std::exit(1);
+          }
+          // set the ref contig iterator position and read off
+          // the reference k-mer
+          skip_ctx.ref_contig_it.at(2 * cCurrPos);
+          skip_ctx.fast_hit.ref_kmer = skip_ctx.ref_contig_it.read(2 * k);
+          auto match_type = skip_ctx.check_match();
+          matches = (match_type != KmerMatchType::NO_MATCH);
+
+          // if this was a match then store the hit in case we don't 
+          // see another before a missing kmer or mismatch.
+          if (matches) {
+            bool hit_fw = (match_type == KmerMatchType::IDENTITY_MATCH);
+            //direction = hit_fw ? 1 : -1;
+            auto& phit = last_valid_hit.second;
+            phit.contigOrientation_ = hit_fw;
+            phit.globalPos_ += inc_offset;
+            phit.contigPos_ += inc_offset;
+            last_valid_hit.first = skip_ctx.read_pos();
+
+            // if this was a bookending k-mer for a contig then record it
+            if (dist_to_contig_end == 0) {
+              ended_on_match = true;
+              raw_hits.push_back( last_valid_hit );
+            }
+          } else {
+            break;
+          }
+
+        } else {
+          // we overshot 
+          matches = false;
+        }
+      }
+      
+      // if we ended the above while loop on a match to the 
+      // end of a unitig, then we need to increment the skip 
+      // context here to get to the next available k-mer.
+      if (!ended_on_match) {
+        skip_ctx.increment_read_iter();
+      } else {
+        // here we do not need to increment the read iterator
+        // because either we didn't find the k-mer we were looking 
+        // for or because we overshot the end of the contig.
+        
+        // determine if we had a valid match after the first one 
+        // that started this interval. If we did, then add it
+        if (last_valid_hit.first > raw_hits.back().first) {
+          raw_hits.push_back( last_valid_hit );
+          if (last_valid_hit.first == skip_ctx.read_pos()) {
+            std::cerr << "shouldn't happen!\n";
+          }
+        }
+      }
+    } else { // otherwise the read was a miss
+      skip_ctx.increment_read_iter();
+    }
+  }
+  /*
+  for (auto& h : raw_hits) {
+    std::cerr << "h.first: " << h.first << ", h.second: " << h.second << "\n"; 
+  }*/
+  
+  return !raw_hits.empty();
+}
+
+// This method performs k-mer / hit collection
+// using a custom implementation of the corresponding
+// part of the pseudoalignment algorithm as described in (1).
+// Specifically, it attempts to find a small set of
+// k-mers along the fragment (`read`) that are shared with
+// a set of unitigs in the compacted colored de Bruijn graph,
+// using the structure of the graph to avoid queries that
+// are unlikely to change the resulting set of unitigs
+// that are discovered.  This function only fills out the
+// set of hits, and does not itself implement any
+// consensus mechanism.  This hit collection mechanism
+// prioritizes speed compared to e.g. the uniMEM collection
+// strategy implemented in the `operator()` method of this
+// class.  Currently, this strategy is only used in the
+// `--sketch` mode of alevin.  One may refer to the
+// [release notes](https://github.com/COMBINE-lab/salmon/releases/tag/v1.4.0)
+// of the relevant version of salmon and links therein
+// for a more detailed discussion of the downstream effects of
+// different strategies.
+//
+// The function fills out the appropriate raw hits
+// member of this MemCollector instance.
+//
+// If the `isLeft` flag is set to true, then the left
+// raw hits are filled and can be retreived with
+// `get_left_hits()`.  Otherwise, the right raw hits are
+// filled and can be retrieved with `get_right_hits()`.
+//
+// This function returns `true` if at least one hit was
+// found shared between the read and reference and
+// `false` otherwise.
+//
+// [1] Bray NL, Pimentel H, Melsted P, Pachter L.
+// Near-optimal probabilistic RNA-seq quantification.
+// Nat Biotechnol. 2016;34(5):525-527.
+//
+bool hit_searcher::get_raw_hits_sketch_orig(std::string& read,
                                        sshash::streaming_query_canonical_parsing& qc, bool isLeft,
                                        bool verbose) {
     (void)verbose;
@@ -610,7 +802,7 @@ bool hit_searcher::get_raw_hits_sketch(std::string& read,
                     // add the hit here
                     raw_hits.push_back(std::make_pair(read_pos, proj_hits));
                     // advance as if this was a normal hit
-                    skip_ctx.advance_from_hit();
+                    skip_ctx.advance_from_hit(true);
                 } else {
                     // We were in case 2
                     // now advance as if this was a normal miss.

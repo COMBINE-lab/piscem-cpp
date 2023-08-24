@@ -8,6 +8,7 @@
 #include "../include/util.hpp"
 #include "../include/parallel_hashmap/phmap.h"
 #include "../include/parallel_hashmap/phmap_dump.h"
+#include "../include/itlib/small_vector.hpp"
 
 using poison_map_t = phmap::flat_hash_map<uint64_t, uint64_t, sshash::RobinHoodHash>;
 using sshash::poison_occ_t;
@@ -89,6 +90,30 @@ class poison_table {
     for (; it_start != it_end; ++it_start) {
       bool found = (it_start->unitig_id == u1) or (it_start->unitig_id == u2);
       if (found) { return true; }
+    }
+    return false;
+  }
+
+  inline bool key_occurs_in_unitigs(uint64_t km, 
+                                    itlib::small_vector<uint32_t>& unitigs) {
+    auto key_it = poison_map_.find(km);
+    if (key_it == poison_map_.end()) { return false; }
+    auto occ_start = offsets_[key_it->second];
+    auto occ_end = offsets_[key_it->second+1];
+    auto it_start = poison_occs_.begin() + occ_start;
+    auto it_end = poison_occs_.begin() + occ_end;
+
+    auto u_start = unitigs.begin();
+    auto u_end = unitigs.end();
+    while (it_start != it_end && u_start != u_end ) {
+        if (it_start->unitig_id < *u_start) {
+            ++it_start;
+        } else {
+           if (!(*u_start < it_start->unitig_id)) {
+               return true;
+           }
+           ++u_start;
+        }
     }
     return false;
   }

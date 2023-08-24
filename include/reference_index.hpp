@@ -64,13 +64,14 @@ public:
     projected_hits query(pufferfish::CanonicalKmerIterator kmit,
                          sshash::streaming_query_canonical_parsing& q) {
         auto qres = q.get_contig_pos(kmit->first.fwWord(), kmit->first.rcWord(), kmit->second);
+        //auto qres = m_dict.lookup_advanced_uint64(kmit->first.fwWord());
 
         constexpr uint64_t invalid_u64 = std::numeric_limits<uint64_t>::max();
         constexpr uint32_t invalid_u32 = std::numeric_limits<uint32_t>::max();
 
         bool is_member = (qres.kmer_id != sshash::constants::invalid_uint64);
 
-        /*
+        
         if (is_member && (qres.contig_id == invalid_u32)) {
           std::cerr << "qres.contig_id = " << qres.contig_id << ", but qres.kmerid = " << qres.kmer_id << "\n";
           std::cerr << "== ANSWER\n";
@@ -82,7 +83,7 @@ public:
           std::cerr << "contig_id " << qres.contig_id << '\n';
           std::cerr << "contig_size " << qres.contig_size << '\n';
         }
-        */
+        
 
         if (is_member) {
             const auto k = m_dict.k();

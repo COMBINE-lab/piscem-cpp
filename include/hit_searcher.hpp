@@ -27,6 +27,11 @@ public:
                   sshash::streaming_query_canonical_parsing& qc,
                   bool isLeft=false,
                   bool verbose=false);
+  
+  bool get_raw_hits_sketch_orig(std::string &read,
+                  sshash::streaming_query_canonical_parsing& qc,
+                  bool isLeft=false,
+                  bool verbose=false);
 
 void clear();
 
