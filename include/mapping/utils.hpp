@@ -513,33 +513,16 @@ struct poison_state_t {
     auto start_it = h.begin();
     auto end_it = start_it+1;
     int last_pos;
-    while ((start_it != h.end()) and (kit != kit_end)) {
+    while ((end_it != h.end()) and (kit != kit_end)) {
       // the first unitig to which the poison kmer can belog
       auto u1 = start_it->second.contig_id();
-      auto u2 = (end_it != h.end()) ? end_it->second.contig_id() : u1;
-      auto p1 = start_it->first;
-      auto p2 = (end_it != h.end()) ? end_it->first : static_cast<int>(s.length() - k + 1);
-      bool right_bound_resulted_from_open_search = (end_it != h.end()) ? end_it->second.resulted_from_open_search : true;
+      auto u2 = end_it->second.contig_id();
+      // auto p1 = start_it->first; // we don't actually use this, though it exists "conceptually"
+      auto p2 = end_it->first;
+      bool right_bound_resulted_from_open_search = end_it->second.resulted_from_open_search;
       last_pos = p2;
-      bool last_interval = (end_it == h.end());
-      while (kit != kit_end and kit->second < p2) {
-        if (!last_interval and (u1 == u2) and (!right_bound_resulted_from_open_search)) {
-          /*
-          uint32_t dist_to_end{0};
-          // dist if fw
-          if (start_it->second.hit_fw_on_contig()) {
-            dist_to_end = start_it->second.contig_len() - k;
-          } else { // dist if rc
-            dist_to_end = start_it->second.contig_pos();
-          }
-          if (std::abs(p2 - p1) <= dist_to_end) {
-            was_poisoned = ptab->key_exists(kit->first.getCanonicalWord());
-          } else {
-            was_poisoned = ptab->key_exists(kit->first.getCanonicalWord());
-            //was_poisoned = ptab->key_occurs_in_unitigs(kit->first.getCanonicalWord(), u1, u2);
-          }
-          if (was_poisoned) { return was_poisoned; }
-          */
+      while (kit != kit_end and kit->second <= p2) {
+        if (/*(u1 == u2) and*/ (!right_bound_resulted_from_open_search)) {
           was_poisoned = ptab->key_occurs_in_unitigs(kit->first.getCanonicalWord(), u1, u2);
           if (was_poisoned) { return was_poisoned; }
         } else {
@@ -549,7 +532,16 @@ struct poison_state_t {
         ++kit;
       }
       ++start_it;
-      if (end_it != h.end()) { ++end_it; }
+      ++end_it;
+      //if (end_it != h.end()) { ++end_it; }
+    }
+
+    // for any remaining k-mers in the read after the end of the last 
+    // matching interval.
+    while (kit != kit_end) {
+      was_poisoned = ptab->key_exists(kit->first.getCanonicalWord());
+      if (was_poisoned) { return was_poisoned; }
+      ++kit;
     }
 
     if (kit != kit_end) {

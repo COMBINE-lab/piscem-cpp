@@ -553,20 +553,27 @@ bool hit_searcher::get_raw_hits_sketch(std::string& read,
   CanonicalKmer::k(k);
   int32_t k = static_cast<int32_t>(CanonicalKmer::k());
   SkipContext skip_ctx(read, pfi_, k, altSkip);
+  skip_ctx.fast_hit.valid(false);
+  bool confirmatory_fast_hit = false;
 
   // for this new read, restart the streaming query
   qc.reset_state();
   
-  int32_t dist_to_contig_end = 0;
-  // while it is possible to search further
+  int64_t dist_to_contig_end = 0;
+  // while we have not yet reached the last k-mer 
+  // of `read`
   while (!skip_ctx.is_exhausted()) {
     // check if the search was a hit
-    bool confirmatory_fast_hit = false;
-    skip_ctx.fast_hit.valid(false);
     if (skip_ctx.query_kmer(qc, confirmatory_fast_hit)) {
-      // the position on the read of the hit
+      // in this branch of the if/else, we found a hit 
+      // for the current k-mer.
+
+      // record some relevant information;
+      // the position on the read of the matching k-mer
       auto read_pos = skip_ctx.read_pos();
       // the projected hits object for this hit
+      // which includes the contig id and position
+      // of the matching k-mer, as well as the orientation
       auto phit_info = skip_ctx.proj_hits();
      
       // compute the relevant information about this hit
@@ -576,9 +583,14 @@ bool hit_searcher::get_raw_hits_sketch(std::string& read,
       size_t cEndPos = cStartPos + phit_info.contigLen_;
       int64_t cCurrPos = static_cast<int64_t>(phit_info.globalPos_);
       
-      // determine if we should add this hit 
+      // determine if we should add this hit. If there are currently 
+      // no hits for this read, or if this hit reaches further than 
+      // any other (i.e. it's read position is greater than any hit
+      // we have seen before), then add it.
       if (raw_hits.empty() or (read_pos > raw_hits.back().first)) {
         auto proj_hits = skip_ctx.proj_hits();
+        // this hit was not looking for a match on a known contig
+        // rather, it resulted from an "open" search.
         proj_hits.resulted_from_open_search = true;
         raw_hits.push_back({read_pos, proj_hits});
       }
@@ -591,24 +603,28 @@ bool hit_searcher::get_raw_hits_sketch(std::string& read,
       if (phit_info.contigOrientation_) {
         dist_to_contig_end = static_cast<int64_t>(cEndPos) - (static_cast<int64_t>(cCurrPos + k));
       } else {  // rc ori
-        dist_to_contig_end = static_cast<int32_t>(phit_info.contigPos_);
+        dist_to_contig_end = static_cast<int64_t>(phit_info.contigPos_);
         direction = -1;
       }
 
       bool matches = true;
       bool ended_on_match = false;
+      // we'll use this to hold the last valid k-mer match that was 
+      // observered
       std::pair<int, projected_hits> last_valid_hit = raw_hits.back();
+      // now, we will walk starting from the hit we just saw above 
+      // until we reach the end of the read, the end of the contig, or a mismatch.
       while (!skip_ctx.is_exhausted() and matches and dist_to_contig_end > 0) {
+        // increment the read iterator by the minimal amount possible.
         int inc_amt = skip_ctx.increment_read_iter();
         dist_to_contig_end -= inc_amt;
         // check to make sure this last move didn't overshoot
+        // the end of the contig.
         if (dist_to_contig_end >= 0) {
           int32_t inc_offset = (direction * inc_amt);
           cCurrPos += inc_offset;
-          if (cCurrPos < 0) {
-            std::cerr << "should not happen!\n";
-            std::exit(1);
-          }
+          assert(("cCurrPos >= 0", cCurrPos >= 0));
+
           // set the ref contig iterator position and read off
           // the reference k-mer
           skip_ctx.ref_contig_it.at(2 * cCurrPos);
@@ -617,14 +633,18 @@ bool hit_searcher::get_raw_hits_sketch(std::string& read,
           matches = (match_type != KmerMatchType::NO_MATCH);
 
           // if this was a match then store the hit in case we don't 
-          // see another before a missing kmer or mismatch.
+          // see another before a missing kmer, mismatch, or the end 
+          // of the contig.
           if (matches) {
             bool hit_fw = (match_type == KmerMatchType::IDENTITY_MATCH);
-            //direction = hit_fw ? 1 : -1;
+            // update the last_valid_hit variable with the 
+            // projected hit corresponding to this matching k-mer
             auto& phit = last_valid_hit.second;
+            phit.resulted_from_open_search = false;
             phit.contigOrientation_ = hit_fw;
             phit.globalPos_ += inc_offset;
             phit.contigPos_ += inc_offset;
+            // set the read position for this hit
             last_valid_hit.first = skip_ctx.read_pos();
 
             // if this was a bookending k-mer for a contig then record it
@@ -633,11 +653,13 @@ bool hit_searcher::get_raw_hits_sketch(std::string& read,
               raw_hits.push_back( last_valid_hit );
             }
           } else {
+            // the last k-mer we looked for was 
+            // not a match.
             break;
           }
 
         } else {
-          // we overshot 
+          // we overshot the end of the contig
           matches = false;
         }
       }
@@ -656,19 +678,13 @@ bool hit_searcher::get_raw_hits_sketch(std::string& read,
         // that started this interval. If we did, then add it
         if (last_valid_hit.first > raw_hits.back().first) {
           raw_hits.push_back( last_valid_hit );
-          if (last_valid_hit.first == skip_ctx.read_pos()) {
-            std::cerr << "shouldn't happen!\n";
-          }
+          assert(("read_pos > last_valid_hit.first", skip_ctx.read_pos() > last_valid_hit.first));
         }
       }
-    } else { // otherwise the read was a miss
+    } else { // otherwise this open k-mer search resulted in a miss. 
       skip_ctx.increment_read_iter();
     }
   }
-  /*
-  for (auto& h : raw_hits) {
-    std::cerr << "h.first: " << h.first << ", h.second: " << h.second << "\n"; 
-  }*/
   
   return !raw_hits.empty();
 }

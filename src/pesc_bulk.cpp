@@ -323,6 +323,7 @@ void do_map(mindex::reference_index& ri, fastx_parser::FastxParser<FragT>& parse
             poison_table& poison_map,
             std::atomic<uint64_t>& global_npoisoned,
             std::atomic<uint64_t>& global_nr, std::atomic<uint64_t>& global_nhits,
+            uint32_t max_ec_card,
             mapping_output_info& out_info, std::mutex& iomut) {
     auto log_level = spdlog_piscem::get_level();
     auto write_mapping_rate = false;
@@ -379,8 +380,12 @@ void do_map(mindex::reference_index& ri, fastx_parser::FastxParser<FragT>& parse
     };
 
     mapping_cache_info map_cache_left(ri);
+    map_cache_left.max_ec_card = max_ec_card;
     mapping_cache_info map_cache_right(ri);
+    map_cache_right.max_ec_card = max_ec_card;
     mapping_cache_info map_cache_out(ri);
+    map_cache_out.max_ec_card = max_ec_card;
+
     poison_state_t poison_state;
     if (use_poison) {
       poison_state.ptab = &poison_map;
@@ -562,6 +567,8 @@ int run_pesc_bulk(int argc, char** argv) {
     size_t nthread{16};
     bool quiet{false};
     bool no_poison{false};
+    bool check_ambig_hits{false};
+    uint32_t max_ec_card{256};
 
     CLI::App app{"Bulk mapper"};
     app.add_option("-i,--index", index_basename, "Input index prefix")->required();
@@ -593,7 +600,17 @@ int run_pesc_bulk(int argc, char** argv) {
         ->default_val(16);
     app.add_flag("--no-poison", no_poison, "Do not filter reads for poison k-mers, even if a poison table exists for the index");
     app.add_flag("--quiet", quiet, "Try to be quiet in terms of console output");
-
+    auto check_ambig =
+        app.add_flag("--check-ambig-hits", check_ambig_hits,
+                     "Check the existence of highly-frequent hits in mapped targets, rather than "
+                     "ignoring them");
+    app.add_option("--max-ec-card", max_ec_card,
+                   "Determines the maximum cardinality equivalence class "
+                   "(number of (txp, orientation status) pairs) to examine "
+                   "if performing check-ambig-hits")
+        ->needs(check_ambig)
+        ->default_val(256);
+ 
     CLI11_PARSE(app, argc, argv);
 
     auto input_filename = index_basename;
@@ -611,6 +628,7 @@ int run_pesc_bulk(int argc, char** argv) {
     // start the timer
     auto start_t = std::chrono::high_resolution_clock::now();
 
+    bool attempt_load_ec_map = check_ambig_hits;
     mindex::reference_index ri(input_filename);
 
     bool is_paired = read_opt->empty();
@@ -674,8 +692,8 @@ int run_pesc_bulk(int argc, char** argv) {
 
         for (size_t i = 0; i < nthread; ++i) {
             workers.push_back(
-                std::thread([&ri, &rparser, &ptab, &global_np, &global_nr, &global_nh, &out_info, &iomut]() {
-                    do_map(ri, rparser, ptab, global_np, global_nr, global_nh, out_info, iomut);
+                std::thread([&ri, &rparser, &ptab, &global_np, &global_nr, &global_nh, max_ec_card, &out_info, &iomut]() {
+                    do_map(ri, rparser, ptab, global_np, global_nr, global_nh, max_ec_card, out_info, iomut);
                 }));
         }
 
@@ -694,8 +712,8 @@ int run_pesc_bulk(int argc, char** argv) {
 
         for (size_t i = 0; i < nthread; ++i) {
             workers.push_back(
-                std::thread([&ri, &rparser, &ptab, &global_np, &global_nr, &global_nh, &out_info, &iomut]() {
-                    do_map(ri, rparser, ptab, global_np, global_nr, global_nh, out_info, iomut);
+                std::thread([&ri, &rparser, &ptab, &global_np, &global_nr, &global_nh, max_ec_card, &out_info, &iomut]() {
+                    do_map(ri, rparser, ptab, global_np, global_nr, global_nh, max_ec_card, out_info, iomut);
                 }));
         }
 
