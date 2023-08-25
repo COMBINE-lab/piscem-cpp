@@ -496,20 +496,6 @@ struct poison_state_t {
 
     // at this point, we got to the first hit on the read
     // now we scan intervals.
-    /*
-    itlib::small_vector<uint32_t> uids;
-    for (auto& hit : h) {
-      uids.push_back(hit.second.contig_id());
-    }
-    std::sort(uids.begin(), uids.end());
-    uids.erase( std::unique(uids.begin(), uids.end()), uids.end() );
-    while (kit != kit_end) {
-      was_poisoned = ptab->key_occurs_in_unitigs(kit->first.getCanonicalWord(), uids);
-      if (was_poisoned) { return was_poisoned; }
-      ++kit;
-    }
-    */
-
     auto start_it = h.begin();
     auto end_it = start_it+1;
     int last_pos;
@@ -533,7 +519,6 @@ struct poison_state_t {
       }
       ++start_it;
       ++end_it;
-      //if (end_it != h.end()) { ++end_it; }
     }
 
     // for any remaining k-mers in the read after the end of the last 
@@ -550,17 +535,6 @@ struct poison_state_t {
       std::cerr << "kit pos : " << kit->second << "\n";
       std::cerr << "last pos : " << last_pos << "\n";
     }
-    /*
-    while (kit != kit_end) {
-      if (ptab->key_exists(kit->first.getCanonicalWord())) {
-        was_poisoned = true;
-        return was_poisoned;
-      }
-      ++kit;
-    }
-    */
-
-
     
     return was_poisoned;
   }
