@@ -571,6 +571,7 @@ bool hit_searcher::get_raw_hits_sketch(std::string& read,
       // record some relevant information;
       // the position on the read of the matching k-mer
       auto read_pos = skip_ctx.read_pos();
+      auto initial_search_pos = read_pos;
       // the projected hits object for this hit
       // which includes the contig id and position
       // of the matching k-mer, as well as the orientation
@@ -647,11 +648,9 @@ bool hit_searcher::get_raw_hits_sketch(std::string& read,
             // set the read position for this hit
             last_valid_hit.first = skip_ctx.read_pos();
 
-            // if this was a bookending k-mer for a contig then record it
-            if (dist_to_contig_end == 0) {
-              ended_on_match = true;
-              raw_hits.push_back( last_valid_hit );
-            }
+            // if this was a bookending k-mer for a contig then record 
+            // that we eneded on a match.
+            ended_on_match = (dist_to_contig_end == 0);
           } else {
             // the last k-mer we looked for was 
             // not a match.
@@ -663,24 +662,24 @@ bool hit_searcher::get_raw_hits_sketch(std::string& read,
           matches = false;
         }
       }
-      
+ 
+      // determine if we had a valid match after the first one 
+      // that started this interval. If we did, then add it
+      if (last_valid_hit.first > raw_hits.back().first) {
+        raw_hits.push_back( last_valid_hit );
+        assert(("read_pos > last_valid_hit.first", skip_ctx.read_pos() > last_valid_hit.first));
+      } 
+
+     
       // if we ended the above while loop on a match to the 
       // end of a unitig, then we need to increment the skip 
       // context here to get to the next available k-mer.
-      if (!ended_on_match) {
+      // Likewise, if we didn't advance the iterator at all
+      // since the initial open search, then we need to do it
+      // here.
+      if (ended_on_match or (skip_ctx.read_pos() == initial_search_pos)) {
         skip_ctx.increment_read_iter();
-      } else {
-        // here we do not need to increment the read iterator
-        // because either we didn't find the k-mer we were looking 
-        // for or because we overshot the end of the contig.
-        
-        // determine if we had a valid match after the first one 
-        // that started this interval. If we did, then add it
-        if (last_valid_hit.first > raw_hits.back().first) {
-          raw_hits.push_back( last_valid_hit );
-          assert(("read_pos > last_valid_hit.first", skip_ctx.read_pos() > last_valid_hit.first));
-        }
-      }
+      } 
     } else { // otherwise this open k-mer search resulted in a miss. 
       skip_ctx.increment_read_iter();
     }

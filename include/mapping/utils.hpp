@@ -486,7 +486,7 @@ struct poison_state_t {
     pufferfish::CanonicalKmerIterator kit_end;
     pufferfish::CanonicalKmerIterator kit(s);
 
-    while ((kit != kit_end) and (kit->second < first_pos)) {
+    while ((kit != kit_end) and (kit->second <= first_pos)) {
       if (ptab->key_exists(kit->first.getCanonicalWord())) {
         was_poisoned = true;
         return was_poisoned;
@@ -500,21 +500,27 @@ struct poison_state_t {
     auto end_it = start_it+1;
     int last_pos;
     while ((end_it != h.end()) and (kit != kit_end)) {
-      // the first unitig to which the poison kmer can belog
+      // the first unitig to which the poison kmer can belong
       auto u1 = start_it->second.contig_id();
       auto u2 = end_it->second.contig_id();
-      // auto p1 = start_it->first; // we don't actually use this, though it exists "conceptually"
+
+      auto cp1 = start_it->second.contig_pos();
+      auto cp2 = end_it->second.contig_pos();
+
+      // auto p1 = start_it->first; 
       auto p2 = end_it->first;
       bool right_bound_resulted_from_open_search = end_it->second.resulted_from_open_search;
       last_pos = p2;
       while (kit != kit_end and kit->second <= p2) {
         if (/*(u1 == u2) and*/ (!right_bound_resulted_from_open_search)) {
-          was_poisoned = ptab->key_occurs_in_unitigs(kit->first.getCanonicalWord(), u1, u2);
-          if (was_poisoned) { return was_poisoned; }
+          //was_poisoned = ptab->key_occurs_in_unitigs(kit->first.getCanonicalWord(), u1, u2);
+          auto lb = std::min(cp1, cp2);
+          auto ub = std::max(cp1, cp2);
+          was_poisoned = ptab->key_occurs_in_unitig_between(kit->first.getCanonicalWord(), u1, lb, lb);
         } else {
           was_poisoned = ptab->key_exists(kit->first.getCanonicalWord());
-          if (was_poisoned) { return was_poisoned; }
         }
+        if (was_poisoned) { return was_poisoned; }
         ++kit;
       }
       ++start_it;
