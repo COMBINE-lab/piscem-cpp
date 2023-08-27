@@ -688,7 +688,8 @@ inline bool map_read(std::string* read_seq, mapping_cache_info& map_cache, poiso
                         auto& target = hit_map[tid];
 
                         /* FOR DEBUG
-                        if (verbose) {
+                        *
+                        if (true or verbose) {
                             auto& tname = map_cache.hs.get_index()->ref_name(tid);
                             std::cerr << "\traw_hit [read_pos: " << read_pos << " ]:" << tname
                                       << ", " << pos << ", " << (ori ? "fw" : "rc") << "\n";

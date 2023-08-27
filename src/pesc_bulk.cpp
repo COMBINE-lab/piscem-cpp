@@ -318,7 +318,10 @@ std::string& get_name(fastx_parser::ReadSeq& rs) { return rs.name; }
 
 std::string& get_name(fastx_parser::ReadPair& rs) { return rs.first.name; }
 
-template <typename FragT>
+struct RadT {};
+struct SamT {};
+
+template <typename FragT, typename OutputT = RadT>
 void do_map(mindex::reference_index& ri, fastx_parser::FastxParser<FragT>& parser,
             poison_table& poison_map,
             std::atomic<uint64_t>& global_npoisoned,
@@ -396,21 +399,33 @@ void do_map(mindex::reference_index& ri, fastx_parser::FastxParser<FragT>& parse
       poison_state.paired_for_mapping = true;
     }
 
-    rad_writer rad_w;
+    // Technically the variables below are 
+    // only required if in RAD output
+    // mode, but the compiler isn't smart enough
+    // to figure that out.
     size_t max_chunk_reads = 5000;
     // reserve the space to later write
     // down the number of reads in the
     // first chunk.
-    uint32_t num_reads_in_chunk{0};
-    rad_w << num_reads_in_chunk;
-    rad_w << num_reads_in_chunk;
+    uint32_t num_reads_in_chunk = 0;
+    rad_writer rad_w;
+    if constexpr (std::is_same_v<OutputT, RadT>) {
+      rad_w << num_reads_in_chunk;
+      rad_w << num_reads_in_chunk;
+    }
+
+    // SAM output
+    // Technically the variables below are 
+    // only required if in SAM output mode
+    // but the compiler isn't smart enough 
+    // to figure that out.
+    uint64_t processed = 0;
+    uint64_t buff_size = 10000;
+
 
     sshash::streaming_query_canonical_parsing q(ri.get_dict());
     mindex::hit_searcher hs(&ri);
     uint64_t read_num = 0;
-    // SAM output
-    // uint64_t processed = 0;
-    // uint64_t buff_size = 10000;
 
     // these don't really belong here
     std::string workstr_left;
@@ -477,30 +492,33 @@ void do_map(mindex::reference_index& ri, fastx_parser::FastxParser<FragT>& parse
               }
             }
             */
+            
             // RAD output
-            global_nhits += map_cache_out.accepted_hits.empty() ? 0 : 1;
-            rad::util::write_to_rad_stream_bulk(map_cache_out.map_type, map_cache_out.accepted_hits,
-                                                num_reads_in_chunk, rad_w);
+            if constexpr (std::is_same_v<OutputT, RadT>) {
+              global_nhits += map_cache_out.accepted_hits.empty() ? 0 : 1;
+              rad::util::write_to_rad_stream_bulk(map_cache_out.map_type, map_cache_out.accepted_hits,
+                                                  num_reads_in_chunk, rad_w);
 
-            // dump buffer
-            if (num_reads_in_chunk > max_chunk_reads) {
-                out_info.num_chunks++;
-                uint32_t num_bytes = rad_w.num_bytes();
-                rad_w.write_integer_at_offset(0, num_bytes);
-                rad_w.write_integer_at_offset(sizeof(num_bytes), num_reads_in_chunk);
-                out_info.rad_mutex.lock();
-                out_info.rad_file << rad_w;
-                out_info.rad_mutex.unlock();
-                rad_w.clear();
-                num_reads_in_chunk = 0;
+              // dump buffer
+              if (num_reads_in_chunk > max_chunk_reads) {
+                  out_info.num_chunks++;
+                  uint32_t num_bytes = rad_w.num_bytes();
+                  rad_w.write_integer_at_offset(0, num_bytes);
+                  rad_w.write_integer_at_offset(sizeof(num_bytes), num_reads_in_chunk);
+                  out_info.rad_mutex.lock();
+                  out_info.rad_file << rad_w;
+                  out_info.rad_mutex.unlock();
+                  rad_w.clear();
+                  num_reads_in_chunk = 0;
 
-                // reserve space for headers of next chunk
-                rad_w << num_reads_in_chunk;
-                rad_w << num_reads_in_chunk;
+                  // reserve space for headers of next chunk
+                  rad_w << num_reads_in_chunk;
+                  rad_w << num_reads_in_chunk;
+              }
             }
 
             // SAM output
-            /*
+            if constexpr (std::is_same_v<OutputT, SamT>) {
               write_sam_mappings(map_cache_out, record, workstr_left, workstr_right, global_nhits,
                   osstream);
 
@@ -513,33 +531,35 @@ void do_map(mindex::reference_index& ri, fastx_parser::FastxParser<FragT>& parse
                 osstream.str("");
                 processed = 0;
               }
-            */
+            }
             
         }
     }
 
     // RAD output: dump any remaining output
-    if (num_reads_in_chunk > 0) {
-        out_info.num_chunks++;
-        uint32_t num_bytes = rad_w.num_bytes();
-        rad_w.write_integer_at_offset(0, num_bytes);
-        rad_w.write_integer_at_offset(sizeof(num_bytes), num_reads_in_chunk);
-        out_info.rad_mutex.lock();
-        out_info.rad_file << rad_w;
-        out_info.rad_mutex.unlock();
-        rad_w.clear();
-        num_reads_in_chunk = 0;
+    if constexpr (std::is_same_v<OutputT, RadT>) {
+      if (num_reads_in_chunk > 0) {
+          out_info.num_chunks++;
+          uint32_t num_bytes = rad_w.num_bytes();
+          rad_w.write_integer_at_offset(0, num_bytes);
+          rad_w.write_integer_at_offset(sizeof(num_bytes), num_reads_in_chunk);
+          out_info.rad_mutex.lock();
+          out_info.rad_file << rad_w;
+          out_info.rad_mutex.unlock();
+          rad_w.clear();
+          num_reads_in_chunk = 0;
+      }
     }
 
     // SAM output
     // dump any remaining output
-    /*
+    if constexpr (std::is_same_v<OutputT, SamT>) {
       std::string o = osstream.str();
       iomut.lock();
       std::cout << o;
       iomut.unlock();
       osstream.clear();
-    */
+    }
     // don't need this here because osstream goes away at end of scope
     // osstream.str("");
     
@@ -567,6 +587,7 @@ int run_pesc_bulk(int argc, char** argv) {
     size_t nthread{16};
     bool quiet{false};
     bool no_poison{false};
+    bool use_sam_format{false};
     bool check_ambig_hits{false};
     uint32_t max_ec_card{256};
 
@@ -600,6 +621,7 @@ int run_pesc_bulk(int argc, char** argv) {
         ->default_val(16);
     app.add_flag("--no-poison", no_poison, "Do not filter reads for poison k-mers, even if a poison table exists for the index");
     app.add_flag("--quiet", quiet, "Try to be quiet in terms of console output");
+    app.add_flag("--sam-format", use_sam_format, "Write SAM format output rather than bulk RAD (mostly for testing).");
     auto check_ambig =
         app.add_flag("--check-ambig-hits", check_ambig_hits,
                      "Check the existence of highly-frequent hits in mapped targets, rather than "
@@ -640,19 +662,21 @@ int run_pesc_bulk(int argc, char** argv) {
         cmdline.push_back(' ');
     }
     cmdline.pop_back();
-    // print_header(ri, cmdline);
-
-    ghc::filesystem::path rad_file_path = output_stem + ".rad";
-
-    std::ofstream rad_file(rad_file_path.string());
-    if (!rad_file.good()) {
-        spdlog_piscem::critical("Could not open {} for writing.", rad_file_path.string());
-        throw std::runtime_error("error creating output file.");
-    }
 
     mapping_output_info out_info;
-    out_info.rad_file = std::move(rad_file);
-    size_t chunk_offset = rad::util::write_rad_header_bulk(ri, is_paired, out_info.rad_file);
+    size_t chunk_offset = 0;
+    if (use_sam_format) {
+      print_header(ri, cmdline);
+    } else {
+      ghc::filesystem::path rad_file_path = output_stem + ".rad";
+      std::ofstream rad_file(rad_file_path.string());
+      if (!rad_file.good()) {
+          spdlog_piscem::critical("Could not open {} for writing.", rad_file_path.string());
+          throw std::runtime_error("error creating output file.");
+      }
+      out_info.rad_file = std::move(rad_file);
+      chunk_offset = rad::util::write_rad_header_bulk(ri, is_paired, out_info.rad_file);
+    }
 
     std::mutex iomut;
 
@@ -692,8 +716,12 @@ int run_pesc_bulk(int argc, char** argv) {
 
         for (size_t i = 0; i < nthread; ++i) {
             workers.push_back(
-                std::thread([&ri, &rparser, &ptab, &global_np, &global_nr, &global_nh, max_ec_card, &out_info, &iomut]() {
-                    do_map(ri, rparser, ptab, global_np, global_nr, global_nh, max_ec_card, out_info, iomut);
+                std::thread([&ri, &rparser, &ptab, &global_np, &global_nr, &global_nh, max_ec_card, &out_info, &iomut, use_sam_format]() {
+                    if (use_sam_format) {
+                      do_map<fastx_parser::ReadPair, SamT>(ri, rparser, ptab, global_np, global_nr, global_nh, max_ec_card, out_info, iomut);
+                    } else {
+                      do_map<fastx_parser::ReadPair, RadT>(ri, rparser, ptab, global_np, global_nr, global_nh, max_ec_card, out_info, iomut);
+                    }
                 }));
         }
 
@@ -712,8 +740,12 @@ int run_pesc_bulk(int argc, char** argv) {
 
         for (size_t i = 0; i < nthread; ++i) {
             workers.push_back(
-                std::thread([&ri, &rparser, &ptab, &global_np, &global_nr, &global_nh, max_ec_card, &out_info, &iomut]() {
-                    do_map(ri, rparser, ptab, global_np, global_nr, global_nh, max_ec_card, out_info, iomut);
+                std::thread([&ri, &rparser, &ptab, &global_np, &global_nr, &global_nh, max_ec_card, &out_info, &iomut, use_sam_format]() {
+                  if (use_sam_format) { 
+                    do_map<fastx_parser::ReadSeq, SamT>(ri, rparser, ptab, global_np, global_nr, global_nh, max_ec_card, out_info, iomut);
+                  } else {
+                    do_map<fastx_parser::ReadSeq, RadT>(ri, rparser, ptab, global_np, global_nr, global_nh, max_ec_card, out_info, iomut);
+                  }
                 }));
         }
 
@@ -725,29 +757,31 @@ int run_pesc_bulk(int argc, char** argv) {
     if (!ptab.empty()) {
       spdlog_piscem::info("number of reads discarded because of poison k-mers: {}", global_np);
     }
-    // rewind to the start of the file and write the number of
-    // chunks that we actually produced.
-    out_info.rad_file.seekp(chunk_offset);
-    uint64_t nc = out_info.num_chunks.load();
-    out_info.rad_file.write(reinterpret_cast<char*>(&nc), sizeof(nc));
 
-    out_info.rad_file.close();
+    if (!use_sam_format) {
+      // rewind to the start of the file and write the number of
+      // chunks that we actually produced.
+      out_info.rad_file.seekp(chunk_offset);
+      uint64_t nc = out_info.num_chunks.load();
+      out_info.rad_file.write(reinterpret_cast<char*>(&nc), sizeof(nc));
+      out_info.rad_file.close();
 
-    // We want to check if the RAD file stream was written to
-    // properly. While we likely would have caught this earlier,
-    // it is possible the badbit may not be set until the stream
-    // actually flushes (perhaps even at close), so we check here
-    // one final time that the status of the stream is as
-    // expected. see :
-    // https://stackoverflow.com/questions/28342660/error-handling-in-stdofstream-while-writing-data
-    if (!out_info.rad_file) {
-        spdlog_piscem::critical(
-            "The RAD file stream had an invalid status after "
-            "close; so some operation(s) may"
-            "have failed!\nA common cause for this is lack "
-            "of output disk space.\n"
-            "Consequently, the output may be corrupted.\n\n");
-        return 1;
+      // We want to check if the RAD file stream was written to
+      // properly. While we likely would have caught this earlier,
+      // it is possible the badbit may not be set until the stream
+      // actually flushes (perhaps even at close), so we check here
+      // one final time that the status of the stream is as
+      // expected. see :
+      // https://stackoverflow.com/questions/28342660/error-handling-in-stdofstream-while-writing-data
+      if (!out_info.rad_file) {
+          spdlog_piscem::critical(
+              "The RAD file stream had an invalid status after "
+              "close; so some operation(s) may"
+              "have failed!\nA common cause for this is lack "
+              "of output disk space.\n"
+              "Consequently, the output may be corrupted.\n\n");
+          return 1;
+      }
     }
 
     auto end_t = std::chrono::high_resolution_clock::now();

@@ -257,7 +257,7 @@ int run_build_poison_table(int argc, char* argv[]) {
   for (auto& w : workers) { w.join(); }
   rparser.stop();
 
-  // combine the vectors
+  // combine the poison vectors
   size_t smallest_idx = 0;
   size_t smallest = std::numeric_limits<size_t>::max();
   for (size_t i = 0; i < poison_kmer_occs.size(); ++i) {
@@ -265,14 +265,18 @@ int run_build_poison_table(int argc, char* argv[]) {
       smallest_idx = i;
     }
   }
-
+  
+  // start with the smallest one, and add to it.
   std::vector<poison_occ_t> poison_occs(
     poison_kmer_occs[smallest_idx].begin(), 
     poison_kmer_occs[smallest_idx].end());
-
+  
+  // when we are done with a vector we can clear it and 
+  // reclaim the memory.
   poison_kmer_occs[smallest_idx].clear();
   poison_kmer_occs[smallest_idx].shrink_to_fit();
   for (size_t i = 0; i < poison_kmer_occs.size(); ++i) {
+    if (i == smallest_idx) { continue; }
     poison_occs.insert(poison_occs.end(), poison_kmer_occs[i].begin(), poison_kmer_occs[i].end());
     poison_kmer_occs[i].clear();
     poison_kmer_occs[i].shrink_to_fit();
@@ -303,10 +307,11 @@ int run_build_poison_table(int argc, char* argv[]) {
   offsets.reserve(poison_occs.size()+1);
 
   size_t max_range = 0;
+  uint64_t offset_ctr = 0;
   auto occ_it = poison_occs.begin();
   auto range_start_it = occ_it;
   offsets.push_back(0);
-  poison_map[occ_it->canonical_kmer] = 0;
+  poison_map[occ_it->canonical_kmer] = offset_ctr;
   while (occ_it != poison_occs.end()) {
     // we started a new range, push back the starting point of 
     // the this range.
@@ -316,7 +321,8 @@ int run_build_poison_table(int argc, char* argv[]) {
 
       uint64_t dist_from_start = std::distance(poison_occs.begin(), occ_it);
       offsets.push_back(dist_from_start);
-      poison_map[occ_it->canonical_kmer] = dist_from_start;
+      ++offset_ctr;
+      poison_map[occ_it->canonical_kmer] = offset_ctr;
       range_start_it = occ_it;
     }
     occ_it++;
