@@ -64,6 +64,12 @@ inline bool operator==(const poison_occ_t& a, const poison_occ_t& b) {
          (a.unitig_pos == b.unitig_pos);
 }
 
+inline std::ostream& operator<<(std::ostream& os, const poison_occ_t& a) {
+  os << "{ kmer (u64): " << a.canonical_kmer << ", unitig_id (u32): " << a.unitig_id << ", unitig_pos (u32): " << a.unitig_pos << "\n";
+  return os;
+}
+
+
 struct streaming_query_report {
     streaming_query_report()
         : num_kmers(0), num_positive_kmers(0), num_searches(0), num_extensions(0) {}

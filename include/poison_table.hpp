@@ -85,12 +85,9 @@ class poison_table {
     if (key_it == poison_map_.end()) { return false; }
     auto occ_start = offsets_[key_it->second];
     auto occ_end = offsets_[key_it->second+1];
-    if (key_it->second+1 >= offsets_.size()) {
-      std::cerr << "key_it->second+1 : " << key_it->second+1 << ", offsets_.size(): " << offsets_.size() << "\n";
-      return false;
-    }
     auto it_start = poison_occs_.begin() + occ_start;
     auto it_end = poison_occs_.begin() + occ_end;
+
     for (; it_start != it_end; ++it_start) {
       bool found = (it_start->unitig_id == u1) and 
         (it_start->unitig_pos >= lb) and 

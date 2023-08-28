@@ -479,14 +479,16 @@ struct poison_state_t {
   // std::vector<std::pair<int, projected_hits>>& g
   // returns true if poisoned, false otherwise
   bool scan_raw_hits(std::string& s, uint32_t k, std::vector<std::pair<int, projected_hits>>& h) {
+    // a read that didn't map can't be poisoned
+    if (h.empty()) { return false; }
+    
     bool was_poisoned = false;
-    // scan up to the first hit
-    if (h.empty()) { return was_poisoned; }
     auto first_pos = h.front().first;
     pufferfish::CanonicalKmerIterator kit_end;
     pufferfish::CanonicalKmerIterator kit(s);
 
-    while ((kit != kit_end) and (kit->second <= first_pos)) {
+    // scan up to the first hit looking for any poison k-mer
+    while ((kit != kit_end) and (kit->second < first_pos)) {
       if (ptab->key_exists(kit->first.getCanonicalWord())) {
         was_poisoned = true;
         return was_poisoned;
@@ -511,11 +513,14 @@ struct poison_state_t {
       auto p2 = end_it->first;
       bool right_bound_resulted_from_open_search = end_it->second.resulted_from_open_search;
       last_pos = p2;
-      while (kit != kit_end and kit->second <= p2) {
+      while (kit != kit_end and kit->second < p2) {
+        if (kit->second == start_it->first) { ++kit; continue; }
         if (/*(u1 == u2) and*/ (!right_bound_resulted_from_open_search)) {
           //was_poisoned = ptab->key_occurs_in_unitigs(kit->first.getCanonicalWord(), u1, u2);
           auto lb = std::min(cp1, cp2);
+          lb = (lb > 0) ? lb + 1 : 0;
           auto ub = std::max(cp1, cp2);
+          lb = (ub < start_it->second.contigLen_ - k) ? ub - 1 : start_it->second.contigLen_ - k;
           was_poisoned = ptab->key_occurs_in_unitig_between(kit->first.getCanonicalWord(), u1, lb, lb);
         } else {
           was_poisoned = ptab->key_exists(kit->first.getCanonicalWord());
