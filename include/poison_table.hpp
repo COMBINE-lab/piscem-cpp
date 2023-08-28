@@ -80,6 +80,19 @@ class poison_table {
   
   inline bool key_exists(uint64_t km) const { return poison_map_.find(km) != poison_map_.end(); }
 
+  inline void print_occs(uint64_t km) const { 
+    auto key_it = poison_map_.find(km);
+    if (key_it == poison_map_.end()) { return; }
+    auto occ_start = offsets_[key_it->second];
+    auto occ_end = offsets_[key_it->second+1];
+    auto it_start = poison_occs_.begin() + occ_start;
+    auto it_end = poison_occs_.begin() + occ_end;
+    for (; it_start != it_end; ++it_start) {
+      std::cerr << "occ: " << *it_start;
+    }
+  }
+
+
   inline bool key_occurs_in_unitig_between(uint64_t km, uint32_t u1, uint32_t lb, uint32_t ub) const { 
     auto key_it = poison_map_.find(km);
     if (key_it == poison_map_.end()) { return false; }

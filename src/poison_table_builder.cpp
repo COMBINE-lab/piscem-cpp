@@ -174,11 +174,10 @@ void find_poison_kmers(mindex::reference_index& ri,
     for (auto& record : rg) {
       spdlog_piscem::info("processing {}", record.name);
       pstate.reset();
-      cache.start();
+      cache.reset_state();
       
       pufferfish::CanonicalKmerIterator kit(record.seq);
       while (kit != kit_end) {
-
         bool inserted_locally = pstate.inspect_and_update(kit, ri, cache, poison_kmer_occs);
         (void) inserted_locally;
         ++kit;

@@ -93,6 +93,15 @@ struct lookup_result {
     uint32_t contig_size;
 };
 
+inline std::ostream& operator<<(std::ostream& os, const lookup_result& r) {
+  os << " { kmer_id: " << r.kmer_id  << ", "
+     << "kmer_id_in_contig: " << r.kmer_id_in_contig 
+     << ", kmer_orientation: " << r.kmer_orientation
+     << ", contig_id: " << r.contig_id 
+     << ", contig_size: " << r.contig_size << "}\n";
+  return os;
+}
+
 [[maybe_unused]] static bool equal_lookup_result(lookup_result expected, lookup_result got) {
     if (expected.kmer_id != got.kmer_id) {
         std::cout << "expected kmer_id " << expected.kmer_id << " but got " << got.kmer_id

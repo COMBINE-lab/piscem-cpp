@@ -478,7 +478,7 @@ struct poison_state_t {
   
   // std::vector<std::pair<int, projected_hits>>& g
   // returns true if poisoned, false otherwise
-  bool scan_raw_hits(std::string& s, uint32_t k, std::vector<std::pair<int, projected_hits>>& h) {
+  bool scan_raw_hits(mindex::reference_index* ri, std::string& s, uint32_t k, std::vector<std::pair<int, projected_hits>>& h) {
     // a read that didn't map can't be poisoned
     if (h.empty()) { return false; }
     
@@ -488,8 +488,19 @@ struct poison_state_t {
     pufferfish::CanonicalKmerIterator kit(s);
 
     // scan up to the first hit looking for any poison k-mer
-    while ((kit != kit_end) and (kit->second < first_pos)) {
+    while ((kit != kit_end) and (kit->second <= first_pos)) {
       if (ptab->key_exists(kit->first.getCanonicalWord())) {
+        /*
+        if (kit->second == first_pos) {
+          auto res = ri->get_dict()->lookup_advanced_uint64(kit->first.fwWord());
+          std::cerr << "index found key at res = " << res << "\n";
+          std::cerr << "found read at pos: " << kit->second << " in poison map, but it was a hit to the index, so this shouldn't happen!\n";
+          std::cerr << "poison map occs = \n";
+          ptab->print_occs(kit->first.getCanonicalWord());
+          std::cerr << "the read is: " << s << "\n";
+          std::cerr << "the k-mer is: " << kit->first.to_str() << "\n";
+        }
+        */
         was_poisoned = true;
         return was_poisoned;
       }
@@ -518,9 +529,9 @@ struct poison_state_t {
         if (/*(u1 == u2) and*/ (!right_bound_resulted_from_open_search)) {
           //was_poisoned = ptab->key_occurs_in_unitigs(kit->first.getCanonicalWord(), u1, u2);
           auto lb = std::min(cp1, cp2);
-          lb = (lb > 0) ? lb + 1 : 0;
+          //lb = (lb > 0) ? lb + 1 : 0;
           auto ub = std::max(cp1, cp2);
-          lb = (ub < start_it->second.contigLen_ - k) ? ub - 1 : start_it->second.contigLen_ - k;
+          //lb = (ub < start_it->second.contigLen_ - k) ? ub - 1 : start_it->second.contigLen_ - k;
           was_poisoned = ptab->key_occurs_in_unitig_between(kit->first.getCanonicalWord(), u1, lb, lb);
         } else {
           was_poisoned = ptab->key_exists(kit->first.getCanonicalWord());
@@ -634,7 +645,7 @@ inline bool map_read(std::string* read_seq, mapping_cache_info& map_cache, poiso
 
         // if we are applying a poison filter, do it here.
         if (apply_poison_filter) {
-          bool was_poisoned = poison_state.scan_raw_hits(*read_seq, k, raw_hits);
+          bool was_poisoned = poison_state.scan_raw_hits(hs.get_index(), *read_seq, k, raw_hits);
           if (was_poisoned) {
             poison_state.poisoned_left = true;
             map_type = mapping::util::MappingType::UNMAPPED;

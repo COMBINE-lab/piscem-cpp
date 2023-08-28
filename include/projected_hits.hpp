@@ -87,4 +87,19 @@ struct projected_hits {
            << "ref_range_len : " << h.refRange.size() << "}\n}\n";
         return os;
     }
+
+  inline bool operator!=(const projected_hits& p2) {
+    return (contigIdx_ != p2.contigIdx_) or
+           (contigPos_ != p2.contigPos_) or
+           (contigOrientation_ != p2.contigOrientation_) or
+           (contigLen_ != p2.contigLen_) or
+           (globalPos_ != p2.globalPos_) or
+           (k_ != p2.k_);
+  }
+
+  inline bool operator==(const projected_hits& p2) {
+    return !operator!=(p2);
+  }
 };
+
+
