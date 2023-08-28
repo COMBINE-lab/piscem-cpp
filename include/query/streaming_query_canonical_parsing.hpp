@@ -69,8 +69,6 @@ struct streaming_query_canonical_parsing {
 
     lookup_result lookup_advanced(const uint64_t km, const uint64_t km_rc,
                                   const uint64_t query_offset) {
-        m_kmer = km;
-        m_kmer_rc = km_rc;
 
         // if the current query offset position is
         // the next position after the stored query
@@ -82,6 +80,8 @@ struct streaming_query_canonical_parsing {
           if ((m_prev_query_offset + 1) != query_offset) { reset_state(); }
         }
         m_prev_query_offset = query_offset;
+        m_kmer = km;
+        m_kmer_rc = km_rc;
 
         return do_lookup_advanced();
     }
