@@ -20,6 +20,7 @@ using poison_map_t = phmap::flat_hash_map<uint64_t, uint64_t, sshash::RobinHoodH
 void filter_poison_reads(poison_map_t& poison_map, 
                          std::vector<std::string>& read_filenames,
                          const std::string& output_file) {
+  (void) output_file;
   fastx_parser::FastxParser<fastx_parser::ReadSeq> rparser(read_filenames, 1, 1);
   rparser.start();
 

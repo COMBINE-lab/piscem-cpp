@@ -477,7 +477,7 @@ struct poison_state_t {
   }
   
   // returns true if the mapping was poisoned, false otherwise
-  bool scan_raw_hits(mindex::reference_index* ri, std::string& s, uint32_t k, std::vector<std::pair<int, projected_hits>>& h) {
+  bool scan_raw_hits(std::string& s, uint32_t k, std::vector<std::pair<int, projected_hits>>& h) {
     // a read that didn't map can't be poisoned
     if (h.empty()) { return false; }
 
@@ -682,7 +682,7 @@ inline bool map_read(std::string* read_seq, mapping_cache_info& map_cache, poiso
 
         // if we are applying a poison filter, do it here.
         if (apply_poison_filter) {
-          bool was_poisoned = poison_state.scan_raw_hits(hs.get_index(), *read_seq, k, raw_hits);
+          bool was_poisoned = poison_state.scan_raw_hits(*read_seq, k, raw_hits);
           if (was_poisoned) {
             poison_state.poisoned_left = true;
             map_type = mapping::util::MappingType::UNMAPPED;

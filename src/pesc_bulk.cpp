@@ -22,6 +22,7 @@
 #include <cstdio>
 #include <thread>
 #include <sstream>
+#include <optional>
 #include <type_traits>
 
 using namespace klibpp;
@@ -64,13 +65,6 @@ bool map_fragment(fastx_parser::ReadSeq& record, poison_state_t& poison_state,
                   mapping_cache_info& map_cache_right, mapping_cache_info& map_cache_out) {
     (void)map_cache_left;
     (void)map_cache_right;
-    /*
-    if (poison_state.is_poisoned()) {
-      map_cache_out.clear();
-      return false;
-    } else {
-    }
-    */
     return mapping::util::map_read(&record.seq, map_cache_out, poison_state, skip_strat);
 }
 
@@ -80,16 +74,10 @@ bool map_fragment(fastx_parser::ReadPair& record, poison_state_t& poison_state,
                   mapping_cache_info& map_cache_left,
                   mapping_cache_info& map_cache_right, mapping_cache_info& map_cache_out) {
     // don't map a poisned read pair
-    /*
-    if (poison_state.is_poisoned()) {
-      map_cache_out.clear();
-      return false;
-    }
-    */
-
     bool early_exit_left = mapping::util::map_read(&record.first.seq, map_cache_left, poison_state, skip_strat);
     if (poison_state.is_poisoned()) { return false; }
     bool early_exit_right = mapping::util::map_read(&record.second.seq, map_cache_right, poison_state, skip_strat);
+    if (poison_state.is_poisoned()) { return false; }
 
     int32_t left_len = static_cast<int32_t>(record.first.seq.length());
     int32_t right_len = static_cast<int32_t>(record.second.seq.length());
@@ -363,29 +351,7 @@ void do_map(mindex::reference_index& ri, fastx_parser::FastxParser<FragT>& parse
     bool use_poison = !poison_map.empty();
         
     pufferfish::CanonicalKmerIterator kit_end;
-    auto pmap_end = poison_map.kmer_end();
     
-    // checks if a read is "poisned", returns true if it is
-    // and false otherwise.
-    auto is_poisoned = [&](const std::string& seq) -> bool {
-      pufferfish::CanonicalKmerIterator kit(seq);
-      while (kit != kit_end) {
-        // current canonical k-mer
-        if (kit->first.is_homopolymer()) { 
-          kit++;
-          continue; 
-        }
-        
-
-        auto pmap_it = poison_map.find_kmer(kit->first.getCanonicalWord());
-        if (pmap_it != pmap_end) {
-          return true;
-        }
-        ++kit;
-      }
-      return false;
-    };
-
     mapping_cache_info map_cache_left(ri);
     map_cache_left.max_ec_card = max_ec_card;
     mapping_cache_info map_cache_right(ri);
@@ -657,17 +623,15 @@ int run_pesc_bulk(int argc, char** argv) {
     // start the timer
     auto start_t = std::chrono::high_resolution_clock::now();
 
-    mindex::SkippingStrategy skip_strat = mindex::SkippingStrategy::STRICT;
-    if ((skipping_rule != "strict") and (skipping_rule != "permissive")) {
-      spdlog_piscem::critical("The skipping strategy must be one of \"strict\" or \"permissive\", but {} was passed in", skipping_rule);
+    std::optional<mindex::SkippingStrategy> skip_strat_opt = mindex::SkippingStrategy::from_string(skipping_rule);
+    if (!skip_strat_opt) {
+      spdlog_piscem::critical("The skipping strategy must be one of \"strict\" or \"permissive\", but \"{}\" was passed in", skipping_rule);
       return 1;
     } 
-    if (skipping_rule == "permissive") {
-      skip_strat = mindex::SkippingStrategy::PERMISSIVE;
-    }
+    mindex::SkippingStrategy skip_strat(skip_strat_opt.value());
 
     bool attempt_load_ec_map = check_ambig_hits;
-    mindex::reference_index ri(input_filename);
+    mindex::reference_index ri(input_filename, attempt_load_ec_map);
 
     bool is_paired = read_opt->empty();
 

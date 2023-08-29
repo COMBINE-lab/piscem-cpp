@@ -52,6 +52,7 @@ struct pesc_options {
     bool check_ambig_hits{false};
     uint32_t max_ec_card{256};
     size_t nthread{16};
+    mindex::SkippingStrategy skip_strat{mindex::SkippingStrategy::STRICT};
 };
 
 // utility class that wraps the information we will
@@ -219,7 +220,7 @@ void do_map(mindex::reference_index& ri, fastx_parser::FastxParser<fastx_parser:
               ++global_npoisoned;
               map_cache.clear();
             } else {
-              mapping::util::map_read(read_seq, map_cache, poison_state);
+              mapping::util::map_read(read_seq, map_cache, poison_state, po.skip_strat);
             }
             (void)had_early_stop;
 
@@ -315,6 +316,7 @@ int run_pesc_sc(int argc, char** argv) {
      **/
     std::ios_base::sync_with_stdio(false);
 
+    std::string skipping_rule;
     pesc_options po;
     CLI::App app{"PESC — single-cell RNA-seq mapper for alevin-fry"};
     app.add_option("-i,--index", po.index_basename, "Input index prefix")->required();
@@ -331,6 +333,8 @@ int run_pesc_sc(int argc, char** argv) {
                    "An integer that specifies the number of threads to use")
         ->default_val(16);
     app.add_flag("--no-poison", po.no_poison, "Do not filter reads for poison k-mers, even if a poison table exists for the index");
+    app.add_option("--skipping-strategy", skipping_rule, "Which skipping rule to use for pseudoalignment ({strict, permissive})")
+        ->default_val("strict");
     app.add_flag("--quiet", po.quiet, "Try to be quiet in terms of console output");
     auto check_ambig =
         app.add_flag("--check-ambig-hits", po.check_ambig_hits,
@@ -353,6 +357,13 @@ int run_pesc_sc(int argc, char** argv) {
 
     // start the timer
     auto start_t = std::chrono::high_resolution_clock::now();
+
+    std::optional<mindex::SkippingStrategy> skip_strat_opt = mindex::SkippingStrategy::from_string(skipping_rule);
+    if (!skip_strat_opt) {
+      spdlog_piscem::critical("The skipping strategy must be one of \"strict\" or \"permissive\", but \"{}\" was passed in", skipping_rule);
+      return 1;
+    } 
+    po.skip_strat = skip_strat_opt.value();
 
     bool geom_ok = set_geometry(po.library_geometry, po.pt, po.p);
     if (!geom_ok) {

@@ -105,55 +105,6 @@ private:
   projected_hits predecessor_phits;
 };
 
-struct poison_kmer_state_permissive {
-public:
-  void reset() { }
-
-  // given the current poison k-mer state and the current k-mer iterator,
-  // determine if the current or former k-mer is poison.
-  inline bool inspect_and_update(CanonicalKmerIterator& kit, mindex::reference_index& ri, 
-                          sshash::streaming_query_canonical_parsing& cache, 
-                          std::vector<poison_occ_t>& poison_occs) {
-    auto* dict = ri.get_dict();
-    // current canonical k-mer
-    auto kmer = kit->first;
-    
-    // given the current kmer, check if it is in the index or not
-    // if it *is* in the index, then it cannot be a poison kmer
-    auto phits = ri.query(kit, cache);
-    bool present = !phits.empty();
-    
-    if (present) { return false; }
-
-    // if we got here, the current k-mer is not in the index. Now
-    // we can systematically check all possible neighbors.
-    const std::array<char, 4> nucs = {'A', 'C', 'G', 'T'};
-    /*
-    for (const auto n : nucs) {
-      CanonicalKmer neighbor = kmer;
-      neighbor.shiftFw(n);
-      bool neighbor_present = dict->is_member_uint64(neighbor.getCanonicalWord());
-      if (neighbor_present) {
-        poison_kmers.insert({kmer.getCanonicalWord(), 1});
-        return true;
-      }
-    }
-
-    // append to the other side
-    for (const auto n : nucs) {
-      CanonicalKmer neighbor = kmer;
-      neighbor.shiftBw(n);
-      bool neighbor_present = dict->is_member_uint64(neighbor.getCanonicalWord());
-      if (neighbor_present) {
-        auto it = poison_kmers.insert({kmer.getCanonicalWord(), 1});
-        return it.second;
-      }
-    }
-    */
-    return false;
-  }
-};
-
 template <typename poison_state_t>
 void find_poison_kmers(mindex::reference_index& ri, 
                       fastx_parser::FastxParser<fastx_parser::ReadSeq>& rparser,

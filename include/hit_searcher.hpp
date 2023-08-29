@@ -13,10 +13,37 @@
 #include <algorithm>
 #include <iostream>
 #include <iterator>
+#include <optional>
 
 namespace mindex {
 
-enum class SkippingStrategy : uint8_t { STRICT = 0, PERMISSIVE };
+// "smart enum idea from"
+// https://stackoverflow.com/questions/21295935/can-a-c-enum-class-have-methods
+class SkippingStrategy {
+//enum class SkippingStrategy : uint8_t { STRICT = 0, PERMISSIVE };
+public:
+  enum Value : uint8_t {
+    STRICT = 0,
+    PERMISSIVE
+  };
+
+  SkippingStrategy() = default;
+  static std::optional<SkippingStrategy> from_string(const std::string& s) {
+    if (s == "strict") {
+      return STRICT;
+    } else if (s == "permissive") {
+      return PERMISSIVE;
+    } else {
+      return std::nullopt;
+    }
+  }
+  constexpr SkippingStrategy(Value val) : value_(val) {}
+  constexpr bool operator==(SkippingStrategy a) const { return value_ == a.value_; }
+  constexpr bool operator!=(SkippingStrategy a) const { return value_ != a.value_; }
+   
+private:
+  Value value_;
+};
 
 class hit_searcher {
 enum class ExpansionTerminationType : uint8_t { MISMATCH = 0, CONTIG_END, READ_END };  
