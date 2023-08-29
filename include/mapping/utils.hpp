@@ -476,8 +476,7 @@ struct poison_state_t {
     }
   }
   
-  // std::vector<std::pair<int, projected_hits>>& g
-  // returns true if poisoned, false otherwise
+  // returns true if the mapping was poisoned, false otherwise
   bool scan_raw_hits(mindex::reference_index* ri, std::string& s, uint32_t k, std::vector<std::pair<int, projected_hits>>& h) {
     // a read that didn't map can't be poisoned
     if (h.empty()) { return false; }
@@ -488,19 +487,8 @@ struct poison_state_t {
     pufferfish::CanonicalKmerIterator kit(s);
 
     // scan up to the first hit looking for any poison k-mer
-    while ((kit != kit_end) and (kit->second <= first_pos)) {
+    while ((kit != kit_end) and (kit->second < first_pos)) {
       if (ptab->key_exists(kit->first.getCanonicalWord())) {
-        /*
-        if (kit->second == first_pos) {
-          auto res = ri->get_dict()->lookup_advanced_uint64(kit->first.fwWord());
-          std::cerr << "index found key at res = " << res << "\n";
-          std::cerr << "found read at pos: " << kit->second << " in poison map, but it was a hit to the index, so this shouldn't happen!\n";
-          std::cerr << "poison map occs = \n";
-          ptab->print_occs(kit->first.getCanonicalWord());
-          std::cerr << "the read is: " << s << "\n";
-          std::cerr << "the k-mer is: " << kit->first.to_str() << "\n";
-        }
-        */
         was_poisoned = true;
         return was_poisoned;
       }
@@ -512,6 +500,7 @@ struct poison_state_t {
     auto start_it = h.begin();
     auto end_it = start_it+1;
     int last_pos;
+    uint32_t last_uni;
     while ((end_it != h.end()) and (kit != kit_end)) {
       // the first unitig to which the poison kmer can belong
       auto u1 = start_it->second.contig_id();
@@ -524,17 +513,32 @@ struct poison_state_t {
       auto p2 = end_it->first;
       bool right_bound_resulted_from_open_search = end_it->second.resulted_from_open_search;
       last_pos = p2;
+      last_uni = u2;
       while (kit != kit_end and kit->second < p2) {
-        if (kit->second == start_it->first) { ++kit; continue; }
+        if ((kit->second == start_it->first) or (kit->second == end_it->first)) { ++kit; continue; }
         if (/*(u1 == u2) and*/ (!right_bound_resulted_from_open_search)) {
           //was_poisoned = ptab->key_occurs_in_unitigs(kit->first.getCanonicalWord(), u1, u2);
           auto lb = std::min(cp1, cp2);
-          //lb = (lb > 0) ? lb + 1 : 0;
+          lb = (lb > 0) ? lb + 1 : 0;
           auto ub = std::max(cp1, cp2);
-          //lb = (ub < start_it->second.contigLen_ - k) ? ub - 1 : start_it->second.contigLen_ - k;
-          was_poisoned = ptab->key_occurs_in_unitig_between(kit->first.getCanonicalWord(), u1, lb, lb);
+          ub = (ub < start_it->second.contigLen_ - k) ? ub - 1 : start_it->second.contigLen_ - k;
+          was_poisoned = ptab->key_occurs_in_unitig_between(kit->first.getCanonicalWord(), u1, lb, ub);
+          if (was_poisoned) {
+            std::cerr << "filtered out read due to constrained search between: \n";
+            std::cerr << start_it->second << "\nand\n";
+            std::cerr << end_it->second << "\n";
+            std::cerr << "offending k-mer = " << kit->first.to_str() << ", at position: " << kit->second << "\n";
+          }
         } else {
           was_poisoned = ptab->key_exists(kit->first.getCanonicalWord());
+          if (was_poisoned) {
+            std::cerr << "filtered out read due to UNCONSTRAINED search between: \n";
+            std::cerr << start_it->second << ", " << start_it->first << " and\n";
+            std::cerr << end_it->second << ", " << end_it->first << "\n";
+            std::cerr << "offending k-mer = " << kit->first.to_str() << ", at position: " << kit->second << "\n";
+            std::cerr << "occs = ";
+            ptab->print_occs(kit->first.getCanonicalWord());
+          }
         }
         if (was_poisoned) { return was_poisoned; }
         ++kit;
@@ -542,21 +546,48 @@ struct poison_state_t {
       ++start_it;
       ++end_it;
     }
+    
+    std::cerr << "read_pos at end of interval loop : " << kit->second << "\n";
+    if (kit != kit_end) { 
+      ++kit; 
+    }
+    std::cerr << "read_pos after advancement : " << kit->second << "\n";
 
     // for any remaining k-mers in the read after the end of the last 
     // matching interval.
+    bool first_non_matching = true;
     while (kit != kit_end) {
-      was_poisoned = ptab->key_exists(kit->first.getCanonicalWord());
-      if (was_poisoned) { return was_poisoned; }
+      if (first_non_matching) {
+        was_poisoned = ptab->key_occurs_in_unitig(kit->first.getCanonicalWord(), last_uni);
+        first_non_matching = false;
+      } else {
+        was_poisoned = ptab->key_exists(kit->first.getCanonicalWord());
+      }
+      if (was_poisoned) { 
+        
+        std::cerr << "read: " << kit.seq() << " was poisoned.\n";
+        std::cerr << "valid hits are :\n";
+        for (auto& hit : h) {
+          std::cerr << "\t(" << hit.first << ", " << hit.second << ")\n";
+        }
+        std::cerr << "offending k-mer at position (" << kit->second << "), is: " << kit->first.to_str() << "\n";
+        std::cerr << "last_uni: " << last_uni << "\n";
+        std::cerr << "poison_occs : ";
+        ptab->print_occs(kit->first.getCanonicalWord());
+        
+        return was_poisoned; 
+      }
       ++kit;
     }
 
+    /*
     if (kit != kit_end) {
       std::cerr << "not at last positon!\n";
       std::cerr << "length: " << s.length() << "\n";
       std::cerr << "kit pos : " << kit->second << "\n";
       std::cerr << "last pos : " << last_pos << "\n";
     }
+    */
     
     return was_poisoned;
   }
