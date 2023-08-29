@@ -84,7 +84,7 @@ struct projected_hits {
            << "contig_ori : " << (h.contigOrientation_ ? "fw" : "rc") << ", "
            << "contig_len : " << h.contigLen_ << ", "
            << "global_pos : " << h.globalPos_ << ", "
-           << "ref_range_len : " << h.refRange.size() << "}\t}\n";
+           << "ref_range_len : " << h.refRange.size() << "}\t}";
         return os;
     }
 

@@ -65,7 +65,19 @@ struct SkipContext {
       ++kit1;
       return (kit1->second - pos_before_advancement);
     }
-    
+
+    inline pufferfish::CanonicalKmerIterator get_iter() const { return kit1; }
+    inline void set_iter(pufferfish::CanonicalKmerIterator& kit_in) { kit1 = kit_in; }
+
+    // tries to increment the iterator by `amount`, but returns 
+    // the number of nucleotides we actually advanced. It could be greater 
+    // than `amount` because of `N`s.
+    inline int advance_read_iter(int32_t amount) {
+      auto pos_before_advancement = kit1->second;
+      kit1 += amount;
+      return (kit1->second - pos_before_advancement);
+    }
+ 
     // 
     inline KmerMatchType check_match() {
       return kit1->first.isEquivalent(fast_hit.ref_kmer);
@@ -544,9 +556,12 @@ struct SkipContext {
 // Nat Biotechnol. 2016;34(5):525-527.
 //
 bool hit_searcher::get_raw_hits_sketch(std::string& read,
-                                       sshash::streaming_query_canonical_parsing& qc, bool isLeft,
+                                       sshash::streaming_query_canonical_parsing& qc, 
+                                       mindex::SkippingStrategy strat,
+                                       bool isLeft,
                                        bool verbose) {
   (void)verbose;
+  bool strict_mode = (strat == mindex::SkippingStrategy::STRICT);
   projected_hits phits;
   auto& raw_hits = isLeft ? left_rawHits : right_rawHits;
 
@@ -608,6 +623,78 @@ bool hit_searcher::get_raw_hits_sketch(std::string& read,
         direction = -1;
       }
 
+      // If the user requested we *not* use the strict mode, then here, instead of checking 
+      // for subsequent matches, if we can successfully jump to the end of this unitig then just do it.
+      if (!strict_mode) {
+        int64_t dist_to_read_end = (read.size() - k) - skip_ctx.read_pos();
+        int32_t skip_dist = static_cast<uint32_t>(std::min(dist_to_read_end, dist_to_contig_end));
+        // if we are already at the end of the read or the unitig, then there is 
+        // nothing to do here.
+        if ((skip_dist > 0)) {
+          // before we attempt the skip, backup our iterator and our 
+          // current contig position.
+          auto backup_kit = skip_ctx.get_iter();
+          int32_t backup_curr_pos = cCurrPos;
+
+          // try to move forward the expected amount.
+          auto actual_dist = skip_ctx.advance_read_iter(skip_dist);
+
+          // if we moved forward the expected amount, then 
+          // look for the hit. 
+          // if we moved the wrong amount, then just reset the 
+          // iterator and curent position and fallback to the 
+          // standard (strict) procedure.
+          if (actual_dist == skip_dist) {
+            int32_t inc_offset = (direction * skip_dist);
+            cCurrPos += inc_offset;
+            skip_ctx.ref_contig_it.at(2 * cCurrPos);
+            skip_ctx.fast_hit.ref_kmer = skip_ctx.ref_contig_it.read(2 * k);
+
+            auto phit = raw_hits.back().second;
+            phit.resulted_from_open_search = false;
+            phit.globalPos_ += inc_offset;
+            phit.contigPos_ += inc_offset;
+
+            // check if what we find at the given position is a match 
+            // or not.
+            auto match_type = skip_ctx.check_match();
+            bool matches = (match_type != KmerMatchType::NO_MATCH);
+            int read_pos = skip_ctx.read_pos();
+            
+            if (!matches) {
+              bool found = skip_ctx.query_kmer(qc, confirmatory_fast_hit);
+              // If we don't see the k-mer at all, just pretend we did and 
+              // accept the hit.
+              bool accept_hit = !found;
+
+              // Otherwise, actually search for it, and accept the hit only 
+              // if the hit occurs on the same contig (in the same orientation?)
+              if (!accept_hit) {
+                auto check_phit = skip_ctx.proj_hits();
+                accept_hit = check_phit.contig_id() == phit.contig_id();
+              } 
+              if (accept_hit) {
+                raw_hits.push_back({read_pos, phit});
+                skip_ctx.increment_read_iter();
+                continue;
+              }
+            } else {
+              bool hit_fw = (match_type == KmerMatchType::IDENTITY_MATCH);
+              phit.contigOrientation_ = hit_fw;
+              raw_hits.push_back({read_pos, phit});
+              skip_ctx.increment_read_iter();
+              continue;
+            }
+          }
+          // If we got down here then we weren't able to skip
+          // forward, so reset the state that we messed with 
+          // and fall back to the stricter search.
+          cCurrPos = backup_curr_pos;
+          skip_ctx.set_iter(backup_kit);
+        }
+      }
+
+      // otherwise, take the careful path
       bool matches = true;
       bool ended_on_match = false;
       // we'll use this to hold the last valid k-mer match that was 
@@ -725,9 +812,12 @@ bool hit_searcher::get_raw_hits_sketch(std::string& read,
 // Nat Biotechnol. 2016;34(5):525-527.
 //
 bool hit_searcher::get_raw_hits_sketch_orig(std::string& read,
-                                       sshash::streaming_query_canonical_parsing& qc, bool isLeft,
+                                       sshash::streaming_query_canonical_parsing& qc, 
+                                       mindex::SkippingStrategy strat,
+                                       bool isLeft,
                                        bool verbose) {
     (void)verbose;
+    (void)strat;
     projected_hits phits;
     auto& raw_hits = isLeft ? left_rawHits : right_rawHits;
 

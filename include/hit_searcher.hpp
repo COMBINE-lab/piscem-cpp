@@ -15,6 +15,9 @@
 #include <iterator>
 
 namespace mindex {
+
+enum class SkippingStrategy : uint8_t { STRICT = 0, PERMISSIVE };
+
 class hit_searcher {
 enum class ExpansionTerminationType : uint8_t { MISMATCH = 0, CONTIG_END, READ_END };  
 
@@ -25,11 +28,13 @@ public:
   
   bool get_raw_hits_sketch(std::string &read,
                   sshash::streaming_query_canonical_parsing& qc,
+                  SkippingStrategy strat = SkippingStrategy::STRICT,
                   bool isLeft=false,
                   bool verbose=false);
   
   bool get_raw_hits_sketch_orig(std::string &read,
                   sshash::streaming_query_canonical_parsing& qc,
+                  SkippingStrategy strat = SkippingStrategy::STRICT,
                   bool isLeft=false,
                   bool verbose=false);
 

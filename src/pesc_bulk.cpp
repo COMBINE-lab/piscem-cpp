@@ -59,7 +59,8 @@ void print_header(mindex::reference_index& ri, std::string& cmdline) {
 }
 
 // single-end
-bool map_fragment(fastx_parser::ReadSeq& record, poison_state_t& poison_state, mapping_cache_info& map_cache_left,
+bool map_fragment(fastx_parser::ReadSeq& record, poison_state_t& poison_state, 
+                  mindex::SkippingStrategy skip_strat, mapping_cache_info& map_cache_left,
                   mapping_cache_info& map_cache_right, mapping_cache_info& map_cache_out) {
     (void)map_cache_left;
     (void)map_cache_right;
@@ -70,11 +71,13 @@ bool map_fragment(fastx_parser::ReadSeq& record, poison_state_t& poison_state, m
     } else {
     }
     */
-    return mapping::util::map_read(&record.seq, map_cache_out, poison_state, false);
+    return mapping::util::map_read(&record.seq, map_cache_out, poison_state, skip_strat);
 }
 
 // paried-end
-bool map_fragment(fastx_parser::ReadPair& record, poison_state_t& poison_state, mapping_cache_info& map_cache_left,
+bool map_fragment(fastx_parser::ReadPair& record, poison_state_t& poison_state, 
+                  mindex::SkippingStrategy skip_strat,
+                  mapping_cache_info& map_cache_left,
                   mapping_cache_info& map_cache_right, mapping_cache_info& map_cache_out) {
     // don't map a poisned read pair
     /*
@@ -84,9 +87,9 @@ bool map_fragment(fastx_parser::ReadPair& record, poison_state_t& poison_state, 
     }
     */
 
-    bool early_exit_left = mapping::util::map_read(&record.first.seq, map_cache_left, poison_state, false);
+    bool early_exit_left = mapping::util::map_read(&record.first.seq, map_cache_left, poison_state, skip_strat);
     if (poison_state.is_poisoned()) { return false; }
-    bool early_exit_right = mapping::util::map_read(&record.second.seq, map_cache_right, poison_state, false);
+    bool early_exit_right = mapping::util::map_read(&record.second.seq, map_cache_right, poison_state, skip_strat);
 
     int32_t left_len = static_cast<int32_t>(record.first.seq.length());
     int32_t right_len = static_cast<int32_t>(record.second.seq.length());
@@ -324,6 +327,7 @@ struct SamT {};
 template <typename FragT, typename OutputT = RadT>
 void do_map(mindex::reference_index& ri, fastx_parser::FastxParser<FragT>& parser,
             poison_table& poison_map,
+            mindex::SkippingStrategy skip_strat,
             std::atomic<uint64_t>& global_npoisoned,
             std::atomic<uint64_t>& global_nr, std::atomic<uint64_t>& global_nhits,
             uint32_t max_ec_card,
@@ -468,7 +472,7 @@ void do_map(mindex::reference_index& ri, fastx_parser::FastxParser<FragT>& parse
             // If record is single-end, just map that read, otherwise, map both and look
             // for proper pairs.
             bool had_early_stop =
-                map_fragment(record, poison_state, map_cache_left, map_cache_right, map_cache_out);
+                map_fragment(record, poison_state, skip_strat, map_cache_left, map_cache_right, map_cache_out);
             (void)had_early_stop;
             if (poison_state.is_poisoned()) {
               global_npoisoned++;
@@ -590,6 +594,7 @@ int run_pesc_bulk(int argc, char** argv) {
     bool use_sam_format{false};
     bool check_ambig_hits{false};
     uint32_t max_ec_card{256};
+    std::string skipping_rule;
 
     CLI::App app{"Bulk mapper"};
     app.add_option("-i,--index", index_basename, "Input index prefix")->required();
@@ -622,6 +627,8 @@ int run_pesc_bulk(int argc, char** argv) {
     app.add_flag("--no-poison", no_poison, "Do not filter reads for poison k-mers, even if a poison table exists for the index");
     app.add_flag("--quiet", quiet, "Try to be quiet in terms of console output");
     app.add_flag("--sam-format", use_sam_format, "Write SAM format output rather than bulk RAD (mostly for testing).");
+    app.add_option("--skipping-strategy", skipping_rule, "Which skipping rule to use for pseudoalignment ({strict, permissive})")
+        ->default_val("strict");
     auto check_ambig =
         app.add_flag("--check-ambig-hits", check_ambig_hits,
                      "Check the existence of highly-frequent hits in mapped targets, rather than "
@@ -649,6 +656,15 @@ int run_pesc_bulk(int argc, char** argv) {
 
     // start the timer
     auto start_t = std::chrono::high_resolution_clock::now();
+
+    mindex::SkippingStrategy skip_strat = mindex::SkippingStrategy::STRICT;
+    if ((skipping_rule != "strict") and (skipping_rule != "permissive")) {
+      spdlog_piscem::critical("The skipping strategy must be one of \"strict\" or \"permissive\", but {} was passed in", skipping_rule);
+      return 1;
+    } 
+    if (skipping_rule == "permissive") {
+      skip_strat = mindex::SkippingStrategy::PERMISSIVE;
+    }
 
     bool attempt_load_ec_map = check_ambig_hits;
     mindex::reference_index ri(input_filename);
@@ -716,11 +732,11 @@ int run_pesc_bulk(int argc, char** argv) {
 
         for (size_t i = 0; i < nthread; ++i) {
             workers.push_back(
-                std::thread([&ri, &rparser, &ptab, &global_np, &global_nr, &global_nh, max_ec_card, &out_info, &iomut, use_sam_format]() {
+                std::thread([&ri, &rparser, &ptab, &global_np, &global_nr, &global_nh, max_ec_card, &out_info, &iomut, skip_strat, use_sam_format]() {
                     if (use_sam_format) {
-                      do_map<fastx_parser::ReadPair, SamT>(ri, rparser, ptab, global_np, global_nr, global_nh, max_ec_card, out_info, iomut);
+                      do_map<fastx_parser::ReadPair, SamT>(ri, rparser, ptab, skip_strat, global_np, global_nr, global_nh, max_ec_card, out_info, iomut);
                     } else {
-                      do_map<fastx_parser::ReadPair, RadT>(ri, rparser, ptab, global_np, global_nr, global_nh, max_ec_card, out_info, iomut);
+                      do_map<fastx_parser::ReadPair, RadT>(ri, rparser, ptab, skip_strat, global_np, global_nr, global_nh, max_ec_card, out_info, iomut);
                     }
                 }));
         }
@@ -740,11 +756,11 @@ int run_pesc_bulk(int argc, char** argv) {
 
         for (size_t i = 0; i < nthread; ++i) {
             workers.push_back(
-                std::thread([&ri, &rparser, &ptab, &global_np, &global_nr, &global_nh, max_ec_card, &out_info, &iomut, use_sam_format]() {
+                std::thread([&ri, &rparser, &ptab, &global_np, &global_nr, &global_nh, max_ec_card, &out_info, &iomut, skip_strat, use_sam_format]() {
                   if (use_sam_format) { 
-                    do_map<fastx_parser::ReadSeq, SamT>(ri, rparser, ptab, global_np, global_nr, global_nh, max_ec_card, out_info, iomut);
+                    do_map<fastx_parser::ReadSeq, SamT>(ri, rparser, ptab, skip_strat, global_np, global_nr, global_nh, max_ec_card, out_info, iomut);
                   } else {
-                    do_map<fastx_parser::ReadSeq, RadT>(ri, rparser, ptab, global_np, global_nr, global_nh, max_ec_card, out_info, iomut);
+                    do_map<fastx_parser::ReadSeq, RadT>(ri, rparser, ptab, skip_strat, global_np, global_nr, global_nh, max_ec_card, out_info, iomut);
                   }
                 }));
         }
