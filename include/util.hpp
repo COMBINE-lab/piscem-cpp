@@ -49,7 +49,7 @@ struct RobinHoodHash {
 };
 
 // an occurrence of a poison k-mer
-struct poison_occ_t {
+struct labeled_poison_occ_t {
   // we need to know what unitig this occurs on
   // what position on that unitig
   // and what the k-mer is (maybe also orientation?)
@@ -58,17 +58,52 @@ struct poison_occ_t {
   uint32_t unitig_pos{std::numeric_limits<uint32_t>::max()};
 };
 
-inline bool operator==(const poison_occ_t& a, const poison_occ_t& b) {
+inline bool operator==(const labeled_poison_occ_t& a, const labeled_poison_occ_t& b) {
   return (a.canonical_kmer == b.canonical_kmer) and 
          (a.unitig_id == b.unitig_id) and
          (a.unitig_pos == b.unitig_pos);
 }
 
-inline std::ostream& operator<<(std::ostream& os, const poison_occ_t& a) {
+inline std::ostream& operator<<(std::ostream& os, const labeled_poison_occ_t& a) {
   os << "{ kmer (u64): " << a.canonical_kmer << ", unitig_id (u32): " << a.unitig_id << ", unitig_pos (u32): " << a.unitig_pos << "\n";
   return os;
 }
 
+// an occurrence of a poison k-mer
+struct poison_occ_t {
+  // we need to know what unitig this occurs on
+  // what position on that unitig
+  // and what the k-mer is (maybe also orientation?)
+  uint32_t unitig_id{std::numeric_limits<uint32_t>::max()};
+  uint32_t unitig_pos{std::numeric_limits<uint32_t>::max()};
+
+  poison_occ_t() :
+    unitig_id(std::numeric_limits<uint32_t>::max()),
+    unitig_pos(std::numeric_limits<uint32_t>::max()) {}
+
+  poison_occ_t(const labeled_poison_occ_t& o) : 
+    unitig_id(o.unitig_id),
+    unitig_pos(o.unitig_pos) {}
+
+  /*poison_occ_t& operator=(const labeled_poison_occ_t& o) :
+    unitig_id(o.unitig_id),
+    unitig_pos(o.unitig_pos) { return *this; }*/
+
+  poison_occ_t(const poison_occ_t& o) = default;
+  poison_occ_t(poison_occ_t&& o) = default;
+  poison_occ_t& operator=(const poison_occ_t& o) = default;
+  poison_occ_t& operator=(poison_occ_t&& o) = default;
+};
+
+inline bool operator==(const poison_occ_t& a, const poison_occ_t& b) {
+  return (a.unitig_id == b.unitig_id) and
+         (a.unitig_pos == b.unitig_pos);
+}
+
+inline std::ostream& operator<<(std::ostream& os, const poison_occ_t& a) {
+  os << "{ unitig_id (u32): " << a.unitig_id << ", unitig_pos (u32): " << a.unitig_pos << "\n";
+  return os;
+}
 
 struct streaming_query_report {
     streaming_query_report()

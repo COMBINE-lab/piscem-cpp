@@ -3,14 +3,16 @@
 #include "../include/Kmer.hpp"
 #include "../include/cli11/CLI11.hpp"
 #include "../include/ghc/filesystem.hpp"
-#include "../include/json.hpp"
 #include "../include/reference_index.hpp"
 #include "../include/util.hpp"
+#include "../include/poison_table.hpp"
 #include "../include/mapping/utils.hpp"
 #include "../include/parallel_hashmap/phmap.h"
 #include "../include/parallel_hashmap/phmap_dump.h"
 #include "spdlog_piscem/spdlog.h"
 
+#include <algorithm>
+#include <iterator>
 #include <iostream>
 #include <vector>
 #include <numeric>
@@ -25,6 +27,7 @@ int run_build_poison_table(int argc, char** argv);
 #endif
 
 using pufferfish::CanonicalKmerIterator;
+using sshash::labeled_poison_occ_t;
 using sshash::poison_occ_t;
 using poison_map_t = phmap::flat_hash_map<uint64_t, uint64_t, sshash::RobinHoodHash>;
 
@@ -40,7 +43,7 @@ public:
   // determine if the current or former k-mer is poison.
   inline bool inspect_and_update(CanonicalKmerIterator& kit, mindex::reference_index& ri, 
                           sshash::streaming_query_canonical_parsing& cache, 
-                          std::vector<poison_occ_t>& poison_occs) {
+                          std::vector<labeled_poison_occ_t>& poison_occs) {
     constexpr int64_t zero = 0;
     bool added_poison = false;
     // current canonical k-mer
@@ -109,7 +112,7 @@ template <typename poison_state_t>
 void find_poison_kmers(mindex::reference_index& ri, 
                       fastx_parser::FastxParser<fastx_parser::ReadSeq>& rparser,
                       std::atomic<uint64_t>& global_nk,
-                      std::vector<poison_occ_t>& poison_kmer_occs) {
+                      std::vector<labeled_poison_occ_t>& poison_kmer_occs) {
   pufferfish::CanonicalKmerIterator kit_end;
   sshash::streaming_query_canonical_parsing cache(ri.get_dict());
   
@@ -185,11 +188,6 @@ int run_build_poison_table(int argc, char* argv[]) {
     }
   }
 
-	mindex::reference_index ri(po.index_basename);
-  // set the k-mer size for the
-  // CanonicalKmer type.
-  CanonicalKmer::k(ri.k());
-
   size_t np = 1;
   std::vector<std::thread> workers;
   if ((po.decoy_seq_paths.size() > 1) and (po.nthreads >= 6)) {
@@ -197,30 +195,34 @@ int run_build_poison_table(int argc, char* argv[]) {
     po.nthreads -= 1;
   }
 
-  std::vector<std::vector<poison_occ_t>> poison_kmer_occs;
-
+  std::vector<std::vector<labeled_poison_occ_t>> poison_kmer_occs;
   poison_kmer_occs.resize(po.nthreads);
 
   std::atomic<uint64_t> global_nk{0};
   std::atomic<uint64_t> global_np{0};
 
-  fastx_parser::FastxParser<fastx_parser::ReadSeq> rparser(po.decoy_seq_paths, po.nthreads,
-                                                           np, 1);
-  rparser.start();
+  {
+    fastx_parser::FastxParser<fastx_parser::ReadSeq> rparser(po.decoy_seq_paths, po.nthreads,
+                                                             np, 1);
+    rparser.start();
+    mindex::reference_index ri(po.index_basename);
+    CanonicalKmer::k(ri.k());
 
-  if (po.poison_method == "edge") {
-    for (size_t i = 0; i < po.nthreads; ++i) {
-      workers.push_back(
-        std::thread([i, &poison_kmer_occs, &ri, &rparser, &global_nk]() {
-          auto& pkoccs = poison_kmer_occs[i];
-          find_poison_kmers<poison_kmer_state_strict>(ri, rparser, global_nk, pkoccs);
-        }));
-    }
-  } else {
-    spdlog_piscem::warn("node mode is not yet implemented.");
-    rparser.stop();
-    return 1;
-    /*
+    if (po.poison_method == "edge") {
+      // set the k-mer size for the
+      // CanonicalKmer type.
+      for (size_t i = 0; i < po.nthreads; ++i) {
+        workers.push_back(
+          std::thread([i, &poison_kmer_occs, &ri, &rparser, &global_nk]() {
+            auto& pkoccs = poison_kmer_occs[i];
+            find_poison_kmers<poison_kmer_state_strict>(ri, rparser, global_nk, pkoccs);
+          }));
+      }
+    } else {
+      spdlog_piscem::warn("node mode is not yet implemented.");
+      rparser.stop();
+      return 1;
+      /*
     for (size_t i = 0; i < po.nthreads; ++i) {
       workers.push_back(
         std::thread([i, &poison_kmer_occs, &ri, &rparser, &global_nk]() {
@@ -229,10 +231,11 @@ int run_build_poison_table(int argc, char* argv[]) {
         }));
     }
     */
-  }
+    }
 
-  for (auto& w : workers) { w.join(); }
-  rparser.stop();
+    for (auto& w : workers) { w.join(); }
+    rparser.stop();
+  } // scope to allow deallocating the reference index, since we no logner need it.
 
   // combine the poison vectors
   size_t total_occs = 0;
@@ -246,7 +249,7 @@ int run_build_poison_table(int argc, char* argv[]) {
   std::sort(occs_by_size.begin(), occs_by_size.end());
   
   // start with the smallest one, and add to it.
-  std::vector<poison_occ_t> poison_occs;
+  std::vector<labeled_poison_occ_t> poison_occs;
   poison_occs.reserve(total_occs);
 
   // when we are done with a vector we can clear it and 
@@ -257,115 +260,16 @@ int run_build_poison_table(int argc, char* argv[]) {
     poison_kmer_occs[i].clear();
     poison_kmer_occs[i].shrink_to_fit();
   }
- 
-  // we will build a map from each k-mer to the list of 
-  // unitigs and positions where it occurs.  Therefore, here 
-  // we want to sort by k-mer, then by unitig, then position
-  std::sort(poison_occs.begin(), poison_occs.end(),
-            [](const poison_occ_t& a, const poison_occ_t& b) -> bool {
-              if (a.canonical_kmer == b.canonical_kmer) {
-                if (a.unitig_id == b.unitig_id) {
-                  return a.unitig_pos < b.unitig_pos;
-                } else {
-                  return a.unitig_id < b.unitig_id;
-                }
-              } else {
-                return a.canonical_kmer < b.canonical_kmer;
-              }
-            });
-  // remove duplicates
-  poison_occs.erase( std::unique(poison_occs.begin(), poison_occs.end()), poison_occs.end());
-  spdlog_piscem::info("Total number of distinct poison k-mer occs: {}", poison_occs.size());
 
-  // build the overall map
-  poison_map_t poison_map;
-  std::vector<uint64_t> offsets;
-  offsets.reserve(poison_occs.size()+1);
+  poison_table ptab;
+  ptab.build_from_occs(poison_occs);
+  ptab.save_to_file(po.output_file, global_nk.load());
 
-  size_t max_range = 0;
-  auto occ_it = poison_occs.begin();
-  auto range_start_it = occ_it;
-  size_t max_range_offset = 0;
-  poison_map[occ_it->canonical_kmer] = static_cast<uint64_t>(offsets.size());
-  offsets.push_back(0);
-  while (occ_it != poison_occs.end()) {
-    // we started a new range, push back the starting point of 
-    // the this range.
-    if (occ_it->canonical_kmer != range_start_it->canonical_kmer) {
-      size_t range_len = std::distance(range_start_it, occ_it);
-      if (range_len > max_range) {
-        max_range = range_len;
-        max_range_offset = offsets.size() - 1;
-      }
-
-      uint64_t dist_from_start = std::distance(poison_occs.begin(), occ_it);
-      poison_map[occ_it->canonical_kmer] = static_cast<uint64_t>(offsets.size());
-      offsets.push_back(dist_from_start);
-      range_start_it = occ_it;
-    }
-    occ_it++;
-  }
-  // don't forget the last one
-  size_t range_len = std::distance(range_start_it, occ_it);
-  if (range_len > max_range) {
-    max_range = range_len;
-    max_range_offset = offsets.size() - 1;
-  }
-  uint64_t dist_from_start = std::distance(poison_occs.begin(), occ_it);
-  if (!offsets.empty() and (dist_from_start != offsets.back())) {
-    offsets.push_back(dist_from_start); 
-  }
-  offsets.shrink_to_fit();
-
-  spdlog_piscem::info("The most frequently occuring poison k-mer appeared in {} distinct unitig positions.", max_range);
-  
-  // print out the occurrences of the most frequent poison k-mer
-  auto start = static_cast<int64_t>(offsets[max_range_offset]);
-  auto end = static_cast<int64_t>(offsets[max_range_offset+1]);
-  for (int64_t i = start; i < end; ++i) {
-    std::cerr << "occ: " << i-start << ", " << poison_occs[i];
-  }
-
-  {
-    std::string poc_filename = po.output_file + "_occs";
-    std::ofstream poc_file(poc_filename, std::ios::binary);
-    if (!poc_file.good()) {
-      spdlog_piscem::critical("could not open occ output file {}", poc_filename);
-    }
-
-    size_t s = offsets.size();
-    poc_file.write(reinterpret_cast<char*>(&s), sizeof(s));
-    poc_file.write(reinterpret_cast<char*>(offsets.data()), s * sizeof(uint64_t));
-
-    s = poison_occs.size();
-    poc_file.write(reinterpret_cast<char*>(&s), sizeof(s));
-    poc_file.write(reinterpret_cast<char*>(poison_occs.data()), s * sizeof(poison_occ_t));
-  }
-
-  spdlog_piscem::info("FINAL: Examined {} total decoy k-mers, recorded {} poison k-mers.", global_nk, poison_map.size()); 
-
-  phmap::BinaryOutputArchive ar_out(po.output_file.c_str());
-  poison_map.phmap_dump(ar_out);
-
-  {
-    std::string pinf_filename = po.output_file + ".json";
-    using json = nlohmann::json;
-    json j;
-    j["num_poison_kmers"] = poison_map.size();
-    j["num_poison_occs"] = poison_occs.size();
-    j["num_observed_decoy_kmers"] = global_nk.load();
-    j["max_poison_occ"] = max_range;
-    // write prettified JSON to another file
-    std::ofstream o(pinf_filename);
-    if (!o.good()) { return 1; }
-    o << std::setw(4) << j << std::endl;
-    if (!o) { return 1; }
-  }
-
+  /*
   std::ofstream ofile("poison_kmers.fa");
   size_t pnum{0};
   CanonicalKmer kmer;
-  for (auto& km : poison_map) {
+  for (auto& km : ptab.poison_map()) {
     kmer.fromNum(km.first);
     ofile << ">"
           << "poison." << pnum << "\n"
@@ -373,6 +277,7 @@ int run_build_poison_table(int argc, char* argv[]) {
     ++pnum;
   }
   ofile.close();
+  */
 
   return 0;
 }
