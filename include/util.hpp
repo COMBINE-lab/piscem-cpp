@@ -6,6 +6,8 @@
 #include <cmath>  // for std::ceil on linux
 
 #include "../external/pthash/include/pthash.hpp"
+#include "../include/bitsery/bitsery.h"
+#include "../include/bitsery/brief_syntax.h"
 
 namespace sshash {
 
@@ -93,6 +95,10 @@ struct poison_occ_t {
   poison_occ_t(poison_occ_t&& o) = default;
   poison_occ_t& operator=(const poison_occ_t& o) = default;
   poison_occ_t& operator=(poison_occ_t&& o) = default;
+
+  // for bitsery to allow seralizing this type
+  template<typename S>
+  void serialize(S& s) { s(unitig_id, unitig_pos); }
 };
 
 inline bool operator==(const poison_occ_t& a, const poison_occ_t& b) {

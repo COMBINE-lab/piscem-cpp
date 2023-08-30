@@ -262,8 +262,14 @@ int run_build_poison_table(int argc, char* argv[]) {
   }
 
   poison_table ptab;
-  ptab.build_from_occs(poison_occs);
-  ptab.save_to_file(po.output_file, global_nk.load());
+  if (!ptab.build_from_occs(poison_occs)) {
+    spdlog_piscem::critical("could not build poision table from poison k-mer occurrences.");
+    return 1;
+  }
+  if (!ptab.save_to_file(po.output_file, global_nk.load())) {
+    spdlog_piscem::critical("could not succesfully save poison table to file.");
+    return 1;
+  }
 
   /*
   std::ofstream ofile("poison_kmers.fa");

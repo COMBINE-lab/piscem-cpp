@@ -10,6 +10,12 @@
 #include "../include/parallel_hashmap/phmap_dump.h"
 #include "../include/itlib/small_vector.hpp"
 
+#include "../include/bitsery/bitsery.h"
+#include "../include/bitsery/brief_syntax.h"
+#include "../include/bitsery/adapter/stream.h"
+#include "../include/bitsery/brief_syntax/vector.h"
+#include "../include/bitsery/brief_syntax/string.h"
+
 using poison_map_t = phmap::flat_hash_map<uint64_t, uint64_t, sshash::RobinHoodHash>;
 using sshash::labeled_poison_occ_t;
 using sshash::poison_occ_t;
@@ -61,19 +67,13 @@ class poison_table {
 
     {
       spdlog_piscem::info("Loading poison occ table...");
-      std::ifstream poc_file(pocc_name, std::ios::binary);
+      std::fstream poc_file{pocc_name.c_str(), std::ios::binary | std::ios::in};
       if (!poc_file.good()) {
         spdlog_piscem::critical("Error opening poison occ table {}.", pocc_name);
         std::exit(1);
       }
-      size_t s{0};
-      poc_file.read(reinterpret_cast<char*>(&s), sizeof(s));
-      offsets_.resize(s);
-      poc_file.read(reinterpret_cast<char*>(offsets_.data()), s * sizeof(decltype(offsets_)::value_type));
-
-      poc_file.read(reinterpret_cast<char*>(&s), sizeof(s));
-      poison_occs_.resize(s);
-      poc_file.read(reinterpret_cast<char*>(poison_occs_.data()), s * sizeof(decltype(poison_occs_)::value_type));
+      auto state = bitsery::quickDeserialization<bitsery::InputStreamAdapter>(poc_file, offsets_);
+      state = bitsery::quickDeserialization<bitsery::InputStreamAdapter>(poc_file, poison_occs_);
     }
   }
   
@@ -163,19 +163,17 @@ class poison_table {
   bool save_to_file(const std::string& output_file, uint64_t global_nk) {
     {
       std::string poc_filename = output_file + "_occs";
-      std::ofstream poc_file(poc_filename, std::ios::binary);
+      //std::ofstream poc_file(poc_filename, std::ios::binary);
+      std::fstream poc_file{poc_filename.c_str(), std::ios::binary | std::ios::trunc | std::ios::out};
+      bitsery::Serializer<bitsery::OutputBufferedStreamAdapter> ser{poc_file};
       if (!poc_file.good()) {
         spdlog_piscem::critical("could not open occ output file {}", poc_filename);
         return false;
       }
-
-      size_t s = offsets_.size();
-      poc_file.write(reinterpret_cast<char*>(&s), sizeof(s));
-      poc_file.write(reinterpret_cast<char*>(offsets_.data()), s * sizeof(decltype(offsets_)::value_type));
-
-      s = poison_occs_.size();
-      poc_file.write(reinterpret_cast<char*>(&s), sizeof(s));
-      poc_file.write(reinterpret_cast<char*>(poison_occs_.data()), s * sizeof(decltype(poison_occs_)::value_type));
+      ser(offsets_);
+      ser.adapter().flush();
+      ser(poison_occs_);
+      ser.adapter().flush();
     }
 
     int32_t max_range = 0;
