@@ -142,6 +142,15 @@
   #define SIMDE_X86_AVX512F_NATIVE
 #endif
 
+#if !defined(SIMDE_X86_AVX512FP16_NATIVE) && !defined(SIMDE_X86_AVX512FP16_NO_NATIVE) && !defined(SIMDE_NO_NATIVE)
+  #if defined(SIMDE_ARCH_X86_AVX512FP16)
+    #define SIMDE_X86_AVX512FP16_NATIVE
+  #endif
+#endif
+#if defined(SIMDE_X86_AVX512BW_NATIVE) && !defined(SIMDE_X86_AVX512F_NATIVE)
+  #define SIMDE_X86_AVX512F_NATIVE
+#endif
+
 #if !defined(SIMDE_X86_AVX512BF16_NATIVE) && !defined(SIMDE_X86_AVX512BF16_NO_NATIVE) && !defined(SIMDE_NO_NATIVE)
   #if defined(SIMDE_ARCH_X86_AVX512BF16)
     #define SIMDE_X86_AVX512BF16_NATIVE
@@ -183,7 +192,7 @@
     #define SIMDE_X86_AVX_NATIVE
   #endif
 #endif
-#if defined(SIMDE_X86_AVX_NATIVE) && !defined(SIMDE_X86_SSE4_1_NATIVE)
+#if defined(SIMDE_X86_AVX_NATIVE) && !defined(SIMDE_X86_SSE4_2_NATIVE)
   #define SIMDE_X86_SSE4_2_NATIVE
 #endif
 
@@ -493,30 +502,67 @@
 /* This is used to determine whether or not to fall back on a vector
  * function in an earlier ISA extensions, as well as whether
  * we expected any attempts at vectorization to be fruitful or if we
- * expect to always be running serial code. */
+ * expect to always be running serial code.
+ *
+ * Note that, for some architectures (okay, *one* architecture) there
+ * can be a split where some types are supported for one vector length
+ * but others only for a shorter length.  Therefore, it is possible to
+ * provide separate values for float/int/double types. */
 
 #if !defined(SIMDE_NATURAL_VECTOR_SIZE)
   #if defined(SIMDE_X86_AVX512F_NATIVE)
     #define SIMDE_NATURAL_VECTOR_SIZE (512)
-  #elif defined(SIMDE_X86_AVX_NATIVE)
+  #elif defined(SIMDE_X86_AVX2_NATIVE)
     #define SIMDE_NATURAL_VECTOR_SIZE (256)
+  #elif defined(SIMDE_X86_AVX_NATIVE)
+    #define SIMDE_NATURAL_FLOAT_VECTOR_SIZE (256)
+    #define SIMDE_NATURAL_INT_VECTOR_SIZE (128)
+    #define SIMDE_NATURAL_DOUBLE_VECTOR_SIZE (128)
   #elif \
-      defined(SIMDE_X86_SSE_NATIVE) || \
+      defined(SIMDE_X86_SSE2_NATIVE) || \
       defined(SIMDE_ARM_NEON_A32V7_NATIVE) || \
       defined(SIMDE_WASM_SIMD128_NATIVE) || \
       defined(SIMDE_POWER_ALTIVEC_P5_NATIVE) || \
       defined(SIMDE_ZARCH_ZVECTOR_13_NATIVE) || \
       defined(SIMDE_MIPS_MSA_NATIVE)
     #define SIMDE_NATURAL_VECTOR_SIZE (128)
+  #elif defined(SIMDE_X86_SSE_NATIVE)
+    #define SIMDE_NATURAL_FLOAT_VECTOR_SIZE (128)
+    #define SIMDE_NATURAL_INT_VECTOR_SIZE (64)
+    #define SIMDE_NATURAL_DOUBLE_VECTOR_SIZE (0)
   #endif
 
   #if !defined(SIMDE_NATURAL_VECTOR_SIZE)
-    #define SIMDE_NATURAL_VECTOR_SIZE (0)
+    #if defined(SIMDE_NATURAL_FLOAT_VECTOR_SIZE)
+      #define SIMDE_NATURAL_VECTOR_SIZE SIMDE_NATURAL_FLOAT_VECTOR_SIZE
+    #elif defined(SIMDE_NATURAL_INT_VECTOR_SIZE)
+      #define SIMDE_NATURAL_VECTOR_SIZE SIMDE_NATURAL_INT_VECTOR_SIZE
+    #elif defined(SIMDE_NATURAL_DOUBLE_VECTOR_SIZE)
+      #define SIMDE_NATURAL_VECTOR_SIZE SIMDE_NATURAL_DOUBLE_VECTOR_SIZE
+    #else
+      #define SIMDE_NATURAL_VECTOR_SIZE (0)
+    #endif
+  #endif
+
+  #if !defined(SIMDE_NATURAL_FLOAT_VECTOR_SIZE)
+    #define SIMDE_NATURAL_FLOAT_VECTOR_SIZE SIMDE_NATURAL_VECTOR_SIZE
+  #endif
+  #if !defined(SIMDE_NATURAL_INT_VECTOR_SIZE)
+    #define SIMDE_NATURAL_INT_VECTOR_SIZE SIMDE_NATURAL_VECTOR_SIZE
+  #endif
+  #if !defined(SIMDE_NATURAL_DOUBLE_VECTOR_SIZE)
+    #define SIMDE_NATURAL_DOUBLE_VECTOR_SIZE SIMDE_NATURAL_VECTOR_SIZE
   #endif
 #endif
 
 #define SIMDE_NATURAL_VECTOR_SIZE_LE(x) ((SIMDE_NATURAL_VECTOR_SIZE > 0) && (SIMDE_NATURAL_VECTOR_SIZE <= (x)))
 #define SIMDE_NATURAL_VECTOR_SIZE_GE(x) ((SIMDE_NATURAL_VECTOR_SIZE > 0) && (SIMDE_NATURAL_VECTOR_SIZE >= (x)))
+#define SIMDE_NATURAL_FLOAT_VECTOR_SIZE_LE(x) ((SIMDE_NATURAL_FLOAT_VECTOR_SIZE > 0) && (SIMDE_NATURAL_FLOAT_VECTOR_SIZE <= (x)))
+#define SIMDE_NATURAL_FLOAT_VECTOR_SIZE_GE(x) ((SIMDE_NATURAL_FLOAT_VECTOR_SIZE > 0) && (SIMDE_NATURAL_FLOAT_VECTOR_SIZE >= (x)))
+#define SIMDE_NATURAL_INT_VECTOR_SIZE_LE(x) ((SIMDE_NATURAL_INT_VECTOR_SIZE > 0) && (SIMDE_NATURAL_INT_VECTOR_SIZE <= (x)))
+#define SIMDE_NATURAL_INT_VECTOR_SIZE_GE(x) ((SIMDE_NATURAL_INT_VECTOR_SIZE > 0) && (SIMDE_NATURAL_INT_VECTOR_SIZE >= (x)))
+#define SIMDE_NATURAL_DOUBLE_VECTOR_SIZE_LE(x) ((SIMDE_NATURAL_DOUBLE_VECTOR_SIZE > 0) && (SIMDE_NATURAL_DOUBLE_VECTOR_SIZE <= (x)))
+#define SIMDE_NATURAL_DOUBLE_VECTOR_SIZE_GE(x) ((SIMDE_NATURAL_DOUBLE_VECTOR_SIZE > 0) && (SIMDE_NATURAL_DOUBLE_VECTOR_SIZE >= (x)))
 
 /* Native aliases */
 #if defined(SIMDE_ENABLE_NATIVE_ALIASES)
@@ -586,6 +632,9 @@
   #if !defined(SIMDE_X86_AVX512CD_NATIVE)
     #define SIMDE_X86_AVX512CD_ENABLE_NATIVE_ALIASES
   #endif
+  #if !defined(SIMDE_X86_AVX512FP16_NATIVE)
+    #define SIMDE_X86_AVX512FP16_ENABLE_NATIVE_ALIASES
+  #endif
   #if !defined(SIMDE_X86_GFNI_NATIVE)
     #define SIMDE_X86_GFNI_ENABLE_NATIVE_ALIASES
   #endif
@@ -643,6 +692,25 @@
 
 #if defined(SIMDE_ARCH_ARM_NEON_FP16)
   #define SIMDE_ARM_NEON_FP16
+#endif
+
+#if !defined(SIMDE_LOONGARCH_LASX_NATIVE) && !defined(SIMDE_LOONGARCH_LASX_NO_NATIVE) && !defined(SIMDE_NO_NATIVE)
+  #if defined(SIMDE_ARCH_LOONGARCH_LASX)
+    #define SIMDE_LOONGARCH_LASX_NATIVE
+  #endif
+#endif
+
+#if !defined(SIMDE_LOONGARCH_LSX_NATIVE) && !defined(SIMDE_LOONGARCH_LSX_NO_NATIVE) && !defined(SIMDE_NO_NATIVE)
+  #if defined(SIMDE_ARCH_LOONGARCH_LSX)
+    #define SIMDE_LOONGARCH_LSX_NATIVE
+  #endif
+#endif
+
+#if defined(SIMDE_LOONGARCH_LASX_NATIVE)
+  #include <lasxintrin.h>
+#endif
+#if defined(SIMDE_LOONGARCH_LSX_NATIVE)
+  #include <lsxintrin.h>
 #endif
 
 #endif /* !defined(SIMDE_FEATURES_H) */
