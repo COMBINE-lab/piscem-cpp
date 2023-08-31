@@ -74,8 +74,11 @@ bool map_fragment(fastx_parser::ReadPair& record, poison_state_t& poison_state,
                   mapping_cache_info& map_cache_left,
                   mapping_cache_info& map_cache_right, mapping_cache_info& map_cache_out) {
     // don't map a poisned read pair
+    poison_state.set_fragment_end(mapping::util::fragment_end::LEFT);
     bool early_exit_left = mapping::util::map_read(&record.first.seq, map_cache_left, poison_state, skip_strat);
     if (poison_state.is_poisoned()) { return false; }
+
+    poison_state.set_fragment_end(mapping::util::fragment_end::RIGHT);
     bool early_exit_right = mapping::util::map_read(&record.second.seq, map_cache_right, poison_state, skip_strat);
     if (poison_state.is_poisoned()) { return false; }
 

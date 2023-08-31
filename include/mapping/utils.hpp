@@ -462,10 +462,13 @@ private:
     }
 };
 
+enum class fragment_end : uint8_t { LEFT, RIGHT };
+
 struct poison_state_t {
   inline void clear() {
     poisoned_left = false;
     poisoned_right = false;
+    fend = fragment_end::LEFT;
   }
   
   inline bool is_poisoned() const {
@@ -476,21 +479,20 @@ struct poison_state_t {
     }
   }
   
-  // returns true if the mapping was poisoned, false otherwise
-  bool scan_raw_hits(std::string& s, uint32_t k, std::vector<std::pair<int, projected_hits>>& h) {
+  // Returns true if the mapping was poisoned, false otherwise. This uses the notion 
+  // of "poison" k-mers (aka "distinguishing flanking k-mers" or DFKs[1]) to determine
+  // if a mapping should be discarded because it is contaminated by decoy k-mers that 
+  // might suggest a different mapping if other decoy sequence was included in the 
+  // index.
+  //
+  // [1] Hjörleifsson, K. E., Sullivan, D. K., Holley, G., Melsted, P. & Pachter, L. 
+  // Accurate quantification of single-nucleus and single-cell RNA-seq transcripts.
+  // bioRxiv. https://www.biorxiv.org/content/early/2022/12/02/2022. 12.02.518832 (2022)
+  bool scan_raw_hits(std::string& s, uint32_t k, std::vector<std::pair<int, projected_hits>>& h, mindex::SkippingStrategy strat) {
     // a read that didn't map can't be poisoned
     if (h.empty()) { return false; }
-
-    constexpr bool debug_verbose{false};
-    if constexpr (debug_verbose) {
-      std::cerr << "[scan_raw_hits::]\n";
-      std::cerr << "\thits : [\n";
-      for (auto& hit : h) {
-        std::cerr << "\t" << hit.first << ", " << hit.second << ", " << s.substr(hit.first, k) << "\n";
-      }
-      std::cerr << "\t]\n";
-    }
     
+    bool strict_mode = (strat == mindex::SkippingStrategy::STRICT);
     bool was_poisoned = false;
     auto first_pos = h.front().first;
     pufferfish::CanonicalKmerIterator kit_end;
@@ -526,40 +528,19 @@ struct poison_state_t {
       bool right_bound_resulted_from_open_search = end_it->second.resulted_from_open_search;
       last_pos = p2;
       last_uni = u2;
-      while (kit != kit_end and kit->second < p2) {
+
+      auto lb = std::min(cp1, cp2);
+      lb = (lb > 0) ? lb + 1 : 0;
+      auto ub = std::max(cp1, cp2);
+      ub = (ub < start_it->second.contigLen_ - k) ? ub - 1 : start_it->second.contigLen_ - k;
+
+      while ((kit != kit_end) and (kit->second < p2)) {
         
-        // if ((kit->second == start_it->first) or (kit->second == end_it->first)) { ++kit; continue; }
-
-        if (/*(u1 == u2) and*/ (!right_bound_resulted_from_open_search)) {
-          auto lb = std::min(cp1, cp2);
-          lb = (lb > 0) ? lb + 1 : 0;
-          auto ub = std::max(cp1, cp2);
-          ub = (ub < start_it->second.contigLen_ - k) ? ub - 1 : start_it->second.contigLen_ - k;
-          was_poisoned = ptab->key_occurs_in_unitig_between(kit->first.getCanonicalWord(), u1, lb, ub);
-
-          if (was_poisoned) {
-            if constexpr (debug_verbose) {
-              std::cerr << "filtered out read due to constrained search between: \n";
-              std::cerr << start_it->second << "\nand\n";
-              std::cerr << end_it->second << "\n";
-              std::cerr << "offending k-mer = " << kit->first.to_str() << ", at position: " << kit->second << "\n";
-            }
-          }
-
+        if (!right_bound_resulted_from_open_search) {
+          // we shouldn't even have to check in strict mode.
+          was_poisoned = (strict_mode) ? false : ptab->key_occurs_in_unitig_between(kit->first.getCanonicalWord(), u1, lb, ub);
         } else {
           was_poisoned = ptab->key_exists(kit->first.getCanonicalWord());
-
-          if (was_poisoned) {
-            if constexpr (debug_verbose) {
-              std::cerr << "filtered out read due to UNCONSTRAINED search between: \n";
-              std::cerr << start_it->second << ", " << start_it->first << " and\n";
-              std::cerr << end_it->second << ", " << end_it->first << "\n";
-              std::cerr << "offending k-mer = " << kit->first.to_str() << ", at position: " << kit->second << "\n";
-              std::cerr << "occs = ";
-              ptab->print_occs(kit->first.getCanonicalWord());
-            }
-          }
-
         }
         if (was_poisoned) { return was_poisoned; }
         ++kit;
@@ -568,37 +549,36 @@ struct poison_state_t {
       ++end_it;
     }
     
-    /*
-    if (kit != kit_end) { 
-      ++kit; 
-    }
-    */
-
     // for any remaining k-mers in the read after the end of the last 
     // matching interval.
     while (kit != kit_end) {
       was_poisoned = ptab->key_exists(kit->first.getCanonicalWord());
-      if (was_poisoned) { 
-        if constexpr (debug_verbose) {
-          std::cerr << "read: " << kit.seq() << " was poisoned.\n";
-          std::cerr << "valid hits are :\n";
-          for (auto& hit : h) {
-            std::cerr << "\t(" << hit.first << ", " << hit.second << ")\n";
-          }
-          std::cerr << "offending k-mer at position (" << kit->second << "), is: " << kit->first.to_str() << "\n";
-          std::cerr << "last_uni: " << last_uni << "\n";
-          std::cerr << "poison_occs : ";
-          ptab->print_occs(kit->first.getCanonicalWord());
-        }
-        return was_poisoned; 
-      }
+      if (was_poisoned) { return was_poisoned; }
       ++kit;
     }
     return was_poisoned;
   }
 
+  // returns true if this poison state object is valid 
+  // (i.e. if there is a valid posion table associated with 
+  // it) and false otherwise.
   inline bool is_valid() const { return ptab != nullptr; }
 
+  // poison whichever fragment end is currently active.
+  inline void poison_read() {
+    if (fend == fragment_end::LEFT) {
+      poisoned_left = true;
+    } else {
+      poisoned_right = true;
+    }
+  }
+
+  // set the active fragment end (either LEFT or RIGHT)
+  inline void set_fragment_end(fragment_end e) { fend = e; }
+  // get the current fragment end (either LEFT or RIGHT)
+  inline fragment_end get_fragment_end() const { return fend; }
+
+  fragment_end fend{fragment_end::LEFT};
   bool poisoned_left{false};
   bool poisoned_right{false};
   bool paired_for_mapping{false};
@@ -630,8 +610,8 @@ public:
     // for each barcode
     phmap::flat_hash_map<uint64_t, uint32_t> unmapped_bc_map;
 
-    size_t max_occ_default = 200;
-    size_t max_occ_recover = 1000;
+    size_t max_occ_default = 256;
+    size_t max_occ_recover = 1024;
     const bool attempt_occ_recover = (max_occ_recover > max_occ_default);
     size_t alt_max_occ = 2500;
     size_t k{0};
@@ -682,9 +662,9 @@ inline bool map_read(std::string* read_seq, mapping_cache_info& map_cache, poiso
 
         // if we are applying a poison filter, do it here.
         if (apply_poison_filter) {
-          bool was_poisoned = poison_state.scan_raw_hits(*read_seq, k, raw_hits);
+          bool was_poisoned = poison_state.scan_raw_hits(*read_seq, k, raw_hits, strat);
           if (was_poisoned) {
-            poison_state.poisoned_left = true;
+            poison_state.poison_read();
             map_type = mapping::util::MappingType::UNMAPPED;
             return true;
           }

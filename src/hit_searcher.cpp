@@ -669,9 +669,13 @@ bool hit_searcher::get_raw_hits_sketch(std::string& read,
 
               // Otherwise, actually search for it, and accept the hit only 
               // if the hit occurs on the same contig (in the same orientation?)
-              if (!accept_hit) {
+              if (found) {
                 auto check_phit = skip_ctx.proj_hits();
-                accept_hit = check_phit.contig_id() == phit.contig_id();
+                accept_hit = (check_phit.contig_id() == phit.contig_id())
+                  and (check_phit.hit_fw_on_contig() == phit.hit_fw_on_contig())
+                  and ((direction > 0) ? (check_phit.contig_pos() > phit.contig_pos()) 
+                       : (check_phit.contig_pos() < phit.contig_pos()));
+                //if (accept_hit) { phit = check_phit; }
               } 
               if (accept_hit) {
                 raw_hits.push_back({read_pos, phit});
@@ -679,11 +683,15 @@ bool hit_searcher::get_raw_hits_sketch(std::string& read,
                 continue;
               }
             } else {
+              // in this branch, we moved forward on the contig and found 
+              // a match.
               bool hit_fw = (match_type == KmerMatchType::IDENTITY_MATCH);
-              phit.contigOrientation_ = hit_fw;
-              raw_hits.push_back({read_pos, phit});
-              skip_ctx.increment_read_iter();
-              continue;
+              if (hit_fw == phit.hit_fw_on_contig()) {
+                phit.contigOrientation_ = hit_fw;
+                raw_hits.push_back({read_pos, phit});
+                skip_ctx.increment_read_iter();
+                continue;
+              }
             }
           }
           // If we got down here then we weren't able to skip
