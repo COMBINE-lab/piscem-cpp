@@ -171,7 +171,7 @@ int run_build_poison_table(int argc, char *argv[]) {
     ->required();
   app
     .add_option("-d,--decoys", po.decoy_seq_paths,
-                "path to list of decoy files")
+                "path to (\',\' separated) list of decoy files")
     ->required()
     ->delimiter(',');
   app

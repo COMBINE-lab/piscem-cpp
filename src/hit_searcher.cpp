@@ -783,6 +783,9 @@ bool hit_searcher::get_raw_hits_sketch(std::string& read,
   return !raw_hits.empty();
 }
 
+
+
+
 // This method performs k-mer / hit collection
 // using a custom implementation of the corresponding
 // part of the pseudoalignment algorithm as described in (1).
