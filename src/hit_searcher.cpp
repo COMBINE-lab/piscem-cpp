@@ -89,7 +89,12 @@ struct SkipContext {
       return kit1->first.isEquivalent(fast_hit.ref_kmer);
     }
 
-    inline bool query_kmer(sshash::streaming_query_canonical_parsing& qc,
+    inline bool query_kmer(sshash::streaming_query_canonical_parsing& qc) {
+        phits = pfi->query(kit1, qc);
+        return !phits.empty();
+    }
+
+    inline bool query_kmer_complex(sshash::streaming_query_canonical_parsing& qc,
                            bool& obtained_confirmatory_hit) {
         bool found_match = false;
         if (fast_hit.valid()) {
@@ -534,13 +539,12 @@ inline void walk_safely_until(
   std::vector<std::pair<int, projected_hits>>& raw_hits // the structure where we'll aggregate results
 ) {
   const int32_t k = skip_ctx.get_k();
-  uint64_t dist_to_contig_end = 0;
-  bool confirmatory_fast_hit = false;
+  int64_t dist_to_contig_end = 0;
   // while we have not yet reached the last k-mer 
   // of `read`
   while (!skip_ctx.is_exhausted() && skip_ctx.read_pos() <= end_read_pos) {
     // check if the search was a hit
-    if (skip_ctx.is_good_query() and skip_ctx.query_kmer(qc, confirmatory_fast_hit)) {
+    if (skip_ctx.is_good_query() and skip_ctx.query_kmer(qc)) {
       // in this branch of the if/else, we found a hit 
       // for the current k-mer.
 
@@ -714,7 +718,6 @@ bool hit_searcher::get_raw_hits_sketch(std::string& read,
   int32_t k = static_cast<int32_t>(CanonicalKmer::k());
   SkipContext skip_ctx(read, pfi_, k, altSkip);
   skip_ctx.fast_hit.valid(false);
-  bool confirmatory_fast_hit = false;
 
   // for this new read, restart the streaming query
   qc.reset_state();
@@ -728,14 +731,14 @@ bool hit_searcher::get_raw_hits_sketch(std::string& read,
     // of `read`
     while (!skip_ctx.is_exhausted()) {
       // check if the search was a hit
-      if (skip_ctx.is_good_query() and skip_ctx.query_kmer(qc, confirmatory_fast_hit)) {
+      if (skip_ctx.is_good_query() and skip_ctx.query_kmer(qc)) {
         // in this branch of the if/else, we found a hit 
         // for the current k-mer.
 
         // record some relevant information;
         // the position on the read of the matching k-mer
         auto read_pos = skip_ctx.read_pos();
-        auto initial_search_pos = read_pos;
+        
         // the projected hits object for this hit
         // which includes the contig id and position
         // of the matching k-mer, as well as the orientation
@@ -774,15 +777,14 @@ bool hit_searcher::get_raw_hits_sketch(std::string& read,
         }
 
         // If we can successfully jump to the end of this unitig then just do it.
-        int64_t dist_to_read_end = (read.size() - k) - skip_ctx.read_pos();
+        int64_t dist_to_read_end = (read.size() - k) - read_pos;
         int32_t skip_dist = static_cast<uint32_t>(std::min(dist_to_read_end, dist_to_contig_end));
         // if we are already at the end of the read or the unitig, then there is 
         // nothing to do here.
-        if (skip_dist >= 2) {
+        if (skip_dist > 0) {
           // before we attempt the skip, backup our iterator and our 
           // current contig position.
           auto backup_kit = skip_ctx.get_iter();
-          int32_t backup_curr_pos = cCurrPos;
 
           // try to move forward the expected amount.
           auto actual_dist = skip_ctx.advance_read_iter(skip_dist);
@@ -790,11 +792,12 @@ bool hit_searcher::get_raw_hits_sketch(std::string& read,
           // if we jumped past the end
           if (skip_ctx.is_exhausted()) { 
             // just give up.
-            break; 
+            //break; 
             // try the slow way
-            // skip_ctx.set_iter(backup_kit);
-            // skip_ctx.increment_read_iter();
-            // continue;
+            skip_ctx.set_iter(backup_kit);
+            skip_ctx.increment_read_iter();
+            walk_safely_until(skip_ctx, qc, read_pos + skip_dist, raw_hits);
+            continue;
           }
 
           // if this led to a valid iterator, save it for 
@@ -837,13 +840,12 @@ bool hit_searcher::get_raw_hits_sketch(std::string& read,
           // if we got here, either the iterator advanced too far 
           // (so we can't do a quick_check) or the quick check failed.
           // Either way, we have to do a regular search.
-          bool alt_found = skip_ctx.query_kmer(qc, confirmatory_fast_hit);
+          bool alt_found = skip_ctx.query_kmer(qc);
 
           // If we don't see the k-mer at all, just pretend we did and 
           // accept the hit.
           bool accept_hit = !alt_found;
           projected_hits alt_phit; 
-          bool had_alt_phit = false;
 
           // Otherwise, accept the hit only 
           // if the hit occurs on the same contig (in the same orientation?)
@@ -854,10 +856,10 @@ bool hit_searcher::get_raw_hits_sketch(std::string& read,
               and ((direction > 0) ? (check_phit.contig_pos() > phit.contig_pos()) 
               : (check_phit.contig_pos() < phit.contig_pos()));
             alt_phit = check_phit;
-            had_alt_phit = true;
             if (accept_hit) { 
               read_pos = skip_ctx.read_pos();
               phit = check_phit; 
+              phit.resulted_from_open_search = false;
             }
           }  
           if (accept_hit) {
@@ -870,26 +872,21 @@ bool hit_searcher::get_raw_hits_sketch(std::string& read,
 
           // if we get here, then alt_phit should have been set
           assert(had_alt_phit);
-          // NOTE: REMOVE ME AFTER CHECKING IN RELEASE MODE
-          if (!had_alt_phit) {
-            std::cerr << "Got to middle hit search without alt phit; this shouldn't happen!\n";
-          }
 
           // we got here and we found a hit for our jump position that 
           // did *not* land on the expected contig.
-          // check the center k-mer
+          // In this case, check the center k-mer.
           bool mid_acceptable = false;
           if (skip_dist > 4) {
             skip_dist = skip_dist / 2;
             // backup to the original iterator
             skip_ctx.set_iter(backup_kit);
-            cCurrPos = backup_curr_pos;
             // move forward to the target.
             skip_ctx.advance_read_iter(skip_dist);
 
             // if we didn't jump past the end
             if (!skip_ctx.is_exhausted()) { 
-              bool mid_found = skip_ctx.query_kmer(qc, confirmatory_fast_hit);
+              bool mid_found = skip_ctx.query_kmer(qc);
               if (mid_found) {
                 auto mid_phit = skip_ctx.proj_hits();
                 if (mid_phit.contig_id() == phit.contig_id()) {
@@ -898,7 +895,8 @@ bool hit_searcher::get_raw_hits_sketch(std::string& read,
                   mid_acceptable = true;
                 } else if (mid_phit.contig_id() == alt_phit.contig_id()) {
                   // matched our second contig
-                  raw_hits.push_back({skip_ctx.read_pos(), mid_phit});
+                  raw_hits.push_back({alt_kit->second, alt_phit});
+                  ++alt_kit;
                   mid_acceptable = true;
                 } else {
                   mid_acceptable = false;
@@ -919,7 +917,6 @@ bool hit_searcher::get_raw_hits_sketch(std::string& read,
             // if we didn't find acceptable middle 
             // hit, or the skip_distance was <= 4.
             skip_ctx.set_iter(backup_kit);
-            cCurrPos = backup_curr_pos;
             skip_ctx.increment_read_iter();
             walk_safely_until(skip_ctx, qc, next_read_pos, raw_hits);
             continue;
@@ -995,7 +992,7 @@ bool hit_searcher::get_raw_hits_sketch_orig(std::string& read,
     while (!skip_ctx.is_exhausted()) {
         // if we had a hit
         bool confirmatory_fast_hit = false;
-        if (skip_ctx.query_kmer(qc, confirmatory_fast_hit)) {
+        if (skip_ctx.query_kmer_complex(qc, confirmatory_fast_hit)) {
             // record this hit
             int32_t read_pos = skip_ctx.read_pos();
             auto proj_hits = skip_ctx.proj_hits();
@@ -1038,7 +1035,7 @@ bool hit_searcher::get_raw_hits_sketch_orig(std::string& read,
                     // hits we find along the way.
                     while (skip_ctx.advance_safe()) {
                         bool confirmatory_fast_hit = false;
-                        if (skip_ctx.query_kmer(qc, confirmatory_fast_hit)) {
+                        if (skip_ctx.query_kmer_complex(qc, confirmatory_fast_hit)) {
                             raw_hits.push_back(
                                 std::make_pair(skip_ctx.read_pos(), skip_ctx.proj_hits()));
                         }
