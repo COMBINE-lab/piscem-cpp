@@ -623,7 +623,7 @@ struct poison_state_t {
     if (h.empty()) { return false; }
 
 
-    constexpr bool verbose = false;
+    constexpr bool verbose = true;
     const int32_t min_disjoint = s.length();
 
     bool strict_mode = (strat == mindex::SkippingStrategy::STRICT);

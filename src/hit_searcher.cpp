@@ -528,6 +528,12 @@ struct SkipContext {
     bool hit_found;
 };
 
+struct SkipInfoT {
+  int direction{0}; // 1 for forward, -1 for rc
+  int32_t offset{0}; // amount to move
+}; 
+// lightweight struct with just the info necessary 
+// for a single skip.
 
 //
 // Walk safely (one k-mer at a time until skip_ctx reaches the end_readPos)
@@ -726,6 +732,7 @@ bool hit_searcher::get_raw_hits_sketch(std::string& read,
     int read_end_pos = read.length() - k;
     walk_safely_until(skip_ctx, qc, read_end_pos, raw_hits);
   } else {
+    constexpr bool verbose = true;
     int64_t dist_to_contig_end = 0;
     // while we have not yet reached the last k-mer 
     // of `read`
@@ -781,14 +788,57 @@ bool hit_searcher::get_raw_hits_sketch(std::string& read,
         int32_t skip_dist = static_cast<uint32_t>(std::min(dist_to_read_end, dist_to_contig_end));
         // if we are already at the end of the read or the unitig, then there is 
         // nothing to do here.
-        if (skip_dist > 0) {
+        if (skip_dist > 1) {
           // before we attempt the skip, backup our iterator and our 
           // current contig position.
           auto backup_kit = skip_ctx.get_iter();
+          auto backup_cpos = cCurrPos;
+
+          auto neighbor_dist = skip_ctx.increment_read_iter();
+          // if we jumped past the end by trying to walk
+          // one nucleotide. We're done
+          if (skip_ctx.is_exhausted()) { 
+            continue;
+          }
+
+          if (neighbor_dist < skip_dist) {
+            int32_t inc_offset = (direction * neighbor_dist);
+            cCurrPos += inc_offset;
+            skip_ctx.ref_contig_it.at(2 * cCurrPos);
+            skip_ctx.fast_hit.ref_kmer = skip_ctx.ref_contig_it.read(2 * k);
+
+            /*
+            auto direct_phit = raw_hits.back().second;
+            direct_phit.resulted_from_open_search = false;
+            direct_phit.globalPos_ += inc_offset;
+            direct_phit.contigPos_ += inc_offset;
+            */
+            auto prev_hit_fw = raw_hits.back().second.hit_fw_on_contig();
+
+            // check if what we find at the given position is a match 
+            // or not.
+            auto match_type = skip_ctx.check_match();
+            bool matches = (match_type != KmerMatchType::NO_MATCH);
+            int read_pos = skip_ctx.read_pos();
+
+            // in this branch, we moved forward on the contig and found 
+            // a match.
+            bool hit_fw = (match_type == KmerMatchType::IDENTITY_MATCH);
+            if (!matches or (hit_fw != prev_hit_fw)) {
+              // go to the top of the loop and do a regular search
+              continue;
+            } 
+            // otherwise, we found the match and we can proceed with the 
+            // jump. so reset the iterator and the cCurrPos;
+            skip_ctx.set_iter(backup_kit);
+            cCurrPos = backup_cpos;
+          }
 
           // try to move forward the expected amount.
           auto actual_dist = skip_ctx.advance_read_iter(skip_dist);
-
+          if constexpr (verbose) {
+            std::cerr << "skip_dist: " << skip_dist << ", actual_skip: " << actual_dist << "\n";
+          }
           // if we jumped past the end
           if (skip_ctx.is_exhausted()) { 
             // just give up.
@@ -865,13 +915,15 @@ bool hit_searcher::get_raw_hits_sketch(std::string& read,
           if (accept_hit) {
             // we move the search forward either way, but only actually 
             // add the hit if it was found.
-            if (alt_found) { raw_hits.push_back({read_pos, phit}); }
-            skip_ctx.increment_read_iter();
-            continue;
+            if (alt_found) { 
+              raw_hits.push_back({read_pos, phit}); 
+              skip_ctx.increment_read_iter();
+              continue;
+            }
           }
 
           // if we get here, then alt_phit should have been set
-          assert(had_alt_phit);
+          // assert(alt_found);
 
           // we got here and we found a hit for our jump position that 
           // did *not* land on the expected contig.
@@ -893,7 +945,7 @@ bool hit_searcher::get_raw_hits_sketch(std::string& read,
                   // matched our first contig
                   raw_hits.push_back({skip_ctx.read_pos(), mid_phit});
                   mid_acceptable = true;
-                } else if (mid_phit.contig_id() == alt_phit.contig_id()) {
+                } else if (alt_found and mid_phit.contig_id() == alt_phit.contig_id()) {
                   // matched our second contig
                   raw_hits.push_back({alt_kit->second, alt_phit});
                   ++alt_kit;
