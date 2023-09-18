@@ -490,6 +490,25 @@ public:
   }
   bool is_homopolymer() const { return isHomoPolymer(); }
 
+  bool _has_homopolymer_prefix() const {
+    int m = (k_ / 2);
+    auto nuc = data_[0] & 0x03;
+    // XOR of the kmer with itself shifted 1 nucleotide left. This 
+    // will zero out 
+    return 0 == ((data_[0] ^ ((data_[0] << 2) | nuc)) >> (2*m));
+  }
+
+  bool _has_homopolymer_suffix() const {
+    int m = k_ - (k_ / 2);
+    auto nuc = data_[0] & 0x03;
+    return 0 == ((data_[0] ^ ((data_[0] << 2) | nuc)) << (2*m));
+  }
+
+  bool is_low_complexity() const {
+    return (is_homopolymer()) ? true : 
+        (_has_homopolymer_prefix() ? true : _has_homopolymer_suffix());
+  }
+  
   void rc() { data_[0] = word_reverse_complement(data_[0], k_); }
 
   Kmer<K, CID> getRC() const {

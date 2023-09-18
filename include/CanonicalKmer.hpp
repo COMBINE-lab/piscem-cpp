@@ -148,6 +148,7 @@ public:
   bool operator>(const CanonicalKmer& rhs) const { return !(*this <= rhs); }
   bool operator>=(const CanonicalKmer& rhs) const { return !(*this < rhs); }
   bool is_homopolymer() const { return fw_.is_homopolymer(); }
+  bool is_low_complexity() const { return fw_.is_low_complexity(); }
 };
 
 #endif // __CANONICAL_KMER_HPP__

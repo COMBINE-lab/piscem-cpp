@@ -423,6 +423,7 @@ private:
         // std::cerr << " === examining hit at ref pos : " << next_hit_pos << ", lower bound search
         // found chain ending at : " << chain_pos->prev_pos << " =========\n";
 
+        constexpr int32_t max_chain_stretch = 31;
         // if we found a valid chain to extend
         int32_t tries = 0;
         // if we don't find a valid chain in the expected place, look at *one* more
@@ -435,7 +436,7 @@ private:
             stretch = std::min(stretch, static_cast<decltype(stretch)>(max_distortion));
             // and if it hasn't yet been extended
             if (chain_pos->curr_pos == -1) {
-                if (stretch < 15) {
+                if (stretch < max_chain_stretch) {
                     // then extend this chain
                     chain_pos->curr_pos = next_hit_pos;
                     chain_pos->min_distortion = static_cast<uint8_t>(stretch);
@@ -461,6 +462,135 @@ private:
         }
     }
 };
+
+
+//
+//
+// The sketch hit info we want to maintain when we are 
+// not interested in 
+//
+//
+
+struct sketch_hit_info_no_struct_constraint {
+    // add a hit to the current target that occurs in the forward
+    // orientation with respect to the target.
+    bool add_fw(int32_t ref_pos, int32_t read_pos, int32_t rl, int32_t k, int32_t max_stretch,
+                float score_inc) {
+        (void)rl;
+        (void)k;
+        (void)max_stretch;
+        bool added{false};
+
+        int32_t approx_map_pos = ref_pos - read_pos;
+        // Simply count the number of hits we see in
+        // the given orientation (being careful to count
+        // a k-mer of a given rank only one time).
+        if (read_pos > last_read_pos_fw) {
+          if (last_read_pos_fw == -1) { approx_pos_fw = approx_map_pos; }
+          last_ref_pos_fw = ref_pos;
+          last_read_pos_fw = read_pos;
+          fw_score += score_inc;
+          ++fw_hits;
+          added = true;
+        }
+        return added;
+        // NO STRUCTURAL CONSTRAINTS
+
+    }
+
+    // add a hit to the current target that occurs in the forward
+    // orientation with respect to the target.
+    bool add_rc(int32_t ref_pos, int32_t read_pos, int32_t rl, int32_t k, int32_t max_stretch,
+                float score_inc) {
+        (void)rl;
+        (void)k;
+        (void)max_stretch;
+        bool added{false};
+        int32_t approx_map_pos = (ref_pos - (rl - (read_pos + k)));
+
+            if (read_pos > last_read_pos_rc) {
+                approx_pos_rc = approx_map_pos;
+                if (last_read_pos_rc == -1) {
+                    approx_end_pos_rc = ref_pos + read_pos;
+                    first_read_pos_rc = read_pos;
+                }
+                rc_score += score_inc;
+                ++rc_hits;
+
+                // new
+                rightmost_bound_rc = last_ref_pos_rc;
+
+                last_ref_pos_rc = ref_pos;
+                last_read_pos_rc = read_pos;
+                added = true;
+            }
+            return added;
+    }
+
+    // for directly incrementing the number of hits
+    // even when we are not building chains (e.g. in the case
+    // of filtering based on occurrences of ambiguous seeds).
+    inline void inc_fw_hits() { ++fw_hits; }
+    inline void inc_rc_hits() { ++rc_hits; }
+
+    inline uint32_t max_hits_for_target() { return std::max(fw_hits, rc_hits); }
+
+    // true if forward, false if rc
+    // second element is score
+    inline HitDirection best_hit_direction() {
+        int32_t fw_minus_rc = static_cast<int32_t>(fw_hits) - static_cast<int32_t>(rc_hits);
+        return (fw_minus_rc > 0) ? HitDirection::FW
+                                 : ((fw_minus_rc < 0) ? HitDirection::RC : HitDirection::BOTH);
+    }
+
+    inline simple_hit get_fw_hit() {
+        return simple_hit{true,     false,   approx_pos_fw,
+                          fw_score, fw_hits, std::numeric_limits<uint32_t>::max()};
+    }
+
+    inline simple_hit get_rc_hit() {
+        return simple_hit{false,    false,   approx_pos_rc,
+                          rc_score, rc_hits, std::numeric_limits<uint32_t>::max()};
+    }
+
+    inline simple_hit get_best_hit() {
+        auto best_direction = best_hit_direction();
+        return (best_direction != HitDirection::RC)
+                   ? simple_hit{true,     false,   approx_pos_fw,
+                                fw_score, fw_hits, std::numeric_limits<uint32_t>::max()}
+                   : simple_hit{false,    false,   approx_pos_rc,
+                                rc_score, rc_hits, std::numeric_limits<uint32_t>::max()};
+    }
+
+    inline std::string to_string() {
+        std::stringstream ss;
+        ss << "fw_hits: " << fw_hits << ", fw_score : " << fw_score
+           << ", fw_pos : " << approx_pos_fw << " || rc_hits: " << rc_hits
+           << ", rc_score: " << rc_score << ", rc_pos: " << approx_pos_rc;
+        return ss.str();
+    }
+
+    int32_t last_read_pos_fw{-1};
+    int32_t last_read_pos_rc{-1};
+    int32_t rightmost_bound_rc{std::numeric_limits<int32_t>::max()};
+
+    // marks the read position (key) of the
+    // first hit we see in the rc direction
+    int32_t first_read_pos_rc{-1};
+
+    int32_t last_ref_pos_fw{-1};
+    int32_t last_ref_pos_rc{std::numeric_limits<int32_t>::max()};
+
+    int32_t approx_pos_fw{-1};
+    int32_t approx_pos_rc{-1};
+    int32_t approx_end_pos_rc{-1};
+
+    uint32_t fw_hits{0};
+    uint32_t rc_hits{0};
+    float fw_score{0.0};
+    float rc_score{0.0};
+};
+
 
 enum class fragment_end : uint8_t { LEFT, RIGHT };
 
@@ -491,17 +621,42 @@ struct poison_state_t {
   bool scan_raw_hits(std::string& s, uint32_t k, std::vector<std::pair<int, projected_hits>>& h, mindex::SkippingStrategy strat) {
     // a read that didn't map can't be poisoned
     if (h.empty()) { return false; }
-    
+
+
+    constexpr bool verbose = false;
+    const int32_t min_disjoint = s.length();
+
     bool strict_mode = (strat == mindex::SkippingStrategy::STRICT);
     bool was_poisoned = false;
     auto first_pos = h.front().first;
     pufferfish::CanonicalKmerIterator kit_end;
+
+    auto terminal_pos = h.back().first + min_disjoint;
     pufferfish::CanonicalKmerIterator kit(s);
 
+    if constexpr(verbose) {
+      for (auto& hit : h) {
+        std::cerr << "read_pos: " << hit.first << ", phit: " << hit.second << "\n";
+        auto& refs = hit.second.refRange;
+ 
+        for (auto v : refs) {
+          const auto& ref_pos_ori = hit.second.decode_hit(v);
+          uint32_t tid = sshash::util::transcript_id(v);
+          int32_t pos = static_cast<int32_t>(ref_pos_ori.pos);
+          bool ori = ref_pos_ori.isFW;
+
+          if constexpr(verbose){
+            std::cerr << "kmer: " << s.substr(hit.first, k) << ", tid: " << tid << ", pos: " << pos << ", dir: " <<  (ori ? "fw" : "rc") << "\n";
+          }
+        }
+      }
+    }
+
     // scan up to the first hit looking for any poison k-mer
-    while ((kit != kit_end) and (kit->second < first_pos)) {
-      if (ptab->key_exists(kit->first.getCanonicalWord())) {
+    while ((kit != kit_end) and (kit->second < first_pos) and (kit->second < terminal_pos)) {
+      if (!kit->first.is_homopolymer() and ptab->key_exists(kit->first.getCanonicalWord())) {
         was_poisoned = true;
+        if constexpr(verbose) { std::cerr << "[[[was poisoned (" << kit->second << "," << s.substr(kit->second, k) << ")]]]\n"; }
         return was_poisoned;
       }
       ++kit;
@@ -535,14 +690,18 @@ struct poison_state_t {
       ub = (ub < start_it->second.contigLen_ - k) ? ub - 1 : start_it->second.contigLen_ - k;
 
       while ((kit != kit_end) and (kit->second < p2)) {
-        
-        if (!right_bound_resulted_from_open_search) {
-          // we shouldn't even have to check in strict mode.
-          was_poisoned = (strict_mode) ? false : ptab->key_occurs_in_unitig_between(kit->first.getCanonicalWord(), u1, lb, ub);
-        } else {
-          was_poisoned = ptab->key_exists(kit->first.getCanonicalWord());
+        if (!kit->first.is_homopolymer()) {
+          if (!right_bound_resulted_from_open_search) {
+            // we shouldn't even have to check in strict mode.
+            was_poisoned = (strict_mode) ? false : ptab->key_occurs_in_unitig_between(kit->first.getCanonicalWord(), u1, lb, ub);
+          } else {
+            was_poisoned = ptab->key_exists(kit->first.getCanonicalWord());
+          }
+          if (was_poisoned) { 
+            if constexpr(verbose) { std::cerr << "[[[was poisoned (" << kit->second << "," << s.substr(kit->second, k) << ")]]]\n"; }
+            return was_poisoned; 
+          }
         }
-        if (was_poisoned) { return was_poisoned; }
         ++kit;
       }
       ++start_it;
@@ -551,10 +710,17 @@ struct poison_state_t {
     
     // for any remaining k-mers in the read after the end of the last 
     // matching interval.
-    while (kit != kit_end) {
-      was_poisoned = ptab->key_exists(kit->first.getCanonicalWord());
+    while ((kit != kit_end) and (kit->second < terminal_pos)) {
+      was_poisoned = kit->first.is_homopolymer() ? false : ptab->key_exists(kit->first.getCanonicalWord());
       if (was_poisoned) { return was_poisoned; }
       ++kit;
+    }
+    if constexpr(verbose) {
+      if (was_poisoned) {
+        std::cerr << "[[[was poisoned (" << kit->second << "," << s.substr(kit->second, k) << ")]]]\n";
+      } else {
+        std::cerr << "\n\n[[[was not poisoned]]]\n\n";
+      }
     }
     return was_poisoned;
   }
@@ -585,6 +751,7 @@ struct poison_state_t {
   poison_table* ptab{nullptr};
 };
 
+template <typename sketch_hit_info_t>
 struct mapping_cache_info {
 public:
     mapping_cache_info(mindex::reference_index& ri) : k(ri.k()), q(ri.get_dict()), hs(&ri) {}
@@ -603,7 +770,7 @@ public:
     mapping::util::MappingType map_type{mapping::util::MappingType::UNMAPPED};
 
     // map from reference id to hit info
-    phmap::flat_hash_map<uint32_t, mapping::util::sketch_hit_info> hit_map;
+    phmap::flat_hash_map<uint32_t, sketch_hit_info_t> hit_map;
     std::vector<mapping::util::simple_hit> accepted_hits;
 
     // map to recall the number of unmapped reads we see
@@ -631,7 +798,8 @@ public:
     uint32_t max_ec_card{256};
 };
 
-inline bool map_read(std::string* read_seq, mapping_cache_info& map_cache, poison_state_t& poison_state, 
+template <typename mapping_cache_info_t>
+inline bool map_read(std::string* read_seq, mapping_cache_info_t& map_cache, poison_state_t& poison_state, 
                      mindex::SkippingStrategy strat = mindex::SkippingStrategy::STRICT, bool verbose = false) {
     map_cache.clear();
     // rebind map_cache variables to
@@ -695,6 +863,7 @@ inline bool map_read(std::string* read_seq, mapping_cache_info& map_cache, poiso
                       auto& ambiguous_hit_indices, auto& had_alt_max_occ) -> bool {
             (void)verbose;
             int32_t hit_idx{0};
+            hit_map.clear();
 
             for (auto& raw_hit : raw_hits) {
                 auto& read_pos = raw_hit.first;
@@ -792,7 +961,6 @@ inline bool map_read(std::string* read_seq, mapping_cache_info& map_cache, poiso
         // Further filtering of mappings by ambiguous k-mers
         if (perform_ambig_filtering and !hit_map.empty() and
             !map_cache.ambiguous_hit_indices.empty()) {
-            num_valid_hits = 0;
             phmap::flat_hash_set<uint64_t> observed_ecs;
             size_t min_cardinality_ec_size = std::numeric_limits<size_t>::max();
             uint64_t min_cardinality_ec = std::numeric_limits<size_t>::max();
@@ -936,9 +1104,10 @@ inline bool map_read(std::string* read_seq, mapping_cache_info& map_cache, poiso
     return early_stop;
 }
 
-inline void merge_se_mappings(mapping_cache_info& map_cache_left,
-                              mapping_cache_info& map_cache_right, int32_t left_len,
-                              int32_t right_len, mapping_cache_info& map_cache_out) {
+template <typename mapping_cache_info_t>
+inline void merge_se_mappings(mapping_cache_info_t& map_cache_left,
+                              mapping_cache_info_t& map_cache_right, int32_t left_len,
+                              int32_t right_len, mapping_cache_info_t& map_cache_out) {
     map_cache_out.clear();
     auto& accepted_left = map_cache_left.accepted_hits;
     auto& accepted_right = map_cache_right.accepted_hits;

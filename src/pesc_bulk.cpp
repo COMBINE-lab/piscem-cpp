@@ -61,11 +61,12 @@ void print_header(mindex::reference_index &ri, std::string &cmdline) {
 }
 
 // single-end
+template <typename mapping_cache_info_t>
 bool map_fragment(fastx_parser::ReadSeq &record, poison_state_t &poison_state,
                   mindex::SkippingStrategy skip_strat,
-                  mapping_cache_info &map_cache_left,
-                  mapping_cache_info &map_cache_right,
-                  mapping_cache_info &map_cache_out) {
+                  mapping_cache_info_t &map_cache_left,
+                  mapping_cache_info_t &map_cache_right,
+                  mapping_cache_info_t &map_cache_out) {
   (void)map_cache_left;
   (void)map_cache_right;
   return mapping::util::map_read(&record.seq, map_cache_out, poison_state,
@@ -73,11 +74,12 @@ bool map_fragment(fastx_parser::ReadSeq &record, poison_state_t &poison_state,
 }
 
 // paried-end
+template <typename mapping_cache_info_t>
 bool map_fragment(fastx_parser::ReadPair &record, poison_state_t &poison_state,
                   mindex::SkippingStrategy skip_strat,
-                  mapping_cache_info &map_cache_left,
-                  mapping_cache_info &map_cache_right,
-                  mapping_cache_info &map_cache_out) {
+                  mapping_cache_info_t &map_cache_left,
+                  mapping_cache_info_t &map_cache_right,
+                  mapping_cache_info_t &map_cache_out) {
   // don't map a poisned read pair
   poison_state.set_fragment_end(mapping::util::fragment_end::LEFT);
   bool early_exit_left = mapping::util::map_read(
@@ -116,7 +118,8 @@ bool map_fragment(fastx_parser::ReadPair &record, poison_state_t &poison_state,
 }
 
 // single-end
-inline void write_sam_mappings(mapping_cache_info &map_cache_out,
+template <typename mapping_cache_info_t>
+inline void write_sam_mappings(mapping_cache_info_t &map_cache_out,
                                fastx_parser::ReadSeq &record,
                                std::string &workstr_left,
                                std::string &workstr_right,
@@ -128,6 +131,9 @@ inline void write_sam_mappings(mapping_cache_info &map_cache_out,
 
   if (!map_cache_out.accepted_hits.empty()) {
     ++global_nhits;
+    if (map_cache_out.map_type == mapping::util::MappingType::UNMAPPED) {
+      spdlog_piscem::error("Had {} accepted hits, but mapping type was UNMAPPED; should not happen!", map_cache_out.accepted_hits.size());
+    }
     bool secondary = false;
     for (auto &ah : map_cache_out.accepted_hits) {
       uint16_t flag = secondary ? is_secondary : 0;
@@ -155,7 +161,8 @@ inline void write_sam_mappings(mapping_cache_info &map_cache_out,
 }
 
 // paired-end
-inline void write_sam_mappings(mapping_cache_info &map_cache_out,
+template <typename mapping_cache_info_t>
+inline void write_sam_mappings(mapping_cache_info_t &map_cache_out,
                                fastx_parser::ReadPair &record,
                                std::string &workstr_left,
                                std::string &workstr_right,
@@ -348,7 +355,7 @@ std::string &get_name(fastx_parser::ReadPair &rs) { return rs.first.name; }
 struct RadT {};
 struct SamT {};
 
-template <typename FragT, typename OutputT = RadT>
+template <typename FragT, typename SketchHitT, typename OutputT = RadT>
 void do_map(mindex::reference_index &ri,
             fastx_parser::FastxParser<FragT> &parser, poison_table &poison_map,
             mindex::SkippingStrategy skip_strat,
@@ -388,11 +395,11 @@ void do_map(mindex::reference_index &ri,
 
   pufferfish::CanonicalKmerIterator kit_end;
 
-  mapping_cache_info map_cache_left(ri);
+  mapping_cache_info<SketchHitT> map_cache_left(ri);
   map_cache_left.max_ec_card = max_ec_card;
-  mapping_cache_info map_cache_right(ri);
+  mapping_cache_info<SketchHitT> map_cache_right(ri);
   map_cache_right.max_ec_card = max_ec_card;
-  mapping_cache_info map_cache_out(ri);
+  mapping_cache_info<SketchHitT> map_cache_out(ri);
   map_cache_out.max_ec_card = max_ec_card;
 
   poison_state_t poison_state;
@@ -530,6 +537,7 @@ void do_map(mindex::reference_index &ri,
     }
   }
 
+
   // RAD output: dump any remaining output
   if constexpr (std::is_same_v<OutputT, RadT>) {
     if (num_reads_in_chunk > 0) {
@@ -584,6 +592,7 @@ int run_pesc_bulk(int argc, char **argv) {
   bool no_poison{false};
   bool use_sam_format{false};
   bool check_ambig_hits{false};
+  bool disable_structural_constraints{false};
   uint32_t max_ec_card{256};
   std::string skipping_rule;
 
@@ -629,6 +638,8 @@ int run_pesc_bulk(int argc, char **argv) {
                "Do not filter reads for poison k-mers, even if a poison table "
                "exists for the index");
   app.add_flag("--quiet", quiet, "Try to be quiet in terms of console output");
+  app.add_flag("-b,--no-struct-constraints", disable_structural_constraints, 
+               "Do not apply structural constraints (other than orientation consistency) when performing mapping");
   app.add_flag(
     "--sam-format", use_sam_format,
     "Write SAM format output rather than bulk RAD (mostly for testing).");
@@ -663,7 +674,7 @@ int run_pesc_bulk(int argc, char **argv) {
   if (quiet) {
     spdlog_piscem::set_level(spdlog_piscem::level::warn);
   }
-
+  spdlog_piscem::info("disable structural constraints : {}", disable_structural_constraints);
   // start the timer
   auto start_t = std::chrono::high_resolution_clock::now();
 
@@ -733,6 +744,10 @@ int run_pesc_bulk(int argc, char **argv) {
     spdlog_piscem::info(
       "No poison k-mer map exists, or it was requested not to be used");
   }
+  
+  // **Note**: the dispatch below is a bit messy right now, but 
+  // it's not clear how to clean it up without making it overly 
+  // complicated.
 
   // if we have paired-end data
   if (read_opt->empty()) {
@@ -746,18 +761,35 @@ int run_pesc_bulk(int argc, char **argv) {
       left_read_filenames, right_read_filenames, nthread, np);
     rparser.start();
 
+    using FragmentT = fastx_parser::ReadPair;
     for (size_t i = 0; i < nthread; ++i) {
       workers.push_back(std::thread(
         [&ri, &rparser, &ptab, &global_np, &global_nr, &global_nh, max_ec_card,
-         &out_info, &iomut, skip_strat, use_sam_format]() {
-          if (use_sam_format) {
-            do_map<fastx_parser::ReadPair, SamT>(
-              ri, rparser, ptab, skip_strat, global_np, global_nr, global_nh,
-              max_ec_card, out_info, iomut);
+         &out_info, &iomut, disable_structural_constraints, skip_strat, use_sam_format]() {
+          if (disable_structural_constraints) {
+            spdlog_piscem::info("Mapping reads without applying structural constraints.");
+            using SketchHitT = mapping::util::sketch_hit_info_no_struct_constraint;
+            if (use_sam_format) {
+              do_map<FragmentT, SketchHitT, SamT>(
+                ri, rparser, ptab, skip_strat, global_np, global_nr, global_nh,
+                max_ec_card, out_info, iomut);
+            } else {
+              do_map<FragmentT, SketchHitT, RadT>(
+                ri, rparser, ptab, skip_strat, global_np, global_nr, global_nh,
+                max_ec_card, out_info, iomut);
+            }
           } else {
-            do_map<fastx_parser::ReadPair, RadT>(
-              ri, rparser, ptab, skip_strat, global_np, global_nr, global_nh,
-              max_ec_card, out_info, iomut);
+            using SketchHitT = mapping::util::sketch_hit_info;
+            if (use_sam_format) {
+              do_map<FragmentT, SketchHitT, SamT>(
+                ri, rparser, ptab, skip_strat, global_np, global_nr, global_nh,
+                max_ec_card, out_info, iomut);
+            } else {
+              do_map<FragmentT, SketchHitT, RadT>(
+                ri, rparser, ptab, skip_strat, global_np, global_nr, global_nh,
+                max_ec_card, out_info, iomut);
+            }
+
           }
         }));
     }
@@ -777,18 +809,35 @@ int run_pesc_bulk(int argc, char **argv) {
       single_read_filenames, nthread, np);
     rparser.start();
 
-    for (size_t i = 0; i < nthread; ++i) {
+   using FragmentT = fastx_parser::ReadSeq;
+   for (size_t i = 0; i < nthread; ++i) {
       workers.push_back(std::thread(
         [&ri, &rparser, &ptab, &global_np, &global_nr, &global_nh, max_ec_card,
-         &out_info, &iomut, skip_strat, use_sam_format]() {
-          if (use_sam_format) {
-            do_map<fastx_parser::ReadSeq, SamT>(ri, rparser, ptab, skip_strat,
-                                                global_np, global_nr, global_nh,
-                                                max_ec_card, out_info, iomut);
+         &out_info, &iomut, disable_structural_constraints, skip_strat, use_sam_format]() {
+
+          if (disable_structural_constraints) {
+            using SketchHitT = mapping::util::sketch_hit_info_no_struct_constraint;
+            spdlog_piscem::info("Mapping reads without applying structural constraints.");
+            if (use_sam_format) {
+              do_map<FragmentT, SketchHitT, SamT>(ri, rparser, ptab, skip_strat,
+                                                  global_np, global_nr, global_nh,
+                                                  max_ec_card, out_info, iomut);
+            } else {
+              do_map<FragmentT, SketchHitT, RadT>(ri, rparser, ptab, skip_strat,
+                                                  global_np, global_nr, global_nh,
+                                                  max_ec_card, out_info, iomut);
+            }
           } else {
-            do_map<fastx_parser::ReadSeq, RadT>(ri, rparser, ptab, skip_strat,
-                                                global_np, global_nr, global_nh,
-                                                max_ec_card, out_info, iomut);
+            using SketchHitT = mapping::util::sketch_hit_info;
+            if (use_sam_format) {
+              do_map<FragmentT, SketchHitT, SamT>(ri, rparser, ptab, skip_strat,
+                                                  global_np, global_nr, global_nh,
+                                                  max_ec_card, out_info, iomut);
+            } else {
+              do_map<FragmentT, SketchHitT, RadT>(ri, rparser, ptab, skip_strat,
+                                                  global_np, global_nr, global_nh,
+                                                  max_ec_card, out_info, iomut);
+            }
           }
         }));
     }
@@ -800,6 +849,9 @@ int run_pesc_bulk(int argc, char **argv) {
   }
 
   spdlog_piscem::info("finished mapping.");
+
+  spdlog_piscem::info("processed ({}) reads; ({}) had mappings", global_nr, global_nh);
+
   if (!ptab.empty()) {
     spdlog_piscem::info(
       "number of reads discarded because of poison k-mers: {}", global_np);
@@ -833,12 +885,16 @@ int run_pesc_bulk(int argc, char **argv) {
   auto end_t = std::chrono::high_resolution_clock::now();
   auto num_sec =
     std::chrono::duration_cast<std::chrono::seconds>(end_t - start_t);
+
+  std::unordered_map<std::string, std::string> important_params;
+  important_params["disable_structural_constraints"] = (disable_structural_constraints ? "true" : "false");
   piscem::meta_info::run_stats rs;
   rs.cmd_line(cmdline);
   rs.num_reads(global_nr.load());
   rs.num_hits(global_nh.load());
   rs.num_poisoned(global_np.load());
   rs.num_seconds(num_sec.count());
+  rs.important_params(important_params);
 
   ghc::filesystem::path map_info_file_path = output_stem + ".map_info.json";
   bool info_ok = piscem::meta_info::write_map_info(rs, map_info_file_path);

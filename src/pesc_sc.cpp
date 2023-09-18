@@ -145,7 +145,7 @@ void do_map(mindex::reference_index& ri, fastx_parser::FastxParser<fastx_parser:
     size_t num_short_umi{0};
     size_t num_ambig_umi{0};
 
-    mapping::util::mapping_cache_info map_cache(ri);
+    mapping::util::mapping_cache_info<mapping::util::sketch_hit_info> map_cache(ri);
     map_cache.max_ec_card = po.max_ec_card;
 
     size_t max_chunk_reads = 5000;

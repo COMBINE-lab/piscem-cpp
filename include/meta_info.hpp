@@ -8,6 +8,7 @@ namespace piscem {
 
 namespace meta_info {
 class run_stats {
+  using ParamMapT = std::unordered_map<std::string, std::string>;
 public:
     run_stats() = default;
     inline void cmd_line(std::string& cmd_line_in) { cmd_line_ = cmd_line_in; }
@@ -15,12 +16,15 @@ public:
     inline void num_hits(uint64_t num_hits_in) { num_hits_ = num_hits_in; }
     inline void num_poisoned(uint64_t num_poisoned_in) { num_poisoned_ = num_poisoned_in; }
     inline void num_seconds(double num_sec) { num_seconds_ = num_sec; }
+    inline void important_params(ParamMapT param_map) { important_params_ = param_map; };
+
 
     inline std::string cmd_line() const { return cmd_line_; }
     inline uint64_t num_reads() const { return num_reads_; }
     inline uint64_t num_hits() const { return num_hits_; }
     inline uint64_t num_poisoned() const { return num_poisoned_; }
     inline double num_seconds() const { return num_seconds_; }
+    inline const ParamMapT& important_params() const { return important_params_; }
 
 private:
     std::string cmd_line_{""};
@@ -28,6 +32,7 @@ private:
     uint64_t num_hits_{0};
     uint64_t num_poisoned_{0};
     double num_seconds_{0};
+    ParamMapT important_params_;
 };
 
 inline bool write_map_info(run_stats& rs, ghc::filesystem::path& map_info_file_path) {
@@ -41,6 +46,10 @@ inline bool write_map_info(run_stats& rs, ghc::filesystem::path& map_info_file_p
     double percent_mapped = (100.0 * static_cast<double>(rs.num_hits())) / rs.num_reads();
     j["percent_mapped"] = percent_mapped;
     j["runtime_seconds"] = rs.num_seconds();
+    
+    for (auto& [k, v] : rs.important_params()) {
+      j[k] = v;
+    }
     // write prettified JSON to another file
     std::ofstream o(map_info_file_path.string());
 
