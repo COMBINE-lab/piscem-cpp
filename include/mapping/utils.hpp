@@ -618,12 +618,12 @@ struct poison_state_t {
   // [1] Hjörleifsson, K. E., Sullivan, D. K., Holley, G., Melsted, P. & Pachter, L. 
   // Accurate quantification of single-nucleus and single-cell RNA-seq transcripts.
   // bioRxiv. https://www.biorxiv.org/content/early/2022/12/02/2022. 12.02.518832 (2022)
-  bool scan_raw_hits(std::string& s, uint32_t k, std::vector<std::pair<int, projected_hits>>& h, mindex::SkippingStrategy strat) {
+  bool scan_raw_hits(std::string& s, uint32_t k, mindex::reference_index* index, std::vector<std::pair<int, projected_hits>>& h, mindex::SkippingStrategy strat) {
     // a read that didn't map can't be poisoned
     if (h.empty()) { return false; }
 
 
-    constexpr bool verbose = true;
+    constexpr bool verbose = false;
     const int32_t min_disjoint = s.length();
 
     bool strict_mode = (strat == mindex::SkippingStrategy::STRICT);
@@ -633,6 +633,8 @@ struct poison_state_t {
 
     auto terminal_pos = h.back().first + min_disjoint;
     pufferfish::CanonicalKmerIterator kit(s);
+
+    uint32_t last_uni = h.back().second.contig_id();
 
     if constexpr(verbose) {
       for (auto& hit : h) {
@@ -646,7 +648,8 @@ struct poison_state_t {
           bool ori = ref_pos_ori.isFW;
 
           if constexpr(verbose){
-            std::cerr << "kmer: " << s.substr(hit.first, k) << ", tid: " << tid << ", pos: " << pos << ", dir: " <<  (ori ? "fw" : "rc") << "\n";
+            auto& tname = index->ref_name(tid);
+            std::cerr << "kmer: " << s.substr(hit.first, k) << ", tid: " << tid << " (name: " << tname << "), pos: " << pos << ", dir: " <<  (ori ? "fw" : "rc") << "\n";
           }
         }
       }
@@ -654,7 +657,7 @@ struct poison_state_t {
 
     // scan up to the first hit looking for any poison k-mer
     while ((kit != kit_end) and (kit->second < first_pos) and (kit->second < terminal_pos)) {
-      if (!kit->first.is_homopolymer() and ptab->key_exists(kit->first.getCanonicalWord())) {
+      if (!kit->first.is_low_complexity() and ptab->key_exists(kit->first.getCanonicalWord())) {
         was_poisoned = true;
         if constexpr(verbose) { std::cerr << "[[[was poisoned (" << kit->second << "," << s.substr(kit->second, k) << ")]]]\n"; }
         return was_poisoned;
@@ -667,7 +670,6 @@ struct poison_state_t {
     auto start_it = h.begin();
     auto end_it = start_it+1;
     int last_pos = 0;
-    uint32_t last_uni = 0;
     (void) last_pos;
     (void) last_uni;
     while ((end_it != h.end()) and (kit != kit_end)) {
@@ -690,7 +692,7 @@ struct poison_state_t {
       ub = (ub < start_it->second.contigLen_ - k) ? ub - 1 : start_it->second.contigLen_ - k;
 
       while ((kit != kit_end) and (kit->second < p2)) {
-        if (!kit->first.is_homopolymer()) {
+        if (!kit->first.is_low_complexity()) {
           if (!right_bound_resulted_from_open_search) {
             // we shouldn't even have to check in strict mode.
             was_poisoned = (strict_mode) ? false : ptab->key_occurs_in_unitig_between(kit->first.getCanonicalWord(), u1, lb, ub);
@@ -711,8 +713,11 @@ struct poison_state_t {
     // for any remaining k-mers in the read after the end of the last 
     // matching interval.
     while ((kit != kit_end) and (kit->second < terminal_pos)) {
-      was_poisoned = kit->first.is_homopolymer() ? false : ptab->key_exists(kit->first.getCanonicalWord());
-      if (was_poisoned) { return was_poisoned; }
+      was_poisoned = kit->first.is_low_complexity() ? false : ptab->key_occurs_in_unitig(kit->first.getCanonicalWord(), last_uni);
+      if (was_poisoned) { 
+        if constexpr (verbose) { ptab->print_occs(kit->first.getCanonicalWord()); }
+        break;
+      }
       ++kit;
     }
     if constexpr(verbose) {
@@ -830,7 +835,7 @@ inline bool map_read(std::string* read_seq, mapping_cache_info_t& map_cache, poi
 
         // if we are applying a poison filter, do it here.
         if (apply_poison_filter) {
-          bool was_poisoned = poison_state.scan_raw_hits(*read_seq, k, raw_hits, strat);
+          bool was_poisoned = poison_state.scan_raw_hits(*read_seq, k, map_cache.hs.get_index(), raw_hits, strat);
           if (was_poisoned) {
             poison_state.poison_read();
             map_type = mapping::util::MappingType::UNMAPPED;
