@@ -674,6 +674,59 @@ inline void walk_safely_until(
 }
 
 
+// move forward on the current unitig by the proposed amount
+// and check if we have a match. returns true if we have a match
+// and false if we don't. The template parameter controls,
+// if there is a match, whether we add it to raw hits or 
+// roll back the state of skip_ctx.
+template <bool add_hit_if_successful> 
+inline bool check_direct_match(
+			SkipContext& skip_ctx,
+			int32_t k,
+			int direction,
+			int32_t dist,
+			int64_t& curr_pos,
+			std::vector<std::pair<int, projected_hits>>& raw_hits) 
+{
+
+  int32_t inc_offset = (direction * dist);
+  curr_pos += inc_offset;
+  skip_ctx.ref_contig_it.at(2 * curr_pos);
+  skip_ctx.fast_hit.ref_kmer = skip_ctx.ref_contig_it.read(2 * k);
+
+  auto direct_phit = raw_hits.back().second;
+  auto prev_hit_fw = direct_phit.hit_fw_on_contig();
+
+  if constexpr (add_hit_if_successful) {
+    direct_phit.resulted_from_open_search = false;
+    direct_phit.globalPos_ += inc_offset;
+    direct_phit.contigPos_ += inc_offset;
+  }
+
+  // check if what we find at the given position is a match 
+  // or not.
+  auto match_type = skip_ctx.check_match();
+  bool matches = (match_type != KmerMatchType::NO_MATCH);
+  int read_pos = skip_ctx.read_pos();
+
+  // in this branch, we moved forward on the contig and found 
+  // a match.
+  bool hit_fw = (match_type == KmerMatchType::IDENTITY_MATCH);
+  if (matches and (hit_fw == prev_hit_fw)) {
+    if constexpr (add_hit_if_successful) {
+      direct_phit.contigOrientation_ = hit_fw;
+      raw_hits.push_back({read_pos, direct_phit});
+      skip_ctx.increment_read_iter();
+    } 
+    // otherwise, we found the match, but we're not adding it.
+    // let the caller know we were successful.
+    return true;
+  } else {
+    // not a match
+    return false;
+  }
+}
+
 // This method performs k-mer / hit collection
 // using a custom implementation of the corresponding
 // part of the pseudoalignment algorithm as described in (1).
@@ -801,45 +854,20 @@ bool hit_searcher::get_raw_hits_sketch(std::string& read,
             continue;
           }
 
-          
-
           if (neighbor_dist < skip_dist) {
-            int32_t inc_offset = (direction * neighbor_dist);
-            cCurrPos += inc_offset;
-            skip_ctx.ref_contig_it.at(2 * cCurrPos);
-            skip_ctx.fast_hit.ref_kmer = skip_ctx.ref_contig_it.read(2 * k);
-
-            /*
-            auto direct_phit = raw_hits.back().second;
-            direct_phit.resulted_from_open_search = false;
-            direct_phit.globalPos_ += inc_offset;
-            direct_phit.contigPos_ += inc_offset;
-            */
-            auto prev_hit_fw = raw_hits.back().second.hit_fw_on_contig();
-
-            // check if what we find at the given position is a match 
-            // or not.
-            auto match_type = skip_ctx.check_match();
-            bool matches = (match_type != KmerMatchType::NO_MATCH);
-            int read_pos = skip_ctx.read_pos();
-
-            if constexpr (verbose) {
-              std::cerr << "read_pos: " <<  read_pos << ", neighbor_skip: " << neighbor_dist << ", successful? (";
-            }
-            // in this branch, we moved forward on the contig and found 
-            // a match.
-            bool hit_fw = (match_type == KmerMatchType::IDENTITY_MATCH);
-            if (!matches or (hit_fw != prev_hit_fw)) {
-              if constexpr (verbose) { std::cerr << "no)\n"; }
-
+            bool found_match = check_direct_match<false>(
+              skip_ctx, k, direction, neighbor_dist, 
+              cCurrPos, raw_hits);
+            if (!found_match) {
               // go to the top of the loop and do a regular search
               continue;
-            } 
-            if constexpr (verbose) { std::cerr << "yes)\n"; }
-            // otherwise, we found the match and we can proceed with the 
-            // jump. so reset the iterator and the cCurrPos;
-            skip_ctx.set_iter(backup_kit);
-            cCurrPos = backup_cpos;
+            } else { 
+              // found a match, so backup the skip_ctx and 
+              // current unitig position to prepare for the 
+              // actual skip.
+              skip_ctx.set_iter(backup_kit);
+              cCurrPos = backup_cpos;
+            }
           }
 
           // try to move forward the expected amount.
@@ -868,38 +896,10 @@ bool hit_searcher::get_raw_hits_sketch(std::string& read,
           // and check it directly.  If it matches, take it and continue
           // otherwise fallback to a standard search.
           if (actual_dist == skip_dist) {
-            int32_t inc_offset = (direction * skip_dist);
-            cCurrPos += inc_offset;
-            skip_ctx.ref_contig_it.at(2 * cCurrPos);
-            skip_ctx.fast_hit.ref_kmer = skip_ctx.ref_contig_it.read(2 * k);
-
-            auto direct_phit = raw_hits.back().second;
-            direct_phit.resulted_from_open_search = false;
-            direct_phit.globalPos_ += inc_offset;
-            direct_phit.contigPos_ += inc_offset;
-
-            // check if what we find at the given position is a match 
-            // or not.
-            auto match_type = skip_ctx.check_match();
-            bool matches = (match_type != KmerMatchType::NO_MATCH);
-            int read_pos = skip_ctx.read_pos();
-
-            // in this branch, we moved forward on the contig and found 
-            // a match.
-            bool hit_fw = (match_type == KmerMatchType::IDENTITY_MATCH);
-            if (matches and (hit_fw == direct_phit.hit_fw_on_contig())) {
-              direct_phit.contigOrientation_ = hit_fw;
-              raw_hits.push_back({read_pos, direct_phit});
-              skip_ctx.increment_read_iter();
-              if constexpr (verbose) {
-                std::cerr << "found skip hit with a quick check\n";
-              }
-              continue;
-            }
-            if constexpr (verbose) {
-              std::cerr << "quick check failed, performing full index query\n";
-            }
-
+            bool found_match = check_direct_match<true>(
+              skip_ctx, k, direction, skip_dist, 
+              cCurrPos, raw_hits);
+            if (found_match) { continue; }
           }
 
           // if we got here, either the iterator advanced too far 
@@ -911,11 +911,7 @@ bool hit_searcher::get_raw_hits_sketch(std::string& read,
             std::cerr << "query at read_pos: " << skip_ctx.read_pos() << " " << (alt_found ? "was" : "was not") << " found in the index\n";
           }
 
-          // If we don't see the k-mer at all, just pretend we did and 
-          // accept the hit.
-          bool accept_hit = !alt_found;
           projected_hits alt_phit; 
-
           // Otherwise, accept the hit only 
           // if the hit occurs on the same contig (in the same orientation?)
           if (alt_found) {
@@ -960,8 +956,10 @@ bool hit_searcher::get_raw_hits_sketch(std::string& read,
                   // matched our first contig
                   // so in this case add the mid_phit and *if it exists* 
                   // the alt_phit
+                  mid_phit.resulted_from_open_search = false;
                   raw_hits.push_back({skip_ctx.read_pos(), mid_phit});
                   if (alt_found) {
+                    alt_phit.resulted_from_open_search = true;
                     raw_hits.push_back({alt_kit->second, alt_phit});
                   }
                   mid_acceptable = true;
