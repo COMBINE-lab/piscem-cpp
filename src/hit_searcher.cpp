@@ -801,6 +801,8 @@ bool hit_searcher::get_raw_hits_sketch(std::string& read,
             continue;
           }
 
+          
+
           if (neighbor_dist < skip_dist) {
             int32_t inc_offset = (direction * neighbor_dist);
             cCurrPos += inc_offset;
@@ -967,6 +969,7 @@ bool hit_searcher::get_raw_hits_sketch(std::string& read,
                   // matched our second contig
                   // in this case, no point in adding the mid hit (it's redundant), 
                   // just add the alt_phit.
+                  alt_phit.resulted_from_open_search = true;
                   raw_hits.push_back({alt_kit->second, alt_phit});
                   mid_acceptable = true;
                 } else {
