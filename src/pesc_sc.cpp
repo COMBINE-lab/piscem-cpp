@@ -16,6 +16,7 @@
 #include "../include/spdlog_piscem/sinks/stdout_color_sinks.h"
 #include "../include/spdlog_piscem/spdlog.h"
 #include "../include/util.hpp"
+#include "../include/defaults.hpp"
 #include "../include/parallel_hashmap/phmap.h"
 #include "../include/parallel_hashmap/phmap_dump.h"
 #include "zlib.h"
@@ -39,7 +40,7 @@ using bc_kmer_t = rad::util::bc_kmer_t;
 
 enum class protocol_t : uint8_t { CHROM_V2, CHROM_V3, CUSTOM };
 
-struct pesc_options {
+struct pesc_sc_options {
     std::string index_basename;
     std::vector<std::string> left_read_filenames;
     std::vector<std::string> right_read_filenames;
@@ -50,8 +51,12 @@ struct pesc_options {
     bool no_poison{false};
     bool quiet{false};
     bool enable_structural_constraints{false};
-    bool check_ambig_hits{false};
-    uint32_t max_ec_card{4096};
+    bool ignore_ambig_hits{false};
+    uint32_t max_ec_card{piscem::defaults::max_ec_card};
+    uint32_t max_hit_occ{piscem::defaults::max_hit_occ};
+    uint32_t max_hit_occ_recover{piscem::defaults::max_hit_occ_recover};
+    uint32_t max_read_occ{piscem::defaults::max_read_occ};
+    bool attempt_occ_recover{true};
     size_t nthread{16};
     mindex::SkippingStrategy skip_strat{mindex::SkippingStrategy::PERMISSIVE};
 };
@@ -84,7 +89,7 @@ public:
 template <typename Protocol, typename SketchHitT>
 void do_map(mindex::reference_index& ri, fastx_parser::FastxParser<fastx_parser::ReadPair>& parser,
             poison_table& poison_map,
-            const Protocol& p, const pesc_options& po, 
+            const Protocol& p, const pesc_sc_options& po, 
             std::atomic<uint64_t>& global_nr,
             std::atomic<uint64_t>& global_nhits, 
             std::atomic<uint64_t>& global_npoisoned,
@@ -148,6 +153,10 @@ void do_map(mindex::reference_index& ri, fastx_parser::FastxParser<fastx_parser:
 
     mapping::util::mapping_cache_info<SketchHitT> map_cache(ri);
     map_cache.max_ec_card = po.max_ec_card;
+    map_cache.max_hit_occ = po.max_hit_occ;
+    map_cache.max_hit_occ_recover = po.max_hit_occ_recover;
+    map_cache.max_read_occ = po.max_read_occ;
+    map_cache.attempt_occ_recover = po.attempt_occ_recover;
 
     size_t max_chunk_reads = 5000;
     // Get the read group by which this thread will
@@ -318,7 +327,7 @@ int run_pesc_sc(int argc, char** argv) {
     std::ios_base::sync_with_stdio(false);
 
     std::string skipping_rule;
-    pesc_options po;
+    pesc_sc_options po;
     CLI::App app{"PESC — single-cell RNA-seq mapper for alevin-fry"};
     app.add_option("-i,--index", po.index_basename, "Input index prefix")->required();
     app.add_option("-1,--read1", po.left_read_filenames, "Path to list of (comma separated) read 1 files")
@@ -339,16 +348,39 @@ int run_pesc_sc(int argc, char** argv) {
     app.add_option("--skipping-strategy", skipping_rule, "Which skipping rule to use for pseudoalignment ({strict, permissive})")
         ->default_val("permissive");
     app.add_flag("--quiet", po.quiet, "Try to be quiet in terms of console output");
-    auto check_ambig =
-        app.add_flag("--check-ambig-hits", po.check_ambig_hits,
-                     "Check the existence of highly-frequent hits in mapped targets, rather than "
-                     "ignoring them");
+    auto ignore_ambig =
+        app.add_flag("--ignore-ambig-hits", po.ignore_ambig_hits,
+                     "Ignore the existence of highly-frequent hits in mapped targets, rather than "
+                     "falling back to a simplified strategy to count them.");
     app.add_option("--max-ec-card", po.max_ec_card,
                    "Determines the maximum cardinality equivalence class "
                    "(number of (txp, orientation status) pairs) to examine "
-                   "if performing check-ambig-hits")
-        ->needs(check_ambig)
-        ->default_val(4096);
+                   "if not ignoring highly ambiguous hits.")
+        ->excludes(ignore_ambig)
+        ->default_val(piscem::defaults::max_ec_card);
+
+    auto agroup = app.add_option_group("advanced options", "provide advanced options to control mapping");
+    agroup
+      ->add_option("--max-hit-occ", po.max_hit_occ,
+                   "In the first pass, consider only k-mers having <= --max-hit-occ hits.")
+      ->default_val(piscem::defaults::max_hit_occ);
+    agroup
+      ->add_option("--max-hit-occ-recover", po.max_hit_occ_recover,
+                   "If all k-mers have > --max-hit-occ hits, then make a second pass and consider k-mers "
+                   "having <= --max-hit-occ-recover hits.")
+      ->default_val(piscem::defaults::max_hit_occ_recover);
+    agroup
+      ->add_option("--max-read-occ", po.max_read_occ,
+                   "Reads with more than this number of mappings will not have "
+                   "their mappings reported.")
+      ->default_val(piscem::defaults::max_read_occ);
+   
+    /*
+     "Note, this can be greater than "
+     "--max-hit-occ-recover because of ambiguous hit recovery "
+     "and the --max-ec-card parameter.")
+    */
+
     CLI11_PARSE(app, argc, argv);
 
     spdlog_piscem::drop_all();
@@ -358,6 +390,8 @@ int run_pesc_sc(int argc, char** argv) {
 
     if (po.quiet) { spdlog_piscem::set_level(spdlog_piscem::level::warn); }
     spdlog_piscem::info("enable structural constraints : {}", po.enable_structural_constraints);
+
+    po.attempt_occ_recover = (po.max_hit_occ_recover > po.max_hit_occ);
 
     // start the timer
     auto start_t = std::chrono::high_resolution_clock::now();
@@ -392,7 +426,7 @@ int run_pesc_sc(int argc, char** argv) {
     }
 
     // load the main index
-    bool attempt_load_ec_map = po.check_ambig_hits;
+    bool attempt_load_ec_map = !po.ignore_ambig_hits;
     mindex::reference_index ri(po.index_basename, attempt_load_ec_map);
 
     // RAD file path

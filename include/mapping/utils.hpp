@@ -789,10 +789,10 @@ public:
     // for each barcode
     phmap::flat_hash_map<uint64_t, uint32_t> unmapped_bc_map;
 
-    size_t max_occ_default = 256;
-    size_t max_occ_recover = 1024;
-    const bool attempt_occ_recover = (max_occ_recover > max_occ_default);
-    size_t alt_max_occ = 2500;
+    size_t max_hit_occ = 256;
+    size_t max_hit_occ_recover = 1024;
+    bool attempt_occ_recover = (max_hit_occ_recover > max_hit_occ);
+    size_t max_read_occ = 2500;
     size_t k{0};
 
     // to perform queries
@@ -807,7 +807,7 @@ public:
     itlib::small_vector<uint32_t, 255> ambiguous_hit_indices;
 
     // max ec card
-    uint32_t max_ec_card{256};
+    uint32_t max_ec_card{4096};
 };
 
 template <typename mapping_cache_info_t>
@@ -865,14 +865,13 @@ inline bool map_read(std::string* read_seq, mapping_cache_info_t& map_cache, poi
 
         // this is false by default and will be set to true
         // if *every* collected hit for this fragment occurs
-        // max_occ_default times or more.
-        bool had_alt_max_occ = false;
+        // max_hit_occ times or more.
         int32_t signed_rl = static_cast<int32_t>(read_seq->length());
         auto collect_mappings_from_hits =
             [&max_stretch, &min_occ, &hit_map, &num_valid_hits, &total_occs, &largest_occ,
              signed_rl, k, perform_ambig_filtering, &map_cache,
              verbose](auto& raw_hits, auto& prev_read_pos, auto& max_allowed_occ,
-                      auto& ambiguous_hit_indices, auto& had_alt_max_occ) -> bool {
+                      auto& ambiguous_hit_indices) -> bool {
             (void)verbose;
             int32_t hit_idx{0};
             hit_map.clear();
@@ -884,7 +883,6 @@ inline bool map_read(std::string* read_seq, mapping_cache_info_t& map_cache, poi
 
                 uint64_t num_occ = static_cast<uint64_t>(refs.size());
                 min_occ = std::min(min_occ, num_occ);
-                had_alt_max_occ = true;
 
                 bool still_have_valid_target = false;
                 prev_read_pos = read_pos;
@@ -950,24 +948,23 @@ inline bool map_read(std::string* read_seq, mapping_cache_info_t& map_cache, poi
             return false;
         };
 
-        bool _discard = false;
-        auto mao_first_pass = map_cache.max_occ_default - 1;
+        auto mao_first_pass = map_cache.max_hit_occ - 1;
         early_stop = collect_mappings_from_hits(raw_hits, prev_read_pos, mao_first_pass,
-                                                map_cache.ambiguous_hit_indices, _discard);
+                                                map_cache.ambiguous_hit_indices);
 
         // If our default threshold was too stringent, then fallback to a more liberal
         // threshold and look up the k-mers that occur the least frequently.
-        // Specifically, if the min occuring hits have frequency < max_occ_recover (2500 by
+        // Specifically, if the min occuring hits have frequency < max_hit_occ_recover (2500 by
         // default) times, then collect the min occuring hits to get the mapping.
-        if (attempt_occ_recover and (min_occ >= map_cache.max_occ_default) and
-            (min_occ < map_cache.max_occ_recover)) {
+        if (attempt_occ_recover and (min_occ >= map_cache.max_hit_occ) and
+            (min_occ < map_cache.max_hit_occ_recover)) {
             num_valid_hits = 0;
             map_cache.ambiguous_hit_indices.clear();
             prev_read_pos = -1;
             uint64_t max_allowed_occ = min_occ;
             early_stop =
                 collect_mappings_from_hits(raw_hits, prev_read_pos, max_allowed_occ,
-                                           map_cache.ambiguous_hit_indices, had_alt_max_occ);
+                                           map_cache.ambiguous_hit_indices);
         }
 
         // Further filtering of mappings by ambiguous k-mers
@@ -1086,7 +1083,7 @@ inline bool map_read(std::string* read_seq, mapping_cache_info_t& map_cache, poi
             }
         }
 
-        // alt_max_occ = had_alt_max_occ ? accepted_hits.size() : max_occ_default;
+        // max_read_occ = had_max_read_occ ? accepted_hits.size() : max_hit_occ;
 
         /*
          * This rule; if enabled, allows through mappings missing a single hit, if there
@@ -1106,7 +1103,7 @@ inline bool map_read(std::string* read_seq, mapping_cache_info_t& map_cache, poi
     }  // DONE : if (rh)
 
     // If the read mapped to > maxReadOccs places, discard it
-    if (accepted_hits.size() > map_cache.alt_max_occ) {
+    if (accepted_hits.size() > map_cache.max_read_occ) {
         accepted_hits.clear();
         map_type = mapping::util::MappingType::UNMAPPED;
     } else if (!accepted_hits.empty()) {
