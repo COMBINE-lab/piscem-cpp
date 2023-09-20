@@ -956,10 +956,17 @@ bool hit_searcher::get_raw_hits_sketch(std::string& read,
                 auto mid_phit = skip_ctx.proj_hits();
                 if (mid_phit.contig_id() == phit.contig_id()) {
                   // matched our first contig
+                  // so in this case add the mid_phit and *if it exists* 
+                  // the alt_phit
                   raw_hits.push_back({skip_ctx.read_pos(), mid_phit});
+                  if (alt_found) {
+                    raw_hits.push_back({alt_kit->second, alt_phit});
+                  }
                   mid_acceptable = true;
                 } else if (alt_found and mid_phit.contig_id() == alt_phit.contig_id()) {
                   // matched our second contig
+                  // in this case, no point in adding the mid hit (it's redundant), 
+                  // just add the alt_phit.
                   raw_hits.push_back({alt_kit->second, alt_phit});
                   mid_acceptable = true;
                 } else {

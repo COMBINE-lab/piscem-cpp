@@ -624,17 +624,27 @@ struct poison_state_t {
 
 
     constexpr bool verbose = false;
-    const int32_t min_disjoint = s.length();
+    const int32_t min_disjoint = 10;//s.length();
 
     bool strict_mode = (strat == mindex::SkippingStrategy::STRICT);
     bool was_poisoned = false;
     auto first_pos = h.front().first;
     pufferfish::CanonicalKmerIterator kit_end;
 
-    auto terminal_pos = h.back().first + min_disjoint;
     pufferfish::CanonicalKmerIterator kit(s);
 
-    uint32_t last_uni = h.back().second.contig_id();
+    uint32_t first_uni = h.front().second.contig_id();
+    auto& last_phit = h.back().second;
+    uint32_t last_uni = last_phit.contig_id();
+    int64_t dist_to_contig_end = -1;
+    // fw ori
+    if (last_phit.hit_fw_on_contig()) {
+      dist_to_contig_end = static_cast<int64_t>(last_phit.contig_len()) - (static_cast<int64_t>(last_phit.contig_pos() + k));
+    } else {  // rc ori
+      dist_to_contig_end = static_cast<int64_t>(last_phit.contig_pos());
+    }
+    auto terminal_pos = h.back().first + dist_to_contig_end;
+
 
     if constexpr(verbose) {
       for (auto& hit : h) {
@@ -656,8 +666,8 @@ struct poison_state_t {
     }
 
     // scan up to the first hit looking for any poison k-mer
-    while ((kit != kit_end) and (kit->second < first_pos) and (kit->second < terminal_pos)) {
-      if (!kit->first.is_low_complexity() and ptab->key_exists(kit->first.getCanonicalWord())) {
+    while ((kit != kit_end) and (kit->second < first_pos)) {
+      if (ptab->key_exists(kit->first.getCanonicalWord())) {
         was_poisoned = true;
         if constexpr(verbose) { std::cerr << "[[[was poisoned (" << kit->second << "," << s.substr(kit->second, k) << ")]]]\n"; }
         return was_poisoned;
@@ -712,8 +722,9 @@ struct poison_state_t {
     
     // for any remaining k-mers in the read after the end of the last 
     // matching interval.
-    while ((kit != kit_end) and (kit->second < terminal_pos)) {
-      was_poisoned = kit->first.is_low_complexity() ? false : ptab->key_occurs_in_unitig(kit->first.getCanonicalWord(), last_uni);
+    while (kit != kit_end) {
+      //was_poisoned = kit->first.is_low_complexity() ? false : ptab->key_exists(kit->first.getCanonicalWord());//
+      was_poisoned = (kit->second < terminal_pos) ? ptab->key_occurs_in_unitig(kit->first.getCanonicalWord(), last_uni) : ptab->key_exists(kit->first.getCanonicalWord());
       if (was_poisoned) { 
         if constexpr (verbose) { ptab->print_occs(kit->first.getCanonicalWord()); }
         break;
