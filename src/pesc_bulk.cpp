@@ -592,7 +592,7 @@ int run_pesc_bulk(int argc, char **argv) {
   bool no_poison{false};
   bool use_sam_format{false};
   bool check_ambig_hits{false};
-  bool disable_structural_constraints{false};
+  bool enable_structural_constraints{false};
   uint32_t max_ec_card{256};
   std::string skipping_rule;
 
@@ -638,8 +638,8 @@ int run_pesc_bulk(int argc, char **argv) {
                "Do not filter reads for poison k-mers, even if a poison table "
                "exists for the index");
   app.add_flag("--quiet", quiet, "Try to be quiet in terms of console output");
-  app.add_flag("-b,--no-struct-constraints", disable_structural_constraints, 
-               "Do not apply structural constraints (other than orientation consistency) when performing mapping");
+  app.add_flag("-c,--struct-constraints", enable_structural_constraints, 
+               "Apply structural constraints when performing mapping");
   app.add_flag(
     "--sam-format", use_sam_format,
     "Write SAM format output rather than bulk RAD (mostly for testing).");
@@ -674,7 +674,7 @@ int run_pesc_bulk(int argc, char **argv) {
   if (quiet) {
     spdlog_piscem::set_level(spdlog_piscem::level::warn);
   }
-  spdlog_piscem::info("disable structural constraints : {}", disable_structural_constraints);
+  spdlog_piscem::info("enable structural constraints : {}", enable_structural_constraints);
   // start the timer
   auto start_t = std::chrono::high_resolution_clock::now();
 
@@ -765,9 +765,8 @@ int run_pesc_bulk(int argc, char **argv) {
     for (size_t i = 0; i < nthread; ++i) {
       workers.push_back(std::thread(
         [&ri, &rparser, &ptab, &global_np, &global_nr, &global_nh, max_ec_card,
-         &out_info, &iomut, disable_structural_constraints, skip_strat, use_sam_format]() {
-          if (disable_structural_constraints) {
-            spdlog_piscem::info("Mapping reads without applying structural constraints.");
+         &out_info, &iomut, enable_structural_constraints, skip_strat, use_sam_format]() {
+          if (!enable_structural_constraints) {
             using SketchHitT = mapping::util::sketch_hit_info_no_struct_constraint;
             if (use_sam_format) {
               do_map<FragmentT, SketchHitT, SamT>(
@@ -813,11 +812,10 @@ int run_pesc_bulk(int argc, char **argv) {
    for (size_t i = 0; i < nthread; ++i) {
       workers.push_back(std::thread(
         [&ri, &rparser, &ptab, &global_np, &global_nr, &global_nh, max_ec_card,
-         &out_info, &iomut, disable_structural_constraints, skip_strat, use_sam_format]() {
+         &out_info, &iomut, enable_structural_constraints, skip_strat, use_sam_format]() {
 
-          if (disable_structural_constraints) {
+          if (!enable_structural_constraints) {
             using SketchHitT = mapping::util::sketch_hit_info_no_struct_constraint;
-            spdlog_piscem::info("Mapping reads without applying structural constraints.");
             if (use_sam_format) {
               do_map<FragmentT, SketchHitT, SamT>(ri, rparser, ptab, skip_strat,
                                                   global_np, global_nr, global_nh,
@@ -887,7 +885,7 @@ int run_pesc_bulk(int argc, char **argv) {
     std::chrono::duration_cast<std::chrono::seconds>(end_t - start_t);
 
   std::unordered_map<std::string, std::string> important_params;
-  important_params["disable_structural_constraints"] = (disable_structural_constraints ? "true" : "false");
+  important_params["enable_structural_constraints"] = (enable_structural_constraints ? "true" : "false");
   piscem::meta_info::run_stats rs;
   rs.cmd_line(cmdline);
   rs.num_reads(global_nr.load());

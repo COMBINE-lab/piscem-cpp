@@ -622,10 +622,7 @@ struct poison_state_t {
     // a read that didn't map can't be poisoned
     if (h.empty()) { return false; }
 
-
     constexpr bool verbose = false;
-    const int32_t min_disjoint = 10;//s.length();
-
     bool strict_mode = (strat == mindex::SkippingStrategy::STRICT);
     bool was_poisoned = false;
     auto first_pos = h.front().first;
@@ -633,7 +630,6 @@ struct poison_state_t {
 
     pufferfish::CanonicalKmerIterator kit(s);
 
-    uint32_t first_uni = h.front().second.contig_id();
     auto& last_phit = h.back().second;
     uint32_t last_uni = last_phit.contig_id();
     int64_t dist_to_contig_end = -1;
