@@ -647,7 +647,7 @@ int run_pesc_bulk(int argc, char **argv) {
     .add_option(
       "--skipping-strategy", skipping_rule,
       "Which skipping rule to use for pseudoalignment ({strict, permissive})")
-    ->default_val("strict");
+    ->default_val("permissive");
   auto check_ambig = app.add_flag("--check-ambig-hits", check_ambig_hits,
                                   "Check the existence of highly-frequent hits "
                                   "in mapped targets, rather than "
@@ -658,7 +658,7 @@ int run_pesc_bulk(int argc, char **argv) {
                 "(number of (txp, orientation status) pairs) to examine "
                 "if performing check-ambig-hits")
     ->needs(check_ambig)
-    ->default_val(256);
+    ->default_val(4096);
 
   CLI11_PARSE(app, argc, argv);
 

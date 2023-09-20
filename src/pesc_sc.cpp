@@ -49,10 +49,11 @@ struct pesc_options {
     std::unique_ptr<custom_protocol> p{nullptr};
     bool no_poison{false};
     bool quiet{false};
+    bool enable_structural_constraints{false};
     bool check_ambig_hits{false};
-    uint32_t max_ec_card{256};
+    uint32_t max_ec_card{4096};
     size_t nthread{16};
-    mindex::SkippingStrategy skip_strat{mindex::SkippingStrategy::STRICT};
+    mindex::SkippingStrategy skip_strat{mindex::SkippingStrategy::PERMISSIVE};
 };
 
 // utility class that wraps the information we will
@@ -80,7 +81,7 @@ public:
     std::mutex unmapped_bc_mutex;
 };
 
-template <typename Protocol>
+template <typename Protocol, typename SketchHitT>
 void do_map(mindex::reference_index& ri, fastx_parser::FastxParser<fastx_parser::ReadPair>& parser,
             poison_table& poison_map,
             const Protocol& p, const pesc_options& po, 
@@ -145,7 +146,7 @@ void do_map(mindex::reference_index& ri, fastx_parser::FastxParser<fastx_parser:
     size_t num_short_umi{0};
     size_t num_ambig_umi{0};
 
-    mapping::util::mapping_cache_info<mapping::util::sketch_hit_info> map_cache(ri);
+    mapping::util::mapping_cache_info<SketchHitT> map_cache(ri);
     map_cache.max_ec_card = po.max_ec_card;
 
     size_t max_chunk_reads = 5000;
@@ -333,8 +334,10 @@ int run_pesc_sc(int argc, char** argv) {
                    "An integer that specifies the number of threads to use")
         ->default_val(16);
     app.add_flag("--no-poison", po.no_poison, "Do not filter reads for poison k-mers, even if a poison table exists for the index");
+    app.add_flag("-c,--struct-constraints", po.enable_structural_constraints, 
+                 "Apply structural constraints when performing mapping");
     app.add_option("--skipping-strategy", skipping_rule, "Which skipping rule to use for pseudoalignment ({strict, permissive})")
-        ->default_val("strict");
+        ->default_val("permissive");
     app.add_flag("--quiet", po.quiet, "Try to be quiet in terms of console output");
     auto check_ambig =
         app.add_flag("--check-ambig-hits", po.check_ambig_hits,
@@ -345,7 +348,7 @@ int run_pesc_sc(int argc, char** argv) {
                    "(number of (txp, orientation status) pairs) to examine "
                    "if performing check-ambig-hits")
         ->needs(check_ambig)
-        ->default_val(256);
+        ->default_val(4096);
     CLI11_PARSE(app, argc, argv);
 
     spdlog_piscem::drop_all();
@@ -354,6 +357,7 @@ int run_pesc_sc(int argc, char** argv) {
     spdlog_piscem::set_default_logger(logger);
 
     if (po.quiet) { spdlog_piscem::set_level(spdlog_piscem::level::warn); }
+    spdlog_piscem::info("enable structural constraints : {}", po.enable_structural_constraints);
 
     // start the timer
     auto start_t = std::chrono::high_resolution_clock::now();
@@ -453,7 +457,13 @@ int run_pesc_sc(int argc, char** argv) {
                 chromium_v2 prot;
                 workers.push_back(std::thread(
                     [&ri, &rparser, &ptab, &prot, &po, &global_nr, &global_nh, &global_np, &iomut, &out_info]() {
-                        do_map(ri, rparser, ptab, prot, po, global_nr, global_nh, global_np, out_info, iomut);
+                      if (!po.enable_structural_constraints) {
+                        using SketchHitT = mapping::util::sketch_hit_info_no_struct_constraint;
+                        do_map<decltype(prot), SketchHitT>(ri, rparser, ptab, prot, po, global_nr, global_nh, global_np, out_info, iomut);
+                      } else {
+                        using SketchHitT = mapping::util::sketch_hit_info;
+                        do_map<decltype(prot), SketchHitT>(ri, rparser, ptab, prot, po, global_nr, global_nh, global_np, out_info, iomut);
+                      }
                     }));
                 break;
             }
@@ -461,14 +471,26 @@ int run_pesc_sc(int argc, char** argv) {
                 chromium_v3 prot;
                 workers.push_back(std::thread(
                     [&ri, &rparser, &ptab, &prot, &po, &global_nr, &global_nh, &global_np, &iomut, &out_info]() {
-                        do_map(ri, rparser, ptab, prot, po, global_nr, global_nh, global_np, out_info, iomut);
+                      if (!po.enable_structural_constraints) {
+                        using SketchHitT = mapping::util::sketch_hit_info_no_struct_constraint;
+                        do_map<decltype(prot), SketchHitT>(ri, rparser, ptab, prot, po, global_nr, global_nh, global_np, out_info, iomut);
+                      } else {
+                        using SketchHitT = mapping::util::sketch_hit_info;
+                        do_map<decltype(prot), SketchHitT>(ri, rparser, ptab, prot, po, global_nr, global_nh, global_np, out_info, iomut);
+                      }
                     }));
                 break;
             }
             case protocol_t::CUSTOM: {
                 workers.push_back(
                     std::thread([&ri, &rparser, &ptab, &po, &global_nr, &global_nh, &global_np, &iomut, &out_info]() {
-                        do_map(ri, rparser, ptab, *(po.p), po, global_nr, global_nh, global_np, out_info, iomut);
+                      if (!po.enable_structural_constraints) {
+                        using SketchHitT = mapping::util::sketch_hit_info_no_struct_constraint;
+                        do_map<decltype(*(po.p)), SketchHitT>(ri, rparser, ptab, *(po.p), po, global_nr, global_nh, global_np, out_info, iomut);
+                      } else { 
+                        using SketchHitT = mapping::util::sketch_hit_info;
+                        do_map<decltype(*(po.p)), SketchHitT>(ri, rparser, ptab, *(po.p), po, global_nr, global_nh, global_np, out_info, iomut);
+                      }
                     }));
                 break;
             }
