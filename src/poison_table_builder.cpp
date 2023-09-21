@@ -9,7 +9,9 @@
 #include "../include/poison_table.hpp"
 #include "../include/reference_index.hpp"
 #include "../include/util.hpp"
-#include "spdlog_piscem/spdlog.h"
+#include "../include/spdlog_piscem/sinks/stdout_color_sinks.h"
+#include "../include/spdlog_piscem/spdlog.h"
+
 
 #include <algorithm>
 #include <cstdio>
@@ -161,9 +163,7 @@ struct decoy_opts {
 };
 
 int run_build_poison_table(int argc, char *argv[]) {
-
   std::ios_base::sync_with_stdio(false);
-  spdlog_piscem::set_level(spdlog_piscem::level::info);
 
   decoy_opts po;
   CLI::App app{"Extract poison k-mers."};
@@ -187,6 +187,16 @@ int run_build_poison_table(int argc, char *argv[]) {
   app.add_flag("--quiet", po.quiet,
                "try to be quiet in terms of console output");
   CLI11_PARSE(app, argc, argv);
+
+  spdlog_piscem::drop_all();
+  auto logger =
+    spdlog_piscem::create<spdlog_piscem::sinks::stderr_color_sink_mt>("");
+  logger->set_pattern("%+");
+  spdlog_piscem::set_default_logger(logger);
+
+  if (po.quiet) {
+    spdlog_piscem::set_level(spdlog_piscem::level::warn);
+  }
 
   if (!(po.poison_method == "edge" or po.poison_method == "node")) {
     spdlog_piscem::critical("The -m/--method flag must be one of \"edge\" or "
