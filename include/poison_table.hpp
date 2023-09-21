@@ -59,10 +59,8 @@ public:
   // `basename`) from  which to load the poison table.
   static auto exists(const std::string &basename) -> bool {
     std::string pmap_name = basename + ".poison";
-    std::string pocc_name = basename + ".poison_occs";
 
-    return (ghc::filesystem::exists(pmap_name) and
-            ghc::filesystem::exists(pocc_name));
+    return ghc::filesystem::exists(pmap_name);
   }
 
   // construct, copy, or assign the poison table.
@@ -88,37 +86,32 @@ public:
   // with the provided `basename`) from disk.
   poison_table(const std::string &basename) {
     std::string pmap_name = basename + ".poison";
-    std::string pocc_name = basename + ".poison_occs";
     if (!ghc::filesystem::exists(pmap_name)) {
       spdlog_piscem::critical("Can not load poison map as {} does not exist!",
                               pmap_name);
       std::exit(1);
     }
-    if (!ghc::filesystem::exists(pmap_name)) {
-      spdlog_piscem::critical(
-        "Can not load poison occ table as {} does not exist!", pocc_name);
-      std::exit(1);
-    }
-
-    {
-      phmap::BinaryInputArchive ar_in(pmap_name.c_str());
-      spdlog_piscem::info("Loading poison map...");
-      poison_map_.phmap_load(ar_in);
-      spdlog_piscem::info("done");
-    }
-
+  
     {
       spdlog_piscem::info("Loading poison occ table...");
-      std::fstream poc_file{pocc_name.c_str(), std::ios::binary | std::ios::in};
+      std::ifstream poc_file{pmap_name.c_str(), std::ios::binary | std::ios::in};
       if (!poc_file.good()) {
-        spdlog_piscem::critical("Error opening poison occ table {}.",
-                                pocc_name);
+        spdlog_piscem::critical("Error opening poison table {}.",
+                                pmap_name);
         std::exit(1);
       }
       auto state = bitsery::quickDeserialization<bitsery::InputStreamAdapter>(
         poc_file, offsets_);
       state = bitsery::quickDeserialization<bitsery::InputStreamAdapter>(
         poc_file, poison_occs_);
+
+      // now that we have read the occ_table, we can safely move 
+      // the underlying input stream object into the BinaryInputArchive
+      // to load the hash_map.
+      phmap::BinaryInputArchive ar_in(std::move(poc_file));
+      spdlog_piscem::info("Loading poison map...");
+      poison_map_.phmap_load(ar_in);
+      spdlog_piscem::info("done");
     }
   }
 
@@ -229,9 +222,12 @@ public:
   // required for the correctness or use of the table later.
   bool save_to_file(const std::string &output_file, uint64_t global_nk) {
     {
-      std::string poc_filename = output_file + "_occs";
-      // std::ofstream poc_file(poc_filename, std::ios::binary);
-      std::fstream poc_file{poc_filename.c_str(),
+      std::string poc_filename = output_file; 
+      // first serialize the offsets and occ table to the 
+      // bitsery stream. Be sure to flush the adapter so the 
+      // internal stream is at the right point when we go to 
+      // write the hash map.
+      std::ofstream poc_file{poc_filename.c_str(),
                             std::ios::binary | std::ios::trunc | std::ios::out};
       bitsery::Serializer<bitsery::OutputBufferedStreamAdapter> ser{poc_file};
       if (!poc_file.good()) {
@@ -243,6 +239,12 @@ public:
       ser.adapter().flush();
       ser(poison_occs_);
       ser.adapter().flush();
+
+      // now that we wrote the occ table, we can safely move the ofstream 
+      // object to which we are writing to the hash_map BinaryOutputArchive
+      // and save the hash table itself at the end of the archive.
+      phmap::BinaryOutputArchive ar_out(std::move(poc_file));
+      poison_map_.phmap_dump(ar_out);
     }
 
     int32_t max_range = 0;
@@ -258,9 +260,6 @@ public:
     spdlog_piscem::info("[poison_table]: Examined {} total decoy k-mers, "
                         "recorded {} poison k-mers.",
                         global_nk, poison_map_.size());
-
-    phmap::BinaryOutputArchive ar_out(output_file.c_str());
-    poison_map_.phmap_dump(ar_out);
 
     {
       std::string pinf_filename = output_file + ".json";

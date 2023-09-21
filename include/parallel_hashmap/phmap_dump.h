@@ -169,6 +169,14 @@ public:
         ofs_.open(file_path, std::ofstream::out | std::ofstream::trunc | std::ofstream::binary);
     }
 
+    BinaryOutputArchive(std::ofstream&& ofs) {
+        ofs_ = std::move(ofs);
+    }
+
+    std::ofstream& get_file_stream() { 
+      return ofs_;
+    }
+
     bool saveBinary(const void *p, size_t sz) {
         ofs_.write(reinterpret_cast<const char*>(p), sz);
         return true;
@@ -197,6 +205,15 @@ public:
     BinaryInputArchive(const char * file_path) {
         ifs_.open(file_path, std::ofstream::in | std::ofstream::binary);
     }
+
+    BinaryInputArchive(std::ifstream&& ifs) {
+        ifs_ = std::move(ifs);
+    }
+
+    std::ifstream& get_file_stream() { 
+      return ifs_;
+    }
+
 
     bool loadBinary(void* p, size_t sz) {
         ifs_.read(reinterpret_cast<char*>(p), sz);
