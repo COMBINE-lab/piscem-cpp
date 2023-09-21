@@ -1,3 +1,6 @@
+#ifndef __PISCEM_DEFAULTS__
+#define __PISCEM_DEFAULTS__
+
 namespace piscem {
 
   namespace defaults {
@@ -10,3 +13,5 @@ namespace piscem {
   }
 
 }
+
+#endif // __PISCEM_DEFAULTS__
