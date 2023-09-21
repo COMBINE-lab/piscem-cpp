@@ -495,7 +495,6 @@ struct sketch_hit_info_no_struct_constraint {
         }
         return added;
         // NO STRUCTURAL CONSTRAINTS
-
     }
 
     // add a hit to the current target that occurs in the forward
@@ -508,23 +507,23 @@ struct sketch_hit_info_no_struct_constraint {
         bool added{false};
         int32_t approx_map_pos = (ref_pos - (rl - (read_pos + k)));
 
-            if (read_pos > last_read_pos_rc) {
-                approx_pos_rc = approx_map_pos;
-                if (last_read_pos_rc == -1) {
-                    approx_end_pos_rc = ref_pos + read_pos;
-                    first_read_pos_rc = read_pos;
-                }
-                rc_score += score_inc;
-                ++rc_hits;
-
-                // new
-                rightmost_bound_rc = last_ref_pos_rc;
-
-                last_ref_pos_rc = ref_pos;
-                last_read_pos_rc = read_pos;
-                added = true;
+        if (read_pos > last_read_pos_rc) {
+            approx_pos_rc = approx_map_pos;
+            if (last_read_pos_rc == -1) {
+                approx_end_pos_rc = ref_pos + read_pos;
+                first_read_pos_rc = read_pos;
             }
-            return added;
+            rc_score += score_inc;
+            ++rc_hits;
+
+            // new
+            rightmost_bound_rc = last_ref_pos_rc;
+
+            last_ref_pos_rc = ref_pos;
+            last_read_pos_rc = read_pos;
+            added = true;
+        }
+        return added;
     }
 
     // for directly incrementing the number of hits
