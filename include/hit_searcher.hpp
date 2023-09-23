@@ -27,6 +27,11 @@ public:
                   sshash::streaming_query_canonical_parsing& qc,
                   bool isLeft=false,
                   bool verbose=false);
+  
+  bool get_raw_hits_sketch_everykmer(std::string &read,
+                  sshash::streaming_query_canonical_parsing& qc,
+                  bool isLeft=false,
+                  bool verbose=false);
 
 void clear();
 
@@ -41,6 +46,7 @@ inline std::vector<std::pair<int, projected_hits>>& get_right_hits() {
 
 inline reference_index* get_index() const { return pfi_; }
 
+inline size_t get_k() {return k;}
 private:
   reference_index* pfi_;
   size_t k;

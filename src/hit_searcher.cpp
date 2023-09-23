@@ -438,6 +438,8 @@ struct SkipContext {
   static constexpr uint32_t invalid_cid{std::numeric_limits<uint32_t>::max()};
 };
 
+
+
 // This method performs k-mer / hit collection 
 // using a custom implementation of the corresponding 
 // part of the pseudoalignment algorithm as described in (1).
@@ -479,6 +481,7 @@ bool hit_searcher::get_raw_hits_sketch(std::string &read,
                   bool isLeft,
                   bool verbose) {
   (void) verbose;
+  clear();
   projected_hits phits;
   auto& raw_hits = isLeft ? left_rawHits : right_rawHits;
 
@@ -587,8 +590,26 @@ bool hit_searcher::get_raw_hits_sketch(std::string &read,
       skip_ctx.advance_from_miss();
     }
   }
+  // std::cout << "contig" << left_rawHits[0].second.contigIdx_ << "\n";
   
   return raw_hits.size() != 0;
+}
+
+bool hit_searcher::get_raw_hits_sketch_everykmer(std::string &read,
+                  sshash::streaming_query_canonical_parsing& qc,
+                  bool isLeft,
+                  bool verbose) {
+    clear();
+    (void) verbose;
+    projected_hits phits;
+    auto& raw_hits = isLeft ? left_rawHits : right_rawHits;
+    pufferfish::CanonicalKmerIterator kit(read), kit_end;
+    while(kit != kit_end) {
+        phits = pfi_->query(kit, qc);
+        raw_hits.push_back(std::make_pair(kit->second, phits));
+        kit++;
+    }
+    return raw_hits.size() != 0;
 }
 
 void hit_searcher::clear() {
