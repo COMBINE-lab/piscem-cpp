@@ -582,6 +582,7 @@ int run_pesc_sc(int argc, char** argv) {
     rs.num_hits(global_nh.load());
     rs.num_poisoned(global_np.load());
     rs.num_seconds(num_sec.count());
+    rs.ref_sig_info(ri.ref_sig_info());
 
     ghc::filesystem::path map_info_file_path = output_path / "map_info.json";
     bool info_ok = piscem::meta_info::write_map_info(rs, map_info_file_path);

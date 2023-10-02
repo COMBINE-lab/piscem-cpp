@@ -938,6 +938,7 @@ int run_pesc_bulk(int argc, char **argv) {
   rs.num_poisoned(global_np.load());
   rs.num_seconds(num_sec.count());
   rs.important_params(important_params);
+  rs.ref_sig_info(ri.ref_sig_info());
 
   ghc::filesystem::path map_info_file_path = po.output_stem + ".map_info.json";
   bool info_ok = piscem::meta_info::write_map_info(rs, map_info_file_path);

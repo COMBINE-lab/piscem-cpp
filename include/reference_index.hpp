@@ -1,6 +1,7 @@
 #pragma once
 
 #include <fstream>
+#include <optional>
 
 #include "dictionary.hpp"
 #include "basic_contig_table.hpp"
@@ -11,6 +12,8 @@
 #include "../include/bitsery/brief_syntax/vector.h"
 #include "../include/bitsery/brief_syntax/string.h"
 #include "../include/ghc/filesystem.hpp"
+#include "../include/json.hpp"
+#include "../include/ref_sig_info.hpp"
 //#include "query/contig_info_query_canonical_parsing.cpp"
 #include "query/streaming_query_canonical_parsing.hpp"
 #include "bit_vector_iterator.hpp"
@@ -24,6 +27,10 @@ class reference_index {
 public:
     reference_index(const std::string& basename, bool attempt_load_ec_map = false) {
         spdlog_piscem::info("loading index from {}", basename);
+        std::string sigfile_name = basename + ".sigs.json";
+        
+        sig_info = ref_sig_info_t::from_path(sigfile_name);
+         
         std::string dict_name = basename + ".sshash";
         essentials::load(m_dict, dict_name.c_str());
         std::string ctg_name = basename + ".ctab";
@@ -134,12 +141,15 @@ public:
     bool has_ec_table() const { return m_has_ec_tab; }
     const sshash::equivalence_class_map& get_ec_table() { return m_ec_tab; }
 
+    std::optional<ref_sig_info_t> ref_sig_info() const { return sig_info; }
+
 private:
     sshash::dictionary m_dict;
     sshash::basic_contig_table m_bct;
     sshash::equivalence_class_map m_ec_tab;
     std::vector<std::string> m_ref_names;
     std::vector<uint64_t> m_ref_lens;
+    std::optional<ref_sig_info_t> sig_info;
     // will be set to true if we have & load
     // and equivalence class table.
     bool m_has_ec_tab{false};

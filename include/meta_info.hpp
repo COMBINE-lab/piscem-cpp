@@ -1,6 +1,9 @@
 #ifndef __PISCEM_META_INFO__
 #define __PISCEM_META_INFO__
 
+#include <optional>
+
+#include "../include/ref_sig_info.hpp"
 #include "../include/json.hpp"
 #include "../include/ghc/filesystem.hpp"
 
@@ -17,6 +20,7 @@ public:
     inline void num_poisoned(uint64_t num_poisoned_in) { num_poisoned_ = num_poisoned_in; }
     inline void num_seconds(double num_sec) { num_seconds_ = num_sec; }
     inline void important_params(ParamMapT param_map) { important_params_ = param_map; };
+    inline void ref_sig_info(std::optional<ref_sig_info_t> ref_sig_info) { ref_sig_info_ = ref_sig_info; };
 
 
     inline std::string cmd_line() const { return cmd_line_; }
@@ -25,6 +29,7 @@ public:
     inline uint64_t num_poisoned() const { return num_poisoned_; }
     inline double num_seconds() const { return num_seconds_; }
     inline const ParamMapT& important_params() const { return important_params_; }
+    inline const std::optional<ref_sig_info_t>& ref_sig_info() const { return ref_sig_info_; }
 
 private:
     std::string cmd_line_{""};
@@ -33,6 +38,7 @@ private:
     uint64_t num_poisoned_{0};
     double num_seconds_{0};
     ParamMapT important_params_;
+    std::optional<ref_sig_info_t> ref_sig_info_{std::nullopt};
 };
 
 inline bool write_map_info(run_stats& rs, ghc::filesystem::path& map_info_file_path) {
@@ -47,6 +53,10 @@ inline bool write_map_info(run_stats& rs, ghc::filesystem::path& map_info_file_p
     j["percent_mapped"] = percent_mapped;
     j["runtime_seconds"] = rs.num_seconds();
     
+    if (rs.ref_sig_info()) {
+      rs.ref_sig_info()->add_to_json(j); 
+    } 
+
     for (auto& [k, v] : rs.important_params()) {
       j[k] = v;
     }
