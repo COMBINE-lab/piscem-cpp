@@ -117,6 +117,11 @@ add_executable(pesc-sc-atac src/pesc_sc_atac_runner.cpp)
 target_include_directories(pesc-sc-atac PUBLIC ${CMAKE_SOURCE_DIR}/include ${ZLIB_INCLUDE_DIRS})
 target_link_libraries(pesc-sc-atac pesc_static ZLIB::ZLIB Threads::Threads sshash_static ${MALLOC_LIB})
 
+add_executable(temp src/temp.cpp)
+target_include_directories(temp PUBLIC ${CMAKE_SOURCE_DIR}/include ${ZLIB_INCLUDE_DIRS})
+target_link_libraries(temp pesc_static ZLIB::ZLIB Threads::Threads sshash_static ${MALLOC_LIB})
+
+
 #add_executable(mapper src/mapper.cpp src/hit_searcher.cpp) 
 #target_include_directories(mapper PUBLIC ${CMAKE_SOURCE_DIR}/include ${ZLIB_INCLUDE_DIRS})
 #target_link_libraries(mapper ZLIB::ZLIB Threads::Threads sshash_static ${MALLOC_LIB}) 

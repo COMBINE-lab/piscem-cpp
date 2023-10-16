@@ -104,7 +104,6 @@ struct sketch_hit_info {
         // If this is a k-mer of a new rank
         if (read_pos > last_read_pos_fw) {
             // if this is the first k-mer we are seeing
-            // std::cout << "yy2" << std::endl;
             if (last_read_pos_fw == -1) {
                 approx_pos_fw = approx_map_pos;
             } else {
@@ -544,7 +543,7 @@ inline bool map_read(std::string* read_seq, mapping_cache_info& map_cache, bool&
                       auto& ambiguous_hit_indices, auto& had_alt_max_occ) -> bool {
             int32_t hit_idx{0};
 
-            for (auto& raw_hit : raw_hits) {
+            for (auto& raw_hit : raw_hits) { // for each queried kmer hit
                 auto& read_pos = raw_hit.first;
                 auto& proj_hits = raw_hit.second;
                 auto& refs = proj_hits.refRange;
@@ -561,24 +560,24 @@ inline bool map_read(std::string* read_seq, mapping_cache_info& map_cache, bool&
                     largest_occ = (num_occ > largest_occ) ? num_occ : largest_occ;
                     float score_inc = 1.0;
 
-                    for (auto v : refs) {
+                    for (auto v : refs) { // ref range over unitigs
+                    // a unitig can appear multiple times, then however a single unitig 
+                    // can map to multiple transcripts which does not seem to be the case
+                    // based on this code they map to single transcript or it could be that the 
+                    // position is w.r.t each color thus it makes sense
                         const auto& ref_pos_ori = proj_hits.decode_hit(v);
                         uint32_t tid = sshash::util::transcript_id(v);
                         int32_t pos = static_cast<int32_t>(ref_pos_ori.pos);
                         bool ori = ref_pos_ori.isFW;
-                        // if(hit_map.find(tid) == hit_map.end()) {
-                        //     // std::cout<<"you suck" << target.max_hits_for_target() <<std::endl;
-                        //     // auto& target = hit_map[tid];                        
-                        // }
+                        
                         auto& target = hit_map[tid];
                         
-                        /*
                         if (verbose) {
                             auto& tname = map_cache.hs.get_index()->ref_name(tid);
                             std::cerr << "\traw_hit [read_pos: " << read_pos << " ]:" << tname
                                       << ", " << pos << ", " << (ori ? "fw" : "rc") << "\n";
                         }
-                        */
+                        
 
                         // Why >= here instead of == ?
                         // Because hits can happen on the same target in both the forward
@@ -590,7 +589,6 @@ inline bool map_read(std::string* read_seq, mapping_cache_info& map_cache, bool&
                         // max_hits_for_target() > num_valid_hits. So, we must allow for
                         // that here.
                         if (target.max_hits_for_target() >= num_valid_hits) {
-                            // std::cout<<"you suck a lot" <<  target.ignore_struct_constraints_fw << std::endl;
                             if (ori) {
                                     target.ignore_struct_constraints_fw = true;
                                     target.add_fw(pos, static_cast<int32_t>(read_pos), signed_rl, k,
@@ -789,7 +787,7 @@ inline bool map_read(std::string* read_seq, mapping_cache_info& map_cache, bool&
 }
 
 inline bool map_atac_read(std::string* read_seq, mapping_cache_info& map_cache,
-    bool verbose, bool& k_match, bool psc_off=false, bool ps_skip=true) {
+    bool verbose, bool& k_match, bool psc_off=false, bool ps_skip=true, float thr=1.0) {
     map_cache.clear();
     // rebind map_cache variables to
     // local names
@@ -807,15 +805,9 @@ inline bool map_atac_read(std::string* read_seq, mapping_cache_info& map_cache,
         map_cache.has_matching_kmers = hs.get_raw_hits_sketch(*read_seq, q, true, verbose);
     }
     else {
-        std::cout << "cbhere tt\n";
         map_cache.has_matching_kmers = hs.get_raw_hits_sketch_everykmer(*read_seq, q, true, verbose);
     }
-    // for (auto & element:hs.get_left_hits()) {
-    //     std::cout << "contig " << element.second << "\n";
-    // }
     
-    // return true;
-    std::cout << "cbe tt\n";
     bool early_stop = false;
 
     // if we are checking ambiguous hits, the maximum EC
@@ -825,7 +817,7 @@ inline bool map_atac_read(std::string* read_seq, mapping_cache_info& map_cache,
     // if there were hits
     if (map_cache.has_matching_kmers) {
         k_match = true;
-        uint32_t num_valid_hits{0};
+        float num_valid_hits{0};
         uint64_t total_occs{0};
         uint64_t largest_occ{0};
         auto& raw_hits = hs.get_left_hits();
@@ -859,29 +851,26 @@ inline bool map_atac_read(std::string* read_seq, mapping_cache_info& map_cache,
                 auto& read_pos = raw_hit.first;
                 auto& proj_hits = raw_hit.second;
                 auto& refs = proj_hits.refRange;
-                std::cout << "contig " << proj_hits << "\n";
-
+                
                 uint64_t num_occ = static_cast<uint64_t>(refs.size());
                 min_occ = std::min(min_occ, num_occ);
                 had_alt_max_occ = true;
 
                 bool still_have_valid_target = false;
                 prev_read_pos = read_pos;
-
+                // std::cout << raw_hits.size() << "entered\n";
                 if (num_occ <= max_allowed_occ) {
                     total_occs += num_occ;
                     largest_occ = (num_occ > largest_occ) ? num_occ : largest_occ;
                     float score_inc = 1.0;
-
+                    
                     for (auto v : refs) {
                         const auto& ref_pos_ori = proj_hits.decode_hit(v);
-                        // std::cout << "con " << ref_pos_ori.pos << "\n";
-                        // uint32_t tid = sshash::util::transcript_id(v);
-                        // int32_t pos = static_cast<int32_t>(ref_pos_ori.pos);
-                        // bool ori = ref_pos_ori.isFW;
+                        uint32_t tid = sshash::util::transcript_id(v);
+                        int32_t pos = static_cast<int32_t>(ref_pos_ori.pos);
+                        bool ori = ref_pos_ori.isFW;
                         
-                        // std::cout << "tid is " << ori << "\n"; 
-                        // auto& target = hit_map[tid];
+                        auto& target = hit_map[tid];
                         
                         /*
                         if (verbose) {
@@ -900,26 +889,26 @@ inline bool map_atac_read(std::string* read_seq, mapping_cache_info& map_cache,
                     //     // orientation rc(o).  We still want to add / consider this hit, but
                     //     // max_hits_for_target() > num_valid_hits. So, we must allow for
                     //     // that here.
-                    //     // if (target.max_hits_for_target() >= num_valid_hits) {
-                    //     //     // std::cout<<"you suck a lot" <<  target.ignore_struct_constraints_fw << std::endl;
-                    //     //     if (ori) {
-                    //     //         if (psc_off) {
-                    //     //             target.ignore_struct_constraints_fw = true;
-                    //     //         }
-                    //     //         target.add_fw(pos, static_cast<int32_t>(read_pos), signed_rl, k,
-                    //     //                     max_stretch, score_inc);
-                    //     //     } else {
-                    //     //         if (psc_off) {
-                    //     //             target.ignore_struct_constraints_rc = true;
-                    //     //         }
+                        if (target.max_hits_for_target() >= num_valid_hits) {
+                            
+                            if (ori) {
+                                if (psc_off) {
+                                    target.ignore_struct_constraints_fw = true;
+                                }
+                                target.add_fw(pos, static_cast<int32_t>(read_pos), signed_rl, k,
+                                            max_stretch, score_inc);
+                            } else {
+                                if (psc_off) {
+                                    target.ignore_struct_constraints_rc = true;
+                                }
                                     
-                    //     //         target.add_rc(pos, static_cast<int32_t>(read_pos), signed_rl, k,
-                    //     //                     max_stretch, score_inc);
-                    //     //     }
+                                target.add_rc(pos, static_cast<int32_t>(read_pos), signed_rl, k,
+                                            max_stretch, score_inc);
+                            }
 
-                    //     //     still_have_valid_target |=
-                    //     //         (target.max_hits_for_target() >= num_valid_hits + 1);
-                    //     // }
+                            still_have_valid_target |=
+                                (target.max_hits_for_target() >= num_valid_hits + 1);
+                        }
 
                     }  // DONE: for (auto &pos_it : refs)
               
@@ -940,140 +929,249 @@ inline bool map_atac_read(std::string* read_seq, mapping_cache_info& map_cache,
             return false;
         };
 
+        auto collect_mappings_from_hits_thr =
+            [&max_stretch, &min_occ, &hit_map, &num_valid_hits, &total_occs, &largest_occ,
+             &early_stop, signed_rl, k, &map_cache, perform_ambig_filtering,
+             verbose, psc_off, ps_skip, &thr](auto& raw_hits, auto& prev_read_pos, auto& max_allowed_occ,
+                      auto& ambiguous_hit_indices, auto& had_alt_max_occ, auto& thr) -> bool {
+            int32_t hit_idx{0};
+            // return false;
+            for (auto& raw_hit : raw_hits) {
+                auto& read_pos = raw_hit.first;
+                auto& proj_hits = raw_hit.second;
+                auto& refs = proj_hits.refRange;
+                
+                uint64_t num_occ = static_cast<uint64_t>(refs.size());
+                min_occ = std::min(min_occ, num_occ);
+                had_alt_max_occ = true;
+
+                bool still_have_valid_target = false;
+                prev_read_pos = read_pos;
+                
+                // std::cout << raw_hits.size() << "entered\n";
+                if (num_occ <= max_allowed_occ) {
+                    total_occs += num_occ;
+                    float score_inc = 1.0;
+                    
+                    for (auto v : refs) {
+                        const auto& ref_pos_ori = proj_hits.decode_hit(v);
+                        uint32_t tid = sshash::util::transcript_id(v);
+                        int32_t pos = static_cast<int32_t>(ref_pos_ori.pos);
+                        bool ori = ref_pos_ori.isFW;
+                        
+                        auto& target = hit_map[tid];
+                        
+                        /*
+                        if (verbose) {
+                            auto& tname = map_cache.hs.get_index()->ref_name(tid);
+                            std::cerr << "\traw_hit [read_pos: " << read_pos << " ]:" << tname
+                                      << ", " << pos << ", " << (ori ? "fw" : "rc") << "\n";
+                        }
+                        */
+
+                    //     // Why >= here instead of == ?
+                    //     // Because hits can happen on the same target in both the forward
+                    //     // and rc orientations, it is possible that we start the loop with
+                    //     // the target having num_valid_hits hits in a given orientation (o)
+                    //     // we see a new hit for this target in oriention o (now it has
+                    //     // num_valid_hits + 1) then we see a hit for this target in
+                    //     // orientation rc(o).  We still want to add / consider this hit, but
+                    //     // max_hits_for_target() > num_valid_hits. So, we must allow for
+                    //     // that here.
+                        
+                            
+                        if (ori) {
+                            if (psc_off) {
+                                target.ignore_struct_constraints_fw = true;
+                            }
+                            target.add_fw(pos, static_cast<int32_t>(read_pos), signed_rl, k,
+                                        max_stretch, score_inc);
+                        } else {
+                            if (psc_off) {
+                                target.ignore_struct_constraints_rc = true;
+                            }
+                                
+                            target.add_rc(pos, static_cast<int32_t>(read_pos), signed_rl, k,
+                                        max_stretch, score_inc);
+                        }
+
+                    }  // DONE: for (auto &pos_it : refs)
+              
+                    ++num_valid_hits;
+
+                } else if (perform_ambig_filtering) {  // HERE we have that num_occ >
+                                                       // max_allowed_occ
+                    ambiguous_hit_indices.push_back(hit_idx);
+                }
+
+                ++hit_idx;
+            }  // DONE : for (auto& raw_hit : raw_hits)
+
+            return false;
+        };
+
         bool _discard = false;
         auto mao_first_pass = map_cache.max_occ_default - 1;
-        early_stop = collect_mappings_from_hits(raw_hits, prev_read_pos, mao_first_pass,
-                                                map_cache.ambiguous_hit_indices, _discard);
+        if (thr==1.0) {
+            early_stop = collect_mappings_from_hits(raw_hits, prev_read_pos, mao_first_pass,
+                                        map_cache.ambiguous_hit_indices, _discard);
+            // std::cout << early_stop << "thr\n";                                        
+            // If our default threshold was too stringent, then fallback to a more liberal
+            // threshold and look up the k-mers that occur the least frequently.
+            // Specifically, if the min occuring hits have frequency < max_occ_recover (2500 by
+            // default) times, then collect the min occuring hits to get the mapping.
+            if (attempt_occ_recover and (min_occ >= map_cache.max_occ_default) and
+                (min_occ < map_cache.max_occ_recover)) {
+                map_cache.ambiguous_hit_indices.clear();
+                prev_read_pos = -1;
+                uint64_t max_allowed_occ = min_occ;
+                early_stop =
+                    collect_mappings_from_hits(raw_hits, prev_read_pos, max_allowed_occ,
+                                            map_cache.ambiguous_hit_indices, had_alt_max_occ);
+            }            
+        
+        }
 
-        // If our default threshold was too stringent, then fallback to a more liberal
-        // threshold and look up the k-mers that occur the least frequently.
-        // Specifically, if the min occuring hits have frequency < max_occ_recover (2500 by
-        // default) times, then collect the min occuring hits to get the mapping.
-        // if (attempt_occ_recover and (min_occ >= map_cache.max_occ_default) and
-        //     (min_occ < map_cache.max_occ_recover)) {
-        //     map_cache.ambiguous_hit_indices.clear();
-        //     prev_read_pos = -1;
-        //     uint64_t max_allowed_occ = min_occ;
-        //     early_stop =
-        //         collect_mappings_from_hits(raw_hits, prev_read_pos, max_allowed_occ,
-        //                                    map_cache.ambiguous_hit_indices, had_alt_max_occ);
-        // }
-        std::cout << "ambig" << perform_ambig_filtering << "\n";
+        else {
+            early_stop = collect_mappings_from_hits_thr(raw_hits, prev_read_pos, mao_first_pass,
+                                       map_cache.ambiguous_hit_indices, _discard, thr);
+            // std::cout << early_stop << "thr\n"                           ;
+            // If our default threshold was too stringent, then fallback to a more liberal
+            // threshold and look up the k-mers that occur the least frequently.
+            // Specifically, if the min occuring hits have frequency < max_occ_recover (2500 by
+            // default) times, then collect the min occuring hits to get the mapping.
+            if (attempt_occ_recover and (min_occ >= map_cache.max_occ_default) and
+                (min_occ < map_cache.max_occ_recover)) {
+                map_cache.ambiguous_hit_indices.clear();
+                prev_read_pos = -1;
+                uint64_t max_allowed_occ = min_occ;
+                early_stop =
+                    collect_mappings_from_hits_thr(raw_hits, prev_read_pos, max_allowed_occ,
+                                    map_cache.ambiguous_hit_indices, had_alt_max_occ, thr);
+            }
+        }
+
+
+        
         // Further filtering of mappings by ambiguous k-mers
-        // if (perform_ambig_filtering and !hit_map.empty() and
-        //     !map_cache.ambiguous_hit_indices.empty()) {
-        //     phmap::flat_hash_set<uint64_t> observed_ecs;
-        //     size_t min_cardinality_ec_size = std::numeric_limits<size_t>::max();
-        //     uint64_t min_cardinality_ec = std::numeric_limits<size_t>::max();
-        //     size_t min_cardinality_index = 0;
-        //     size_t visited = 0;
-        //     auto& ec_table = map_cache.hs.get_index()->get_ec_table();
+        if (perform_ambig_filtering and !hit_map.empty() and
+            !map_cache.ambiguous_hit_indices.empty()) {
+            phmap::flat_hash_set<uint64_t> observed_ecs;
+            size_t min_cardinality_ec_size = std::numeric_limits<size_t>::max();
+            uint64_t min_cardinality_ec = std::numeric_limits<size_t>::max();
+            size_t min_cardinality_index = 0;
+            size_t visited = 0;
+            auto& ec_table = map_cache.hs.get_index()->get_ec_table();
 
-        //     auto visit_ec = [&hit_map](uint64_t ent, bool fw_on_contig) -> bool {
-        //         uint32_t tid = (ent >> 2);
-        //         auto hm_it = hit_map.find(tid);
-        //         bool found = false;
-        //         if (hm_it != hit_map.end()) {
-        //             // we found this target, now:
-        //             // (1) check the orientation
-        //             uint32_t ori = (ent & 0x3);
-        //             // (2) add hits in the appropriate way
-        //             switch (ori) {
-        //                 case 0:  // fw
-        //                     (fw_on_contig) ? hm_it->second.inc_fw_hits()
-        //                                    : hm_it->second.inc_rc_hits();
-        //                     break;
-        //                 case 1:  // rc
-        //                     (fw_on_contig) ? hm_it->second.inc_rc_hits()
-        //                                    : hm_it->second.inc_fw_hits();
-        //                     break;
-        //                 default:  // both
-        //                     hm_it->second.inc_fw_hits();
-        //                     hm_it->second.inc_rc_hits();
-        //             }
-        //             found = true;
-        //         }
-        //         return found;
-        //     };
+            auto visit_ec = [&hit_map](uint64_t ent, bool fw_on_contig) -> bool {
+                uint32_t tid = (ent >> 2);
+                auto hm_it = hit_map.find(tid);
+                bool found = false;
+                if (hm_it != hit_map.end()) {
+                    // we found this target, now:
+                    // (1) check the orientation
+                    uint32_t ori = (ent & 0x3);
+                    // (2) add hits in the appropriate way
+                    switch (ori) {
+                        case 0:  // fw
+                            (fw_on_contig) ? hm_it->second.inc_fw_hits()
+                                           : hm_it->second.inc_rc_hits();
+                            break;
+                        case 1:  // rc
+                            (fw_on_contig) ? hm_it->second.inc_rc_hits()
+                                           : hm_it->second.inc_fw_hits();
+                            break;
+                        default:  // both
+                            hm_it->second.inc_fw_hits();
+                            hm_it->second.inc_rc_hits();
+                    }
+                    found = true;
+                }
+                return found;
+            };
 
-        //     // for each ambiguous hit
-        //     for (auto hit_idx : map_cache.ambiguous_hit_indices) {
-        //         auto& proj_hit = raw_hits[hit_idx].second;
-        //         uint32_t contig_id = proj_hit.contig_id();
-        //         bool fw_on_contig = proj_hit.hit_fw_on_contig();
+            // for each ambiguous hit
+            for (auto hit_idx : map_cache.ambiguous_hit_indices) {
+                auto& proj_hit = raw_hits[hit_idx].second;
+                uint32_t contig_id = proj_hit.contig_id();
+                bool fw_on_contig = proj_hit.hit_fw_on_contig();
 
-        //         // put the combination of the eq and the k-mer orientation
-        //         // into the map.
-        //         uint64_t ec = ec_table.ec_for_tile(contig_id);
-        //         uint64_t ec_key = ec | (fw_on_contig ? 0 : 0x8000000000000000);
-        //         // if we've already seen this ec, no point in processing
-        //         // it again.
-        //         if (observed_ecs.contains(ec_key)) { continue; }
-        //         // otherwise, insert it.
-        //         observed_ecs.insert(ec_key);
+                // put the combination of the eq and the k-mer orientation
+                // into the map.
+                uint64_t ec = ec_table.ec_for_tile(contig_id);
+                uint64_t ec_key = ec | (fw_on_contig ? 0 : 0x8000000000000000);
+                // if we've already seen this ec, no point in processing
+                // it again.
+                if (observed_ecs.contains(ec_key)) { continue; }
+                // otherwise, insert it.
+                observed_ecs.insert(ec_key);
 
-        //         auto ec_entries = ec_table.entries_for_ec(ec);
-        //         if (ec_entries.size() < min_cardinality_ec_size) {
-        //             min_cardinality_ec_size = ec_entries.size();
-        //             min_cardinality_ec = ec;
-        //             min_cardinality_index = hit_idx;
-        //         }
-        //         if (ec_entries.size() > max_ec_ambig) { continue; }
-        //         ++visited;
-        //         for (const auto& ent : ec_entries) {
-        //             visit_ec(ent, fw_on_contig);
-        //         }  // all target oritentation pairs in this eq class
-        //         ++num_valid_hits;
-        //     }  // all ambiguous hits
+                auto ec_entries = ec_table.entries_for_ec(ec);
+                if (ec_entries.size() < min_cardinality_ec_size) {
+                    min_cardinality_ec_size = ec_entries.size();
+                    min_cardinality_ec = ec;
+                    min_cardinality_index = hit_idx;
+                }
+                if (ec_entries.size() > max_ec_ambig) { continue; }
+                ++visited;
+                for (const auto& ent : ec_entries) {
+                    visit_ec(ent, fw_on_contig);
+                }  // all target oritentation pairs in this eq class
+                ++num_valid_hits;
+            }  // all ambiguous hits
 
-        //     // if we haven't visited *any* equivalence classes (they were all)
-        //     // too ambiguous, then make a last-ditch effort to just visit the
-        //     // the one with smallest cardinality.
-        //     if (visited == 0) {
-        //         auto hit_idx = min_cardinality_index;
-        //         auto& proj_hit = raw_hits[hit_idx].second;
-        //         bool fw_on_contig = proj_hit.hit_fw_on_contig();
+            // if we haven't visited *any* equivalence classes (they were all)
+            // too ambiguous, then make a last-ditch effort to just visit the
+            // the one with smallest cardinality.
+            if (visited == 0) {
+                auto hit_idx = min_cardinality_index;
+                auto& proj_hit = raw_hits[hit_idx].second;
+                bool fw_on_contig = proj_hit.hit_fw_on_contig();
 
-        //         uint64_t ec = min_cardinality_ec;
-        //         auto ec_entries = ec_table.entries_for_ec(ec);
-        //         for (const auto& ent : ec_entries) {
-        //             visit_ec(ent, fw_on_contig);
-        //         }  // all target oritentation pairs in this eq class
-        //         ++num_valid_hits;
-        //     }  // done visiting the last-ditch ec
+                uint64_t ec = min_cardinality_ec;
+                auto ec_entries = ec_table.entries_for_ec(ec);
+                for (const auto& ent : ec_entries) {
+                    visit_ec(ent, fw_on_contig);
+                }  // all target oritentation pairs in this eq class
+                ++num_valid_hits;
+            }  // done visiting the last-ditch ec
 
-        // }  // if we are processing ambiguous hits
+        }  // if we are processing ambiguous hits
 
         uint32_t best_alt_hits = 0;
         // int32_t signed_read_len = static_cast<int32_t>(record.seq.length());
+        // std::cout << "before" << num_valid_hits << "\n";
+        if(thr != 1) {
+            num_valid_hits = num_valid_hits*thr;
+        }
+        // std::cout << "after" << num_valid_hits << "\n";
+        for (auto& kv : hit_map) {
+            auto best_hit_dir = kv.second.best_hit_direction();
 
-        // for (auto& kv : hit_map) {
-        //     auto best_hit_dir = kv.second.best_hit_direction();
+            // if the best direction is FW or BOTH, add the fw hit
+            // otherwise add the RC.
+            auto simple_hit = (best_hit_dir != mapping::util::HitDirection::RC)
+                                  ? kv.second.get_fw_hit()
+                                  : kv.second.get_rc_hit();
 
-        //     // if the best direction is FW or BOTH, add the fw hit
-        //     // otherwise add the RC.
-        //     auto simple_hit = (best_hit_dir != mapping::util::HitDirection::RC)
-        //                           ? kv.second.get_fw_hit()
-        //                           : kv.second.get_rc_hit();
-
-        //     if (simple_hit.num_hits >= num_valid_hits) {
-        //         simple_hit.tid = kv.first;
-        //         accepted_hits.emplace_back(simple_hit);
-        //         // if we had equally good hits in both directions
-        //         // add the rc hit here (since we added the fw)
-        //         // above if the best hit was either FW or BOTH
-        //         if (best_hit_dir == mapping::util::HitDirection::BOTH) {
-        //             auto second_hit = kv.second.get_rc_hit();
-        //             second_hit.tid = kv.first;
-        //             accepted_hits.emplace_back(second_hit);
-        //         }
-        //     } else {
-        //         // best_alt_score = simple_hit.score > best_alt_score ? simple_hit.score :
-        //         // best_alt_score;
-        //         best_alt_hits =
-        //             simple_hit.num_hits > best_alt_hits ? simple_hit.num_hits : best_alt_hits;
-        //     }
-        // }
+            if (simple_hit.num_hits >= num_valid_hits) {
+                simple_hit.tid = kv.first;
+                accepted_hits.emplace_back(simple_hit);
+                // if we had equally good hits in both directions
+                // add the rc hit here (since we added the fw)
+                // above if the best hit was either FW or BOTH
+                if (best_hit_dir == mapping::util::HitDirection::BOTH) {
+                    auto second_hit = kv.second.get_rc_hit();
+                    second_hit.tid = kv.first;
+                    accepted_hits.emplace_back(second_hit);
+                }
+            } else {
+                // best_alt_score = simple_hit.score > best_alt_score ? simple_hit.score :
+                // best_alt_score;
+                best_alt_hits =
+                    simple_hit.num_hits > best_alt_hits ? simple_hit.num_hits : best_alt_hits;
+            }
+        }
 
         // alt_max_occ = had_alt_max_occ ? accepted_hits.size() : max_occ_default;
 
@@ -1095,12 +1193,12 @@ inline bool map_atac_read(std::string* read_seq, mapping_cache_info& map_cache,
     }  // DONE : if (rh)
 
     // If the read mapped to > maxReadOccs places, discard it
-    // if (accepted_hits.size() > map_cache.alt_max_occ) {
-    //     accepted_hits.clear();
-    //     map_type = mapping::util::MappingType::UNMAPPED;
-    // } else if (!accepted_hits.empty()) {
-    //     map_type = mapping::util::MappingType::SINGLE_MAPPED;
-    // }
+    if (accepted_hits.size() > map_cache.alt_max_occ) {
+        accepted_hits.clear();
+        map_type = mapping::util::MappingType::UNMAPPED;
+    } else if (!accepted_hits.empty()) {
+        map_type = mapping::util::MappingType::SINGLE_MAPPED;
+    }
 
     return early_stop;
 }

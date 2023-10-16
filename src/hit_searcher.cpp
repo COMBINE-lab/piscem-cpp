@@ -606,8 +606,10 @@ bool hit_searcher::get_raw_hits_sketch_everykmer(std::string &read,
     pufferfish::CanonicalKmerIterator kit(read), kit_end;
     while(kit != kit_end) {
         phits = pfi_->query(kit, qc);
-        raw_hits.push_back(std::make_pair(kit->second, phits));
-        kit++;
+        if (!phits.empty()) {
+          raw_hits.push_back(std::make_pair(kit->second, phits));
+        }
+        ++kit;
     }
     return raw_hits.size() != 0;
 }
