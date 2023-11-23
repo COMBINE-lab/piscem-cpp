@@ -556,6 +556,7 @@ void do_map(mindex::reference_index &ri,
 
       // SAM output
       if constexpr (std::is_same_v<OutputT, SamT>) {
+        ++processed;
         write_sam_mappings(map_cache_out, record, workstr_left, workstr_right,
                            global_nhits, osstream);
 
@@ -625,12 +626,19 @@ int run_pesc_bulk(int argc, char **argv) {
     ->required();
 
   auto ogroup = app.add_option_group("input reads", "provide input reads");
+  /*
+  CLI::Option *sample_sheet = 
+    ogroup
+      ->add_opion("-s,--sample-sheet", po.sample_sheet_filename,
+                  "Path to sample sheet");
+  */
 
   CLI::Option *read_opt =
     ogroup
       ->add_option("-r,--reads", po.single_read_filenames,
                    "Path to list (comma separated) of single-end files")
       ->delimiter(',');
+
   CLI::Option *paired_left_opt =
     ogroup
       ->add_option("-1,--read1", po.left_read_filenames,
