@@ -60,6 +60,7 @@ zran.c
 
 #include <zlib.h>
 
+#include <cstdint>
 #include <istream>
 #include <ostream>
 #include <streambuf>
