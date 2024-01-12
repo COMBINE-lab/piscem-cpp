@@ -70,6 +70,11 @@ if (UNIX)
     set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -fsanitize=address -fno-omit-frame-pointer")
   endif()
 
+  if (CONDA_BUILD)
+    # because of the kind of ridiculous RAM limitations on the conda build jobs
+    add_compile_options("SHELL:--param ggc-min-expand=20" "SHELL:--param ggc-min-heapsize=8192")
+  endif()
+
 endif()
 
 find_package(ZLIB REQUIRED)
