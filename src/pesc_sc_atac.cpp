@@ -45,9 +45,9 @@ struct pesc_atac_options {
     std::vector<std::string> right_read_filenames;
     std::vector<std::string> barcode_filenames;
     std::string output_dirname;
-    // std::string library_geometry;
-    // protocol_t pt{protocol_t::CUSTOM};
-    // std::unique_ptr<custom_protocol> p{nullptr};
+    bool psc_off{false};
+    bool ps_skip{true};
+    float thr{1.0};
     bool quiet{false};
     bool check_ambig_hits{false};
     uint32_t max_ec_card{256};
@@ -63,7 +63,8 @@ struct pesc_atac_options {
 
 // paried-end
 bool map_fragment(fastx_parser::ReadTrip& record, mapping_cache_info& map_cache_left,
-                  mapping_cache_info& map_cache_right, mapping_cache_info& map_cache_out, std::atomic<uint64_t>& k_match) {
+                  mapping_cache_info& map_cache_right, mapping_cache_info& map_cache_out, 
+                  std::atomic<uint64_t>& k_match) {
 // bool map_fragment(fastx_parser::ReadTrip& record, mapping_cache_info& map_cache_left,
 //                   mapping_cache_info& map_cache_right, mapping_cache_info& map_cache_out) {
     check_overlap::MateOverlap mov;
@@ -74,16 +75,55 @@ bool map_fragment(fastx_parser::ReadTrip& record, mapping_cache_info& map_cache_
     if(mov.frag != "") {
         (void)map_cache_left;
         (void)map_cache_right;
-        bool read_map = mapping::util::map_read(&mov.frag, map_cache_out, km, false);
+        bool read_map = mapping::util::map_atac_read(&mov.frag, map_cache_out, false, km);
         if (km) {
             ++k_match;
         }
         return read_map;
     }
-    bool early_exit_left = mapping::util::map_read(&record.first.seq, map_cache_left, km, false);
+
+    bool early_exit_left = mapping::util::map_atac_read(&record.first.seq, map_cache_left, false, km);
     
     bool right_km = false;
-    bool early_exit_right = mapping::util::map_read(&record.second.seq, map_cache_right, right_km, false);
+    bool early_exit_right = mapping::util::map_atac_read(&record.second.seq, map_cache_right, false, right_km);
+
+    if(km | right_km) {
+        ++k_match;
+    }
+
+    int32_t left_len = static_cast<int32_t>(record.first.seq.length());
+    int32_t right_len = static_cast<int32_t>(record.second.seq.length());
+    
+    mapping::util::merge_se_mappings(map_cache_left, map_cache_right, left_len, right_len,
+                                     map_cache_out);
+
+    return (early_exit_left or early_exit_right);
+}
+
+bool map_fragment(fastx_parser::ReadTrip& record, mapping_cache_info& map_cache_left,
+                  mapping_cache_info& map_cache_right, mapping_cache_info& map_cache_out, 
+                  std::atomic<uint64_t>& k_match, bool psc_off, bool ps_skip, float thr) {
+    check_overlap::MateOverlap mov;
+    check_overlap::findOverlapBetweenPairedEndReads(record.first.seq, record.second.seq, mov, 30);
+    bool km = false; //kmatch checker
+    // std::cout << mov.frag << std::endl;
+    // std::cout << "aaa\n" ;
+    if(mov.frag != "") {
+        (void)map_cache_left;
+        (void)map_cache_right;
+        bool read_map = mapping::util::map_atac_read(&mov.frag, map_cache_out, false, 
+                                    km, psc_off, ps_skip, thr);
+        if (km) {
+            ++k_match;
+        }
+        return read_map;
+    }
+
+    bool early_exit_left = mapping::util::map_atac_read(&record.first.seq, map_cache_left, false, 
+                                    km, psc_off, ps_skip, thr);
+    
+    bool right_km = false;
+    bool early_exit_right = mapping::util::map_atac_read(&record.second.seq, map_cache_right, false, right_km, psc_off, ps_skip, thr);
 
     if(km | right_km) {
         ++k_match;
@@ -130,7 +170,10 @@ void do_map(mindex::reference_index& ri,
                     std::atomic<uint64_t>& global_nhits,
                     pesc_output_info& out_info,
                     std::mutex& iomut,
-                    std::atomic<uint64_t>& k_match) {
+                    std::atomic<uint64_t>& k_match,
+                    bool psc_off,
+                    bool ps_skip,
+                    float& thr) {
 
     auto log_level = spdlog::get_level();
     auto write_mapping_rate = false;
@@ -196,8 +239,9 @@ void do_map(mindex::reference_index& ri,
             auto recovered = single_cell::util::recover_barcode(*bc);
             // if we couldn't correct it with 1 `N`, then skip.
             if (recovered == BarCodeRecovered::NOT_RECOVERED) { continue; }
-            bool had_early_stop =
-                map_fragment(record, map_cache_left, map_cache_right, map_cache_out, k_match);
+            bool had_early_stop = 
+               map_fragment(record, map_cache_left, map_cache_right, map_cache_out, k_match,
+                   psc_off, ps_skip, thr);
             (void)had_early_stop;
             
             global_nhits += map_cache_out.accepted_hits.empty() ? 0 : 1;
@@ -274,7 +318,7 @@ int run_pesc_sc_atac(int argc, char** argv) {
     app.add_option("-2,--read2", po.right_read_filenames, "path to list of read 2 files")
         ->required()
         ->delimiter(',');
-    app.add_option("-b,--barcode", po.barcode_filenames, "path to list of read 2 files")
+    app.add_option("-b,--barcode", po.barcode_filenames, "path to list of barcodes")
         ->required()
         ->delimiter(',');
     app.add_option("-o,--output", po.output_dirname, "path to output directory")->required();
@@ -283,6 +327,15 @@ int run_pesc_sc_atac(int argc, char** argv) {
     app.add_option("-t,--threads", po.nthread,
                    "An integer that specifies the number of threads to use")
         ->default_val(16);
+    app.add_option("--psc_off", po.psc_off,
+                   "whether to switch structural constraints off")
+        ->default_val(false);
+    app.add_option("--ps_skip", po.ps_skip,
+                   "whether to implement pseudoalignment with skipping")
+        ->default_val(true);
+    app.add_option("--thr", po.thr,
+                   "threshold for psa")
+        ->default_val(1.0);
     app.add_flag("--quiet", po.quiet, "try to be quiet in terms of console output");
     auto check_ambig =
         app.add_flag("--check-ambig-hits", po.check_ambig_hits,
@@ -339,6 +392,10 @@ int run_pesc_sc_atac(int argc, char** argv) {
     std::atomic<uint64_t> k_match{0}; //whether the kmer exists in the unitig table
     std::mutex iomut;
 
+    bool psc_off=po.psc_off;
+    bool ps_skip=po.ps_skip;
+    float thr=po.thr;
+
     fastx_parser::FastxParser<fastx_parser::ReadTrip> rparser(
     po.left_read_filenames, po.right_read_filenames, po.barcode_filenames, nthread, np);
     rparser.start();
@@ -349,8 +406,10 @@ int run_pesc_sc_atac(int argc, char** argv) {
     std::vector<std::thread> workers;
     for (size_t i = 0; i < nthread; ++i) {
         workers.push_back(std::thread(
-            [&ri, &rparser, &global_nr, &global_nh, &out_info, &iomut, &k_match]() {
-                do_map(ri, rparser, global_nr, global_nh, out_info, iomut, k_match);
+            [&ri, &rparser, &global_nr, &global_nh, &out_info, &iomut, &k_match, 
+            &psc_off, &ps_skip, &thr]() {
+                do_map(ri, rparser, global_nr, global_nh, out_info, iomut, 
+                    k_match, psc_off, ps_skip, thr);
             }));
     }
     for (auto& w : workers) { w.join(); }

@@ -1,17 +1,10 @@
+#include "../include/CanonicalKmerIterator.hpp"
+#include "../include/Kmer.hpp"
 #include "../include/hit_searcher.hpp"
-#include "../include/bit_vector_iterator.hpp"
-#include <cmath>
-#include <limits>
+#include <iostream>
+using namespace std;
 
-// using spp:sparse_hash_map;
-
-namespace mindex {
-// polute the namespace --- put this in the functions that need it.
-namespace kmers = combinelib::kmers;
-
-void hit_searcher::setAltSkip(uint32_t as) {
-  altSkip = as;
-}
+// All temp code will be created and tested here
 
 enum class LastSkipType : uint8_t { NO_HIT=0, SKIP_READ=1, SKIP_UNI=2 };
 
@@ -30,13 +23,9 @@ struct FastHitInfo {
   uint64_t ref_kmer{0};
 };
 
-// Idea is to move the logic of the search into here.
-// We should also consider the optimizations that can 
-// be done here (like having small checks expected to)
-// be on the same contig bypass a hash lookup.
 struct SkipContext {
 
-  SkipContext(std::string& read, reference_index* pfi_in, int32_t k_in) : 
+  SkipContext(std::string& read, mindex::reference_index* pfi_in, int32_t k_in) : 
     kit1(read), kit_tmp(read), pfi(pfi_in), 
     ref_contig_it( sshash::bit_vector_iterator(pfi_in->contigs(), 0) ),
     read_len(static_cast<int32_t>(read.length())),
@@ -70,6 +59,7 @@ struct SkipContext {
 
     if (!found_match) {
       phits = pfi->query(kit1, qc);
+      std::cout << "aa" << phits << phits.empty() << std::endl;
     }
 
     return !phits.empty();
@@ -421,7 +411,7 @@ struct SkipContext {
   pufferfish::CanonicalKmerIterator kit_tmp;
   pufferfish::CanonicalKmerIterator kit_end;
   pufferfish::CanonicalKmerIterator kit_swap;
-  reference_index* pfi={nullptr};
+  mindex::reference_index* pfi={nullptr};
   sshash::bit_vector_iterator ref_contig_it;
   int32_t read_len;
   int32_t read_target_pos;
@@ -439,66 +429,29 @@ struct SkipContext {
 };
 
 
-
-// This method performs k-mer / hit collection 
-// using a custom implementation of the corresponding 
-// part of the pseudoalignment algorithm as described in (1).
-// Specifically, it attempts to find a small set of 
-// k-mers along the fragment (`read`) that are shared with
-// a set of unitigs in the compacted colored de Bruijn graph, 
-// using the structure of the graph to avoid queries that
-// are unlikely to change the resulting set of unitigs 
-// that are discovered.  This function only fills out the 
-// set of hits, and does not itself implement any 
-// consensus mechanism.  This hit collection mechanism 
-// prioritizes speed compared to e.g. the uniMEM collection
-// strategy implemented in the `operator()` method of this 
-// class.  Currently, this strategy is only used in the 
-// `--sketch` mode of alevin.  One may refer to the 
-// [release notes](https://github.com/COMBINE-lab/salmon/releases/tag/v1.4.0)
-// of the relevant version of salmon and links therein 
-// for a more detailed discussion of the downstream effects of 
-// different strategies.
-//
-// The function fills out the appropriate raw hits 
-// member of this MemCollector instance.  
-// 
-// If the `isLeft` flag is set to true, then the left 
-// raw hits are filled and can be retreived with 
-// `get_left_hits()`.  Otherwise, the right raw hits are 
-// filled and can be retrieved with `get_right_hits()`.
-//
-// This function returns `true` if at least one hit was 
-// found shared between the read and reference and 
-// `false` otherwise.
-// 
-// [1] Bray NL, Pimentel H, Melsted P, Pachter L. 
-// Near-optimal probabilistic RNA-seq quantification. 
-// Nat Biotechnol. 2016;34(5):525-527.
-//
-bool hit_searcher::get_raw_hits_sketch(std::string &read,
+bool get_raw_hits_sketch(mindex::hit_searcher &hs,
+                  std::string &read,
                   sshash::streaming_query_canonical_parsing& qc,
                   bool isLeft,
                   bool verbose) {
   (void) verbose;
-  clear();
   projected_hits phits;
-  auto& raw_hits = isLeft ? left_rawHits : right_rawHits;
+  auto& raw_hits = isLeft ? hs.get_left_hits() : hs.get_right_hits();
 
-  CanonicalKmer::k(k);
+  CanonicalKmer::k(hs.get_k());
   int32_t k = static_cast<int32_t>(CanonicalKmer::k());
-  SkipContext skip_ctx(read, pfi_, k);
+  SkipContext skip_ctx(read, hs.get_index(), k);
   
   // while it is possible to search further
   while (!skip_ctx.is_exhausted()) {
-    
+     
     // if we had a hit
     if (skip_ctx.query_kmer(qc)) {
-
+        std::cout << "ssss" << std::endl; 
       // record this hit
       int32_t read_pos = skip_ctx.read_pos();
       auto proj_hits = skip_ctx.proj_hits();
-      
+      std::cout << proj_hits << std::endl;
       // if the hit was not inline with what we were 
       // expecting. 
       if (skip_ctx.hit_is_unexpected()){
@@ -540,6 +493,7 @@ bool hit_searcher::get_raw_hits_sketch(std::string &read,
             // hits we find along the way.
             while (skip_ctx.advance_safe()) {
               if (skip_ctx.query_kmer(qc)) {
+                std::cout << proj_hits << std::endl;
                 raw_hits.push_back(
                     std::make_pair(skip_ctx.read_pos(), skip_ctx.proj_hits()));
               }
@@ -569,6 +523,7 @@ bool hit_searcher::get_raw_hits_sketch(std::string &read,
             // next jump can be properly computed
             skip_ctx.phits = proj_hits;
             // add the hit here
+            std::cout << proj_hits << std::endl;
             raw_hits.push_back(std::make_pair(read_pos, proj_hits));
             // advance as if this was a normal hit
             skip_ctx.advance_from_hit();
@@ -582,6 +537,7 @@ bool hit_searcher::get_raw_hits_sketch(std::string &read,
         // or the hit was in accordance with our expectation.
         
         // push this hit and advance
+        std::cout << proj_hits << std::endl;
         raw_hits.push_back(std::make_pair(read_pos, proj_hits));
         skip_ctx.advance_from_hit();
       }
@@ -591,32 +547,47 @@ bool hit_searcher::get_raw_hits_sketch(std::string &read,
     }
   }
   // std::cout << "contig" << left_rawHits[0].second.contigIdx_ << "\n";
-  
+  std::cout << raw_hits.size() << std::endl;
   return raw_hits.size() != 0;
 }
 
-bool hit_searcher::get_raw_hits_sketch_everykmer(std::string &read,
+bool get_raw_hits_everykmer(mindex::hit_searcher &hs,
+                  std::string &read,
                   sshash::streaming_query_canonical_parsing& qc,
                   bool isLeft,
                   bool verbose) {
-    clear();
     (void) verbose;
     projected_hits phits;
-    auto& raw_hits = isLeft ? left_rawHits : right_rawHits;
+    auto& raw_hits = isLeft ? hs.get_left_hits() : hs.get_right_hits();
+    CanonicalKmer::k(hs.get_k());
     pufferfish::CanonicalKmerIterator kit(read), kit_end;
+    std::cout << read << std::endl;
     while(kit != kit_end) {
-        phits = pfi_->query(kit, qc);
-        if (!phits.empty()) {
-          raw_hits.push_back(std::make_pair(kit->second, phits));
-        }
+        auto qres = qc.get_contig_pos(kit->first.fwWord(), kit->first.rcWord(), kit->second);
+        std::cout << kit->first.to_str() << std::endl;
+        bool is_member = (qres.kmer_id != sshash::constants::invalid_uint64);
+        std::cout << is_member << std::endl;
+        phits = hs.get_index()->query(kit, qc);
+        std::cout << phits << std::endl;
         ++kit;
     }
     return raw_hits.size() != 0;
 }
 
-void hit_searcher::clear() {
-  left_rawHits.clear();
-  right_rawHits.clear();
-}
+int main() {
+    mindex::reference_index ri("/fs/cbcb-lab/rob/students/noor/Atacseq/piscem_analysis/hg38_ind_k23/hg38_ind_k23");
+    mindex::hit_searcher hs(&ri);
+    sshash::streaming_query_canonical_parsing q(ri.get_dict());
+    std::string seq1 = "AGAGACAGCGGAAGGCCTATGCCGACGTATGA";
+    std::cout << "every" << std::endl;
+    get_raw_hits_everykmer(hs, 
+                        seq1,
+                        q, true, true);
 
+    std::cout << "sketch" << std::endl;                    
+    get_raw_hits_sketch(hs, 
+                        seq1,
+                        q, true, true);                        
+    // std::cout << hs.get_left_hits().size() << "\n";
+    return 0;
 }

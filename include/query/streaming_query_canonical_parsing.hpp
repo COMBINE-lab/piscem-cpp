@@ -1,5 +1,6 @@
 #pragma once
 
+#include <limits>
 #include "../dictionary.hpp"
 #include "../minimizer_enumerator.hpp"
 #include "../util.hpp"
@@ -29,7 +30,7 @@ struct streaming_query_canonical_parsing {
         , m_end(0)
         , m_pos_in_window(0)
         , m_window_size(0)
-        , m_prev_query_offset(0)
+        , m_prev_query_offset(std::numeric_limits<int32_t>::lowest())
 
         , m_reverse(false)
 
@@ -42,6 +43,25 @@ struct streaming_query_canonical_parsing {
 
     inline void start() { m_start = true; }
 
+    inline void reset_state() {
+        // reset all of the relevant state
+        m_minimizer_not_found = false;
+        start();
+        m_curr_minimizer = constants::invalid_uint64;
+        m_prev_minimizer = constants::invalid_uint64;
+        m_kmer = constants::invalid_uint64;
+        
+        m_string_iterator.at(0);
+        m_begin = 0;
+        m_end = 0;
+        m_pos_in_window = 0;
+        m_window_size = 0;
+
+        m_res.kmer_id = constants::invalid_uint64;
+        m_reverse = false;
+        m_prev_query_offset = std::numeric_limits<int32_t>::lowest();
+    }
+
     lookup_result get_contig_pos(const uint64_t km, const uint64_t km_rc,
                                  const uint64_t query_offset) {
         return lookup_advanced(km, km_rc, query_offset);
@@ -49,12 +69,6 @@ struct streaming_query_canonical_parsing {
 
     lookup_result lookup_advanced(const uint64_t km, const uint64_t km_rc,
                                   const uint64_t query_offset) {
-        m_kmer = km;
-        m_kmer_rc = km_rc;
-
-        // std::cout << "== query for kmer='" << util::uint64_to_string_no_reverse(m_kmer, m_k)
-        //           << "', rc='" << util::uint64_to_string_no_reverse(m_kmer_rc, m_k) << "'"
-        //           << std::endl;
 
         // if the current query offset position is
         // the next position after the stored query
@@ -62,7 +76,11 @@ struct streaming_query_canonical_parsing {
         // relevant optimizations.  Otherwise, we
         // should consider this as basically a "new"
         // query
-        if (!m_start) { m_start = (m_prev_query_offset + 1) != query_offset; }
+        if (!m_start) {
+          if ((m_prev_query_offset + 1) != query_offset) { reset_state(); }
+        }
+        m_kmer = km;
+        m_kmer_rc = km_rc;
         m_prev_query_offset = query_offset;
 
         return do_lookup_advanced();
@@ -72,7 +90,7 @@ struct streaming_query_canonical_parsing {
         /* 1. validation */
         bool is_valid = m_start ? util::is_valid(kmer, m_k) : util::is_valid(kmer[m_k - 1]);
         if (!is_valid) {
-            m_start = true;
+            reset_state();
             return lookup_result();
         }
 
@@ -95,6 +113,7 @@ struct streaming_query_canonical_parsing {
         uint64_t minimizer_rc = m_minimizer_enum_rc.next<reverse>(m_kmer_rc, m_start);
         assert(minimizer_rc == util::compute_minimizer(m_kmer_rc, m_k, m_m, m_seed));
         m_curr_minimizer = std::min<uint64_t>(m_curr_minimizer, minimizer_rc);
+        bool prev_kmer_found = (m_res.kmer_id != constants::invalid_uint64);
 
         /* 3. compute result */
         if (m_start) {
@@ -102,15 +121,23 @@ struct streaming_query_canonical_parsing {
             lookup_advanced();
         } else if (same_minimizer()) {
             if (minimizer_found()) {
-                if (extends()) {
+                // NOTE: Technically, I don't believe this additional check 
+                // that we are attempting to extend from a prior search that did
+                // not result in a hit (i.e. prev_kmer_found) is necessary. 
+                // However, until we can convince oursleves of this reliably 
+                // @jermp, I am going to keep it. If and when we are convinced of this
+                // we can replace it with the simpler line below.
+                // if (extends()) {
+                if ( prev_kmer_found and extends() ) {
                     extend();
                 } else {
                     lookup_advanced();
-                }
-            }
+                } 
+            } 
         } else {
+            m_minimizer_not_found = false;
             locate_bucket();
-            if (extends()) { /* Try to extend matching even when we change minimizer. */
+            if (prev_kmer_found and extends()) { /* Try to extend matching even when we change minimizer. */
                 extend();
             } else {
                 lookup_advanced();
@@ -122,6 +149,7 @@ struct streaming_query_canonical_parsing {
         m_start = false;
 
         assert(equal_lookup_result(m_dict->lookup_uint64_canonical_parsing(m_kmer), m_res));
+
         return m_res;
     }
 
@@ -220,8 +248,6 @@ private:
                         m_minimizer_not_found = true;
                         m_res = lookup_result();
                         return;
-                    } else {
-                        m_minimizer_not_found = false;
                     }
                 }
 
@@ -280,6 +306,7 @@ private:
             }
             return false;
         }
+
         if (m_pos_in_window == m_window_size) return false;
         if (m_kmer == m_string_iterator.read(2 * m_k)) {
             ++m_num_extensions;
