@@ -20,7 +20,7 @@ struct projected_hits {
     uint64_t globalPos_;
     uint32_t k_;
 
-    sshash::util::contig_spccontig an refRange;
+    sshash::util::contig_span refRange;
 
     inline bool empty() { return refRange.empty(); }
 

@@ -109,10 +109,12 @@ bool map_fragment(fastx_parser::ReadTrip& record, mapping_cache_info& map_cache_
     // std::cout << mov.frag << std::endl;
     // std::cout << "aaa\n" ;
     if(mov.frag != "") {
+        std::cout << "Move fragment" << mov.frag << std::endl; 
         (void)map_cache_left;
         (void)map_cache_right;
         bool read_map = mapping::util::map_atac_read(&mov.frag, map_cache_out, false, 
                                     km, psc_off, ps_skip, thr);
+        std::cout << "km is " << km << std::endl;                            
         if (km) {
             ++k_match;
         }
@@ -121,10 +123,12 @@ bool map_fragment(fastx_parser::ReadTrip& record, mapping_cache_info& map_cache_
 
     bool early_exit_left = mapping::util::map_atac_read(&record.first.seq, map_cache_left, false, 
                                     km, psc_off, ps_skip, thr);
+    std::cout << "left km is " << km << std::endl;  
     
     bool right_km = false;
     bool early_exit_right = mapping::util::map_atac_read(&record.second.seq, map_cache_right, false, right_km, psc_off, ps_skip, thr);
-
+    std::cout << "record.second.seq " << record.second.seq << std::endl;  
+    std::cout << "right right km is " << km << std::endl;  
     if(km | right_km) {
         ++k_match;
     }
