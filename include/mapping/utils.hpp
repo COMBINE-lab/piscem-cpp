@@ -82,6 +82,7 @@ struct sketch_hit_info {
         (void)k;
         bool added{false};
         int32_t approx_map_pos = ref_pos - read_pos;
+        std::cout << "map_pos" << approx_map_pos << std::endl;
         // If structural constraints have been disabled
         // then simply count the number of hits we see in
         // the given orientation (being careful to count
@@ -164,6 +165,7 @@ struct sketch_hit_info {
                 float score_inc) {
         bool added{false};
         int32_t approx_map_pos = (ref_pos - (rl - (read_pos + k)));
+        std::cout << "map_pos" << approx_map_pos << std::endl;
         // NO STRUCTURAL CONSTRAINTS
         if (ignore_struct_constraints_rc) {
             if (read_pos > last_read_pos_rc) {
@@ -571,7 +573,7 @@ inline bool map_read(std::string* read_seq, mapping_cache_info& map_cache, bool&
                         bool ori = ref_pos_ori.isFW;
                         
                         auto& target = hit_map[tid];
-                        
+                        // std::cout << "tid is " << tid;
                         if (verbose) {
                             auto& tname = map_cache.hs.get_index()->ref_name(tid);
                             std::cerr << "\traw_hit [read_pos: " << read_pos << " ]:" << tname
@@ -787,7 +789,7 @@ inline bool map_read(std::string* read_seq, mapping_cache_info& map_cache, bool&
 }
 
 inline bool map_atac_read(std::string* read_seq, mapping_cache_info& map_cache,
-    bool verbose, bool& k_match, bool psc_off=false, bool ps_skip=true, float thr=1.0) {
+    bool verbose, bool& k_match, mindex::reference_index& ri, bool psc_off=false, bool ps_skip=true, float thr=1.0) {
     map_cache.clear();
     // rebind map_cache variables to
     // local names
@@ -821,7 +823,7 @@ inline bool map_atac_read(std::string* read_seq, mapping_cache_info& map_cache,
         uint64_t total_occs{0};
         uint64_t largest_occ{0};
         auto& raw_hits = hs.get_left_hits();
-
+        // std::cout << "raw hits" << raw_hits.size() << std::endl;
         // SANITY
         decltype(raw_hits[0].first) prev_read_pos = -1;
         // the maximum span the supporting k-mers of a
@@ -847,6 +849,7 @@ inline bool map_atac_read(std::string* read_seq, mapping_cache_info& map_cache,
                       auto& ambiguous_hit_indices, auto& had_alt_max_occ) -> bool {
             int32_t hit_idx{0};
             // return false;
+
             for (auto& raw_hit : raw_hits) {
                 auto& read_pos = raw_hit.first;
                 auto& proj_hits = raw_hit.second;
@@ -932,8 +935,8 @@ inline bool map_atac_read(std::string* read_seq, mapping_cache_info& map_cache,
         auto collect_mappings_from_hits_thr =
             [&max_stretch, &min_occ, &hit_map, &num_valid_hits, &total_occs, &largest_occ,
              &early_stop, signed_rl, k, &map_cache, perform_ambig_filtering,
-             verbose, psc_off, ps_skip, &thr](auto& raw_hits, auto& prev_read_pos, auto& max_allowed_occ,
-                      auto& ambiguous_hit_indices, auto& had_alt_max_occ, auto& thr) -> bool {
+             verbose, psc_off, ps_skip, &thr, &ri](auto& raw_hits, auto& prev_read_pos, auto& max_allowed_occ,
+                      auto& ambiguous_hit_indices, auto& had_alt_max_occ, auto& thr, auto &ri) -> bool {
             int32_t hit_idx{0};
             // return false;
             for (auto& raw_hit : raw_hits) {
@@ -948,6 +951,7 @@ inline bool map_atac_read(std::string* read_seq, mapping_cache_info& map_cache,
                 bool still_have_valid_target = false;
                 prev_read_pos = read_pos;
                 
+                // std::cout << "proj hits " << num_occ << std::endl;
                 // std::cout << raw_hits.size() << "entered\n";
                 if (num_occ <= max_allowed_occ) {
                     total_occs += num_occ;
@@ -958,7 +962,7 @@ inline bool map_atac_read(std::string* read_seq, mapping_cache_info& map_cache,
                         uint32_t tid = sshash::util::transcript_id(v);
                         int32_t pos = static_cast<int32_t>(ref_pos_ori.pos);
                         bool ori = ref_pos_ori.isFW;
-                        
+                        // std::cout << "tid " << tid << std::endl;
                         auto& target = hit_map[tid];
                         
                         /*
@@ -984,13 +988,14 @@ inline bool map_atac_read(std::string* read_seq, mapping_cache_info& map_cache,
                             if (psc_off) {
                                 target.ignore_struct_constraints_fw = true;
                             }
+                            std::cout << "txp " << ri.ref_name(tid) << std::endl;
                             target.add_fw(pos, static_cast<int32_t>(read_pos), signed_rl, k,
                                         max_stretch, score_inc);
                         } else {
                             if (psc_off) {
                                 target.ignore_struct_constraints_rc = true;
                             }
-                                
+                            std::cout << "txp " << ri.ref_name(tid) << std::endl;    
                             target.add_rc(pos, static_cast<int32_t>(read_pos), signed_rl, k,
                                         max_stretch, score_inc);
                         }
@@ -1034,7 +1039,7 @@ inline bool map_atac_read(std::string* read_seq, mapping_cache_info& map_cache,
 
         else {
             early_stop = collect_mappings_from_hits_thr(raw_hits, prev_read_pos, mao_first_pass,
-                                       map_cache.ambiguous_hit_indices, _discard, thr);
+                                       map_cache.ambiguous_hit_indices, _discard, thr, ri);
             // std::cout << early_stop << "thr\n"                           ;
             // If our default threshold was too stringent, then fallback to a more liberal
             // threshold and look up the k-mers that occur the least frequently.
@@ -1047,7 +1052,7 @@ inline bool map_atac_read(std::string* read_seq, mapping_cache_info& map_cache,
                 uint64_t max_allowed_occ = min_occ;
                 early_stop =
                     collect_mappings_from_hits_thr(raw_hits, prev_read_pos, max_allowed_occ,
-                                    map_cache.ambiguous_hit_indices, had_alt_max_occ, thr);
+                                    map_cache.ambiguous_hit_indices, had_alt_max_occ, thr, ri);
             }
         }
 
@@ -1153,10 +1158,12 @@ inline bool map_atac_read(std::string* read_seq, mapping_cache_info& map_cache,
             auto simple_hit = (best_hit_dir != mapping::util::HitDirection::RC)
                                   ? kv.second.get_fw_hit()
                                   : kv.second.get_rc_hit();
-
+            
             if (simple_hit.num_hits >= num_valid_hits) {
+                // std::cout << "enter valid\n";
                 simple_hit.tid = kv.first;
                 accepted_hits.emplace_back(simple_hit);
+                // std::cout << "simple hits" << simple_hit.num_hits << " " << num_valid_hits << " tid " << simple_hit.tid << std::endl;
                 // if we had equally good hits in both directions
                 // add the rc hit here (since we added the fw)
                 // above if the best hit was either FW or BOTH
@@ -1193,6 +1200,7 @@ inline bool map_atac_read(std::string* read_seq, mapping_cache_info& map_cache,
     }  // DONE : if (rh)
 
     // If the read mapped to > maxReadOccs places, discard it
+    // std::cout << accepted_hits.size() << " " << map_cache.alt_max_occ << "\n";
     if (accepted_hits.size() > map_cache.alt_max_occ) {
         accepted_hits.clear();
         map_type = mapping::util::MappingType::UNMAPPED;
@@ -1202,6 +1210,19 @@ inline bool map_atac_read(std::string* read_seq, mapping_cache_info& map_cache,
 
     return early_stop;
 }
+
+void print_hits(const std::vector<mapping::util::simple_hit> &hits ) {
+    for (const auto& hit : hits) {
+        std::cout << "isFw: " << hit.is_fw << std::endl;
+        std::cout << "pos: " << hit.pos << std::endl;
+        std::cout << "score: " << hit.score << std::endl;
+        std::cout << "num hits: " << hit.num_hits << std::endl;
+        std::cout << "tid: " << hit.tid << std::endl;
+        std::cout << "Frag length: " << hit.fragment_length << std::endl;
+        std::cout << "------------------------" << std::endl;
+    }
+}
+ 
 
 inline void merge_se_mappings(mapping_cache_info& map_cache_left,
                               mapping_cache_info& map_cache_right, int32_t left_len,
@@ -1217,6 +1238,10 @@ inline void merge_se_mappings(mapping_cache_info& map_cache_left,
     size_t num_accepted_right = accepted_right.size();
 
     if ((num_accepted_left > 0) and (num_accepted_right > 0)) {
+        // std::cout << "entered both\n";
+        // print_hits(accepted_left);
+        // std::cout << "left right\n";
+        // print_hits(accepted_right);
         // look for paired end mappings
         // so we have to sort our accepted hits
         struct {
@@ -1269,6 +1294,10 @@ inline void merge_se_mappings(mapping_cache_info& map_cache_left,
                         int32_t pos_fw = first1->is_fw ? first1->pos : first2->pos;
                         int32_t pos_rc = first1->is_fw ? first2->pos : first1->pos;
                         int32_t frag_len = (pos_rc - pos_fw);
+                        if (frag_len == 0) {
+                            std::cout << "0 fragment length";
+                        }
+                        std::cout << first1->tid << " tids " << first2->tid << "pos " << pos_fw << " " << pos_rc << " frag len " << frag_len << "\n";
                         if ((-20 < frag_len) and (frag_len < 1000)) {
                             // if left is fw and right is rc then
                             // fragment length is (right_pos + right_len - left_pos) + 1
@@ -1295,6 +1324,7 @@ inline void merge_se_mappings(mapping_cache_info& map_cache_left,
 
         map_cache_out.map_type = (map_cache_out.accepted_hits.size() > 0) ? MappingType::MAPPED_PAIR
                                                                           : MappingType::UNMAPPED;
+        std::cout << "map cache " << map_cache_out.accepted_hits.size() << std::endl;
     } else if ((num_accepted_left > 0) and !had_matching_kmers_right) {
         // just return the left mappings
         std::swap(map_cache_left.accepted_hits, map_cache_out.accepted_hits);
@@ -1310,6 +1340,132 @@ inline void merge_se_mappings(mapping_cache_info& map_cache_left,
     } else {
         // return nothing
     }
+}
+
+inline void merge_se_mappings(mapping_cache_info& map_cache_left,
+                              mapping_cache_info& map_cache_right, int32_t left_len,
+                              int32_t right_len, mapping_cache_info& map_cache_out, 
+                              mindex::reference_index& ri) {
+    map_cache_out.clear();
+    auto& accepted_left = map_cache_left.accepted_hits;
+    auto& accepted_right = map_cache_right.accepted_hits;
+
+    size_t had_matching_kmers_left = map_cache_left.has_matching_kmers;
+    size_t had_matching_kmers_right = map_cache_right.has_matching_kmers;
+
+    size_t num_accepted_left = accepted_left.size();
+    size_t num_accepted_right = accepted_right.size();
+    std::cout << "num hits " << num_accepted_left << " " << num_accepted_right << "\n";
+    std::cout << "matching kmers " << had_matching_kmers_left << " " << had_matching_kmers_right << "\n";
+    if ((num_accepted_left > 0) and (num_accepted_right > 0)) {
+        std::cout << "entered both\n";
+        // print_hits(accepted_left);
+        // std::cout << "left right\n";
+        // print_hits(accepted_right);
+        // look for paired end mappings
+        // so we have to sort our accepted hits
+        struct {
+            // sort first by orientation, then by transcript id, and finally by position
+            bool operator()(const mapping::util::simple_hit& a,
+                            const mapping::util::simple_hit& b) {
+                if (a.is_fw != b.is_fw) { return a.is_fw > b.is_fw; }
+                // orientations are the same
+                if (a.tid != b.tid) { return a.tid < b.tid; }
+                return a.pos < b.pos;
+            }
+        } simple_hit_less;
+        std::sort(accepted_left.begin(), accepted_left.end(), simple_hit_less);
+        std::sort(accepted_right.begin(), accepted_right.end(), simple_hit_less);
+
+        const mapping::util::simple_hit smallest_rc_hit = {false, false, -1, 0.0, 0, 0};
+        // start of forward sub-list
+        auto first_fw1 = accepted_left.begin();
+        // end of forward sub-list is first non-forward hit
+        auto last_fw1 = std::lower_bound(accepted_left.begin(), accepted_left.end(),
+                                         smallest_rc_hit, simple_hit_less);
+        // start of rc list
+        auto first_rc1 = last_fw1;
+        // end of rc list
+        auto last_rc1 = accepted_left.end();
+
+        // start of forward sub-list
+        auto first_fw2 = accepted_right.begin();
+        // end of forward sub-list is first non-forward hit
+        auto last_fw2 = std::lower_bound(accepted_right.begin(), accepted_right.end(),
+                                         smallest_rc_hit, simple_hit_less);
+        // start of rc list
+        auto first_rc2 = last_fw2;
+        // end of rc list
+        auto last_rc2 = accepted_right.end();
+
+        auto back_inserter = std::back_inserter(map_cache_out.accepted_hits);
+        using iter_t = decltype(first_fw1);
+        using out_iter_t = decltype(back_inserter);
+
+        // auto merge_lists = [left_len, right_len](iter_t first1, iter_t last1, iter_t first2,
+        //                                          iter_t last2, out_iter_t out) -> out_iter_t {
+        auto merge_lists = [left_len, right_len, ri](iter_t first1, iter_t last1, iter_t first2,
+                                                 iter_t last2, out_iter_t out) -> out_iter_t {
+            // https://en.cppreference.com/w/cpp/algorithm/set_intersection
+            while (first1 != last1 && first2 != last2) {
+                if (first1->tid < first2->tid) {
+                    ++first1;
+                } else {
+                    if (!(first2->tid < first1->tid)) {
+                        // first1->tid == first2->tid have the same transcript.
+                        int32_t pos_fw = first1->is_fw ? first1->pos : first2->pos;
+                        int32_t pos_rc = first1->is_fw ? first2->pos : first1->pos;
+                        int32_t frag_len = (pos_rc - pos_fw);
+                        if (frag_len == 0) {
+                            std::cout << "0 fragment length";
+                        }
+                        std::cout << ri.ref_name(first1->tid) << " tids " << ri.ref_name(first2->tid) << "pos " << pos_fw << " " << pos_rc << " frag len " << frag_len << "\n";
+                        if ((-20 < frag_len) and (frag_len < 1000)) {
+                            // if left is fw and right is rc then
+                            // fragment length is (right_pos + right_len - left_pos) + 1
+                            // otherwise it is (left_pos + left_len - right_pos) + 1
+                            bool right_is_rc = !first2->is_fw;
+                            int32_t tlen = right_is_rc
+                                               ? ((first2->pos + right_len - first1->pos) + 1)
+                                               : ((first1->pos + left_len - first2->pos) + 1);
+                            *out++ = {first1->is_fw, first2->is_fw, first1->pos, 0.0, 0,
+                                      first1->tid,   first2->pos,   tlen};
+                            ++first1;
+                        }
+                    }
+                    ++first2;
+                }
+            }
+            return out;
+        };
+
+        // find hits of form 1:fw, 2:rc
+        merge_lists(first_fw1, last_fw1, first_rc2, last_rc2, back_inserter);
+        // find hits of form 1:rc, 2:fw
+        merge_lists(first_rc1, last_rc1, first_fw2, last_fw2, back_inserter);
+
+        map_cache_out.map_type = (map_cache_out.accepted_hits.size() > 0) ? MappingType::MAPPED_PAIR
+                                                                          : MappingType::UNMAPPED;
+        std::cout << "map cache " << map_cache_out.accepted_hits.size() << std::endl;
+    } else if ((num_accepted_left > 0) and !had_matching_kmers_right) {
+        // just return the left mappings
+        std::swap(map_cache_left.accepted_hits, map_cache_out.accepted_hits);
+        map_cache_out.map_type = (map_cache_out.accepted_hits.size() > 0)
+                                     ? MappingType::MAPPED_FIRST_ORPHAN
+                                     : MappingType::UNMAPPED;
+    } else if ((num_accepted_right > 0) and !had_matching_kmers_left) {
+        // just return the right mappings
+        std::swap(map_cache_right.accepted_hits, map_cache_out.accepted_hits);
+        map_cache_out.map_type = (map_cache_out.accepted_hits.size() > 0)
+                                     ? MappingType::MAPPED_SECOND_ORPHAN
+                                     : MappingType::UNMAPPED;
+    } else {
+        // return nothing
+    }
+    // std::cout << "hits right\n";
+    // print_hits(map_cache_right.accepted_hits);
+    // std::cout << "hits left\n";
+    // print_hits(map_cache_left.accepted_hits);
 }
 
 }  // namespace util
