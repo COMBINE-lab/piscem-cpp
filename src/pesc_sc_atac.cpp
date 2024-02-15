@@ -6,6 +6,7 @@
 #include "../include/projected_hits.hpp"
 #include "../include/util.hpp"
 #include "../include/mapping/utils.hpp"
+#include "../include/mapping/utils_bin.hpp"
 #include "../include/parallel_hashmap/phmap.h"
 #include "../include/FastxParser.hpp"
 #include "../include/rad/rad_writer.hpp"
@@ -37,7 +38,8 @@
 using namespace klibpp;
 using BarCodeRecovered = single_cell::util::BarCodeRecovered;
 using bc_kmer_t = rad::util::bc_kmer_t;
-using mapping::util::mapping_cache_info;
+// using mapping::util::mapping_cache_info;
+using mapping::util_bin::mapping_cache_info;
 
 struct pesc_atac_options {
     std::string index_basename;
@@ -82,10 +84,10 @@ bool map_fragment(fastx_parser::ReadTrip& record, mapping_cache_info& map_cache_
     //     return read_map;
     // }
 
-    bool early_exit_left = mapping::util::map_atac_read(&record.first.seq, map_cache_left, false, km, ri);
+    bool early_exit_left = mapping::util_bin::map_atac_read(&record.first.seq, map_cache_left, false, km, ri);
     
     bool right_km = false;
-    bool early_exit_right = mapping::util::map_atac_read(&record.second.seq, map_cache_right, false, right_km, ri);
+    bool early_exit_right = mapping::util_bin::map_atac_read(&record.second.seq, map_cache_right, false, right_km, ri);
 
     if(km | right_km) {
         ++k_match;
@@ -94,7 +96,7 @@ bool map_fragment(fastx_parser::ReadTrip& record, mapping_cache_info& map_cache_
     int32_t left_len = static_cast<int32_t>(record.first.seq.length());
     int32_t right_len = static_cast<int32_t>(record.second.seq.length());
     
-    mapping::util::merge_se_mappings(map_cache_left, map_cache_right, left_len, right_len,
+    mapping::util_bin::merge_se_mappings(map_cache_left, map_cache_right, left_len, right_len,
                                      map_cache_out);
 
     return (early_exit_left or early_exit_right);
@@ -165,14 +167,14 @@ bool map_fragment(fastx_parser::ReadTrip& record, mapping_cache_info& map_cache_
     //     return read_map;
     // }
 
-    bool early_exit_left = mapping::util::map_atac_read(&record.first.seq, map_cache_left, false, 
+    bool early_exit_left = mapping::util_bin::map_atac_read(&record.first.seq, map_cache_left, false, 
                                     km, ri, psc_off, ps_skip, thr);
-    std::cout << "first record is " << record.first.seq << std::endl;
-    std::cout << "left is " << early_exit_left << std::endl;  
-    std::cout << "second record is " << record.second.seq << std::endl;  
+    // std::cout << "first record is " << record.first.seq << std::endl;
+    // std::cout << "left is " << early_exit_left << std::endl;  
+    // std::cout << "second record is " << record.second.seq << std::endl;  
     bool right_km = false;
-    bool early_exit_right = mapping::util::map_atac_read(&record.second.seq, map_cache_right, false, right_km, ri, psc_off, ps_skip, thr);
-    std::cout << "right is " << early_exit_right << std::endl;  
+    bool early_exit_right = mapping::util_bin::map_atac_read(&record.second.seq, map_cache_right, false, right_km, ri, psc_off, ps_skip, thr);
+    // std::cout << "right is " << early_exit_right << std::endl;  
     // std::cout << "record.second.seq " << record.second.seq << std::endl;  
     // std::cout << "right right km is " << km << std::endl;  
     if(km | right_km) {
@@ -182,7 +184,7 @@ bool map_fragment(fastx_parser::ReadTrip& record, mapping_cache_info& map_cache_
     int32_t left_len = static_cast<int32_t>(record.first.seq.length());
     int32_t right_len = static_cast<int32_t>(record.second.seq.length());
     
-    mapping::util::merge_se_mappings(map_cache_left, map_cache_right, left_len, right_len,
+    mapping::util_bin::merge_se_mappings(map_cache_left, map_cache_right, left_len, right_len,
                                      map_cache_out, ri);
 
     return (early_exit_left or early_exit_right);
@@ -287,6 +289,7 @@ void do_map(mindex::reference_index& ri,
             bc_kmer_t bc_kmer;
 
             auto recovered = single_cell::util::recover_barcode(*bc);
+            std::cout << *bc << " barcode\n";
             // if we couldn't correct it with 1 `N`, then skip.
             if (recovered == BarCodeRecovered::NOT_RECOVERED) { continue; }
             bool had_early_stop = 
@@ -295,7 +298,16 @@ void do_map(mindex::reference_index& ri,
                map_fragment(record, map_cache_left, map_cache_right, map_cache_out, k_match,
                    psc_off, ps_skip, thr, ri);
             (void)had_early_stop;
-            std::cout << "mapped cache" << map_cache_out.accepted_hits.size() << "\n";
+            if (map_cache_out.accepted_hits.size() == 0) {
+                std::cout << "left\n";
+                mapping::util_bin::print_hits(map_cache_left.accepted_hits);
+                std::cout << "right\n";
+                mapping::util_bin::print_hits(map_cache_right.accepted_hits);
+            }
+    
+            // std::cout << "left size" << map_cache_left.accepted_hits.size() << "\n";
+            // std::cout << "right size" << map_cache_right.accepted_hits.size() << "\n";
+            // std::cout << "mapped cache" << map_cache_out.accepted_hits.size() << "\n";
             global_nhits += map_cache_out.accepted_hits.empty() ? 0 : 1;
             rad::util::write_to_rad_stream_atac(bc_kmer, map_cache_out.map_type, map_cache_out.accepted_hits,
                                                 map_cache_out.unmapped_bc_map, num_reads_in_chunk, 

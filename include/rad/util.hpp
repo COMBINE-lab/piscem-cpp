@@ -5,6 +5,7 @@
 
 #include "../parallel_hashmap/phmap.h"
 #include "../mapping/utils.hpp"
+#include "../mapping/utils_bin.hpp"
 #include "../Kmer.hpp"
 #include "../reference_index.hpp"
 #include "rad_header.hpp"
@@ -347,6 +348,80 @@ inline void write_to_rad_stream_atac(bc_kmer_t& bck, mapping::util::MappingType 
                 }
                 break;
             case mapping::util::MappingType::UNMAPPED:
+                // don't do anything here
+                break;
+        }
+        strbuff += std::to_string(leftmost_pos);
+        strbuff += "\t";
+        strbuff += std::to_string(leftmost_pos + frag_len);
+        strbuff += "\t";
+        strbuff += barcode;
+        strbuff += "\t";
+        strbuff += std::to_string(accepted_hits.size());
+        strbuff += "\t";
+        strbuff += "1";
+        strbuff += "\n";
+    }
+    ++num_reads_in_chunk;
+}
+
+inline void write_to_rad_stream_atac(bc_kmer_t& bck, mapping::util_bin::MappingType map_type,
+                                     std::vector<mapping::util_bin::simple_hit>& accepted_hits,
+                                     phmap::flat_hash_map<uint64_t, uint32_t>& unmapped_bc_map,
+                                     uint32_t& num_reads_in_chunk, std::string& strbuff, 
+                                     std::string& barcode, mindex::reference_index& ri) {
+    if (map_type == mapping::util_bin::MappingType::UNMAPPED) {
+        unmapped_bc_map[bck.word(0)] += 1;
+        // do nothing here
+        return;
+    }
+
+    // otherwise, we always write the number of mappings
+    // strbuff += barcode;
+    // strbuff << static_cast<uint32_t>(accepted_hits.size());
+    // for each fragment
+    for (auto& aln : accepted_hits) {
+        // top 2 bits are fw,rc ori
+        uint32_t fw_mask = aln.is_fw ? 0x80000000 : 0x00000000;
+        uint32_t mate_fw_mask = aln.mate_is_fw ? 0x40000000 : 0x00000000;
+        // bottom 30 bits are target id
+        // strbuff += std::to_string((0x3FFFFFFF & aln.tid) | fw_mask | mate_fw_mask);
+        strbuff += ri.ref_name(aln.tid);
+        strbuff += "\t";
+        int32_t leftmost_pos = 0;
+        // placeholder value for no fragment length
+        uint16_t frag_len = std::numeric_limits<uint16_t>::max();
+
+        switch (map_type) {
+            case mapping::util_bin::MappingType::SINGLE_MAPPED:
+                // then the posittion must be that of the only
+                // mapped read.
+                leftmost_pos = std::max(0, aln.pos);
+                break;
+            case mapping::util_bin::MappingType::MAPPED_FIRST_ORPHAN:
+                leftmost_pos = std::max(0, aln.pos);
+                break;
+            case mapping::util_bin::MappingType::MAPPED_SECOND_ORPHAN:
+                // it's not mate pos b/c in this case we
+                // simply returned the right accepted hits
+                // as the accepted hits
+                leftmost_pos = std::max(0, aln.pos);
+                break;
+            case mapping::util_bin::MappingType::MAPPED_PAIR:
+                // if we actually have a paird fragment get the
+                // leftmost position
+                leftmost_pos = std::min(aln.pos, aln.mate_pos);
+                frag_len = aln.frag_len();
+                // if the leftmost position is < 0, then adjust
+                // the overhang by setting the start position to 0
+                // and subtracting the overhang from the fragment
+                // length.
+                if (leftmost_pos < 0) {
+                    frag_len = aln.frag_len() + leftmost_pos;
+                    leftmost_pos = 0;
+                }
+                break;
+            case mapping::util_bin::MappingType::UNMAPPED:
                 // don't do anything here
                 break;
         }
