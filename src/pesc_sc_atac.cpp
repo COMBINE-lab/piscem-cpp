@@ -153,7 +153,7 @@ bool map_fragment(fastx_parser::ReadTrip& record, mapping_cache_info& map_cache_
     check_overlap::MateOverlap mov;
     check_overlap::findOverlapBetweenPairedEndReads(record.first.seq, record.second.seq, mov, 30);
     bool km = false; //kmatch checker
-    std::cout << mov.frag << std::endl;
+    // std::cout << mov.frag << std::endl;
     // if(mov.frag != "") {
     //     std::cout << "Move fragment" << mov.frag << std::endl; 
     //     (void)map_cache_left;
@@ -213,6 +213,17 @@ public:
     // the mutex for safely writing to
     // unmapped_bc_file
     std::mutex unmapped_bc_mutex;
+
+    // the file where the barcodes belonging
+    // to the hits will betracked
+    std::ofstream barcode_file;
+    std::mutex barcode_mutex;
+    std::unordered_map<std::string, std::pair<uint64_t, uint64_t>> barcode_track; // will track the barcodes
+
+    // the file where the sequence from first fastq and string mapping will be stored
+    std::ofstream seq_file;
+    std::mutex seq_mutex;
+
 };
 
 template <typename FragT>
@@ -269,7 +280,10 @@ void do_map(mindex::reference_index& ri,
     uint64_t read_num = 0;
 
     std::string temp_buff="";
+    std::string temp_seq_buff="";
     temp_buff.reserve(max_chunk_reads*(9*2+16+5+12+5));
+    temp_seq_buff.reserve(max_chunk_reads*(60));
+
     while (parser.refill(rg)) {
         for (auto& record : rg) {
             ++global_nr;
@@ -288,8 +302,10 @@ void do_map(mindex::reference_index& ri,
             std::string* bc = &record.third.seq; // need to modify this
             bc_kmer_t bc_kmer;
 
+            // std::cout << *bc << " barcode " << record.first.seq <<"\n";
             auto recovered = single_cell::util::recover_barcode(*bc);
-            std::cout << *bc << " barcode\n";
+            // std::cout << *bc << "\n";
+            
             // if we couldn't correct it with 1 `N`, then skip.
             if (recovered == BarCodeRecovered::NOT_RECOVERED) { continue; }
             bool had_early_stop = 
@@ -298,17 +314,31 @@ void do_map(mindex::reference_index& ri,
                map_fragment(record, map_cache_left, map_cache_right, map_cache_out, k_match,
                    psc_off, ps_skip, thr, ri);
             (void)had_early_stop;
-            if (map_cache_out.accepted_hits.size() == 0) {
-                std::cout << "left\n";
-                mapping::util_bin::print_hits(map_cache_left.accepted_hits);
-                std::cout << "right\n";
-                mapping::util_bin::print_hits(map_cache_right.accepted_hits);
-            }
+            // if (map_cache_out.accepted_hits.size() != 0) {
+            //     mapping::util_bin::print_hits(map_cache_out.accepted_hits);
+            // }
     
             // std::cout << "left size" << map_cache_left.accepted_hits.size() << "\n";
             // std::cout << "right size" << map_cache_right.accepted_hits.size() << "\n";
             // std::cout << "mapped cache" << map_cache_out.accepted_hits.size() << "\n";
-            global_nhits += map_cache_out.accepted_hits.empty() ? 0 : 1;
+            
+            if (!map_cache_out.accepted_hits.empty()) {
+                temp_seq_buff += std::to_string(hctr);
+                temp_seq_buff += "\t";
+                temp_seq_buff += record.first.seq;
+                temp_seq_buff += "\n";
+                global_nhits += 1;
+                out_info.barcode_mutex.lock();
+                auto it = out_info.barcode_track.find(*bc);
+                if (it == out_info.barcode_track.end()) {
+                    out_info.barcode_track[*bc] = std::pair(0,0);
+                }
+                out_info.barcode_track[*bc].first += 1;
+                out_info.barcode_track[*bc].second += static_cast<uint64_t>(map_cache_out.accepted_hits.size());
+                out_info.barcode_mutex.unlock();
+            }
+            // global_nhits += map_cache_out.accepted_hits.empty() ? 0 : 1;
+            // std::cout << global_nhits << " global hits\n";
             rad::util::write_to_rad_stream_atac(bc_kmer, map_cache_out.map_type, map_cache_out.accepted_hits,
                                                 map_cache_out.unmapped_bc_map, num_reads_in_chunk, 
                                                 temp_buff, *bc, ri);
@@ -319,7 +349,11 @@ void do_map(mindex::reference_index& ri,
                 out_info.bed_mutex.lock();
                 out_info.bed_file << temp_buff;
                 out_info.bed_mutex.unlock();
+                out_info.seq_mutex.lock();
+                out_info.seq_file << temp_seq_buff;
+                out_info.seq_mutex.unlock();
                 temp_buff = "";
+                temp_seq_buff = "";
                 num_reads_in_chunk = 0;
             }
         }
@@ -334,11 +368,17 @@ void do_map(mindex::reference_index& ri,
         out_info.bed_mutex.lock();
         out_info.bed_file << temp_buff;
         out_info.bed_mutex.unlock();
+
+        out_info.seq_mutex.lock();
+        out_info.seq_file << temp_seq_buff;
+        out_info.seq_mutex.unlock();
+
         temp_buff = "";
+        temp_seq_buff = "";
         num_reads_in_chunk = 0;
     }
 
-    // unmapped barcode writer
+    // // unmapped barcode writer
     {  // make a scope and dump the unmapped barcode counts
         std::string ubcw="";
         for (auto& kv : map_cache_out.unmapped_bc_map) {
@@ -350,6 +390,7 @@ void do_map(mindex::reference_index& ri,
         out_info.unmapped_bc_mutex.unlock();
         ubcw.clear();
     }
+
 }
 
 #ifdef __cplusplus
@@ -422,6 +463,8 @@ int run_pesc_sc_atac(int argc, char** argv) {
 
     ghc::filesystem::path bed_file_path = output_path / "map.bed";
     ghc::filesystem::path unmapped_bc_file_path = output_path / "unmapped_bc_count.bin";
+    ghc::filesystem::path mapped_bc_file_path = output_path / "mapped_bc.txt";\
+    ghc::filesystem::path seq_file_path = output_path / "seq_id.txt";
 
     std::ofstream bed_file(bed_file_path.string());
     if (!bed_file.good()) {
@@ -435,9 +478,23 @@ int run_pesc_sc_atac(int argc, char** argv) {
         throw std::runtime_error("error creating output file.");
     }
 
+    std::ofstream barcode_file(mapped_bc_file_path.string());
+    if (!barcode_file.good()) {
+        spdlog::critical("Could not open {} for writing.", mapped_bc_file_path.string());
+        throw std::runtime_error("error creating output file.");
+    }
+
+    std::ofstream seq_file(seq_file_path.string());
+    if (!seq_file.good()) {
+        spdlog::critical("Could not open {} for writing.", seq_file_path.string());
+        throw std::runtime_error("error creating output file.");
+    }
+
     pesc_output_info out_info;
     out_info.bed_file = std::move(bed_file);
     out_info.unmapped_bc_file = std::move(unmapped_bc_file);
+    out_info.barcode_file = std::move(barcode_file);
+    out_info.seq_file = std::move(seq_file);
 
     mindex::reference_index ri(po.index_basename);
     std::string cmdline;
@@ -459,7 +516,7 @@ int run_pesc_sc_atac(int argc, char** argv) {
     bool psc_off=po.psc_off;
     bool ps_skip=po.ps_skip;
     float thr=po.thr;
-
+    std::cout << thr << " thr\n";
     fastx_parser::FastxParser<fastx_parser::ReadTrip> rparser(
     po.left_read_filenames, po.right_read_filenames, po.barcode_filenames, nthread, np);
     rparser.start();
@@ -480,6 +537,39 @@ int run_pesc_sc_atac(int argc, char** argv) {
     rparser.stop();
     spdlog::info("finished mapping.");
 
+    spdlog::info("Writing barcode file");
+    
+    uint32_t num_barcodes{0};
+    uint32_t max_barcodes{5000};
+
+    std::string temp_barcode_buff = "";
+    temp_barcode_buff.reserve(max_barcodes*(40));
+    for (const auto& pair : out_info.barcode_track) {
+        if (num_barcodes > max_barcodes) {
+            out_info.barcode_mutex.lock();
+            out_info.barcode_file << temp_barcode_buff;
+            out_info.barcode_mutex.unlock();
+            temp_barcode_buff = "";
+            num_barcodes = 0;
+        }
+        else {
+            temp_barcode_buff += pair.first;
+            temp_barcode_buff += "\t";
+            temp_barcode_buff += std::to_string(pair.second.first);
+            temp_barcode_buff += "\t";
+            temp_barcode_buff += std::to_string(pair.second.second);
+            temp_barcode_buff += "\n";
+        }
+        num_barcodes++;
+    }
+    if (num_barcodes > 0) {
+        out_info.barcode_mutex.lock();
+        out_info.barcode_file << temp_barcode_buff;
+        out_info.barcode_mutex.unlock();
+        temp_barcode_buff = "";
+        num_barcodes = 0;
+    }
+
     out_info.bed_file.close();
     if (!out_info.bed_file) {
         spdlog::critical(
@@ -491,7 +581,9 @@ int run_pesc_sc_atac(int argc, char** argv) {
         return 1;
     }
     out_info.unmapped_bc_file.close();
-        auto end_t = std::chrono::high_resolution_clock::now();
+    out_info.barcode_file.close();
+    out_info.seq_file.close();
+    auto end_t = std::chrono::high_resolution_clock::now();
     auto num_sec = std::chrono::duration_cast<std::chrono::seconds>(end_t - start_t);
     piscem::meta_info::run_stats rs;
     rs.cmd_line(cmdline);

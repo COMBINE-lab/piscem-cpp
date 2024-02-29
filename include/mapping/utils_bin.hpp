@@ -736,8 +736,6 @@ inline bool map_read(std::string* read_seq, mapping_cache_info& map_cache, bool&
         }  // if we are processing ambiguous hits
 
         uint32_t best_alt_hits = 0;
-        // int32_t signed_read_len = static_cast<int32_t>(record.seq.length());
-
         for (auto& kv : hit_map) {
             auto best_hit_dir = kv.second.best_hit_direction();
 
@@ -746,23 +744,25 @@ inline bool map_read(std::string* read_seq, mapping_cache_info& map_cache, bool&
             auto simple_hit = (best_hit_dir != mapping::util_bin::HitDirection::RC)
                                   ? kv.second.get_fw_hit()
                                   : kv.second.get_rc_hit();
-
+            
             if (simple_hit.num_hits >= num_valid_hits) {
-                simple_hit.tid = kv.first;
-                accepted_hits.emplace_back(simple_hit);
-                // if we had equally good hits in both directions
-                // add the rc hit here (since we added the fw)
-                // above if the best hit was either FW or BOTH
-                if (best_hit_dir == mapping::util_bin::HitDirection::BOTH) {
-                    auto second_hit = kv.second.get_rc_hit();
-                    second_hit.tid = kv.first;
-                    accepted_hits.emplace_back(second_hit);
+                
+                    simple_hit.tid = kv.first;
+                    accepted_hits.emplace_back(simple_hit);
+                    // if we had equally good hits in both directions
+                    // add the rc hit here (since we added the fw)
+                    // above if the best hit was either FW or BOTH
+                    if (best_hit_dir == mapping::util_bin::HitDirection::BOTH) {
+                        auto second_hit = kv.second.get_rc_hit();
+                        second_hit.tid = kv.first;
+                        accepted_hits.emplace_back(second_hit);
+                    }
+                } else {
+                    // best_alt_score = simple_hit.score > best_alt_score ? simple_hit.score :
+                    // best_alt_score;
+                    best_alt_hits =
+                        simple_hit.num_hits > best_alt_hits ? simple_hit.num_hits : best_alt_hits;
                 }
-            } else {
-                // best_alt_score = simple_hit.score > best_alt_score ? simple_hit.score :
-                // best_alt_score;
-                best_alt_hits =
-                    simple_hit.num_hits > best_alt_hits ? simple_hit.num_hits : best_alt_hits;
             }
         }
 
@@ -783,7 +783,7 @@ inline bool map_read(std::string* read_seq, mapping_cache_info& map_cache, bool&
           }
         }
         */
-    }  // DONE : if (rh)
+      // DONE : if (rh)
 
     // If the read mapped to > maxReadOccs places, discard it
     if (accepted_hits.size() > map_cache.alt_max_occ) {
@@ -1045,27 +1045,26 @@ inline bool map_atac_read(std::string* read_seq, mapping_cache_info& map_cache,
 
         bool _discard = false;
         auto mao_first_pass = map_cache.max_occ_default - 1;
-        if (thr==1.0) {
-            early_stop = collect_mappings_from_hits(raw_hits, prev_read_pos, mao_first_pass,
-                                        map_cache.ambiguous_hit_indices, _discard);
-            // std::cout << early_stop << "thr\n";                                        
-            // If our default threshold was too stringent, then fallback to a more liberal
-            // threshold and look up the k-mers that occur the least frequently.
-            // Specifically, if the min occuring hits have frequency < max_occ_recover (2500 by
-            // default) times, then collect the min occuring hits to get the mapping.
-            if (attempt_occ_recover and (min_occ >= map_cache.max_occ_default) and
-                (min_occ < map_cache.max_occ_recover)) {
-                map_cache.ambiguous_hit_indices.clear();
-                prev_read_pos = -1;
-                uint64_t max_allowed_occ = min_occ;
-                early_stop =
-                    collect_mappings_from_hits(raw_hits, prev_read_pos, max_allowed_occ,
-                                            map_cache.ambiguous_hit_indices, had_alt_max_occ);
-            }            
-        
-        }
+        // if (thr==1.0) {
+        //     early_stop = collect_mappings_from_hits(raw_hits, prev_read_pos, mao_first_pass,
+        //                                 map_cache.ambiguous_hit_indices, _discard);
+        //     // std::cout << early_stop << "thr\n";
+        //     // If our default threshold was too stringent, then fallback to a more liberal
+        //     // threshold and look up the k-mers that occur the least frequently.
+        //     // Specifically, if the min occuring hits have frequency < max_occ_recover (2500 by
+        //     // default) times, then collect the min occuring hits to get the mapping.
+        //     if (attempt_occ_recover and (min_occ >= map_cache.max_occ_default) and
+        //         (min_occ < map_cache.max_occ_recover)) {
+        //         map_cache.ambiguous_hit_indices.clear();
+        //         prev_read_pos = -1;
+        //         uint64_t max_allowed_occ = min_occ;
+        //         early_stop =
+        //             collect_mappings_from_hits(raw_hits, prev_read_pos, max_allowed_occ,
+        //                                     map_cache.ambiguous_hit_indices, had_alt_max_occ);
+        //     }        
+        // }
 
-        else {
+        // else {
             early_stop = collect_mappings_from_hits_thr(raw_hits, prev_read_pos, mao_first_pass,
                                        map_cache.ambiguous_hit_indices, _discard, thr, ri);
             // std::cout << early_stop << "thr\n"                           ;
@@ -1082,7 +1081,7 @@ inline bool map_atac_read(std::string* read_seq, mapping_cache_info& map_cache,
                     collect_mappings_from_hits_thr(raw_hits, prev_read_pos, max_allowed_occ,
                                     map_cache.ambiguous_hit_indices, had_alt_max_occ, thr, ri);
             }
-        }
+        // }
 
 
         
@@ -1174,9 +1173,9 @@ inline bool map_atac_read(std::string* read_seq, mapping_cache_info& map_cache,
         uint32_t best_alt_hits = 0;
         // int32_t signed_read_len = static_cast<int32_t>(record.seq.length());
         // std::cout << "before" << num_valid_hits << "\n";
-        if(thr != 1) {
-            num_valid_hits = num_valid_hits*thr;
-        }
+        // if(thr != 1) {
+        num_valid_hits = num_valid_hits*thr;
+        // }
         // std::cout << "after" << num_valid_hits << "\n";
         for (auto& kv : hit_map) {
             auto best_hit_dir = kv.second.best_hit_direction();
@@ -1189,24 +1188,26 @@ inline bool map_atac_read(std::string* read_seq, mapping_cache_info& map_cache,
             
             if (simple_hit.num_hits >= num_valid_hits) {
                 // std::cout << "enter valid\n";
-                simple_hit.bin_id = kv.first;
-                simple_hit.tid = kv.second.tid;
-                accepted_hits.emplace_back(simple_hit);
+                    simple_hit.bin_id = kv.first;
+                    simple_hit.tid = kv.second.tid;
+                    accepted_hits.emplace_back(simple_hit);
+                // }
                 // std::cout << "simple hits" << simple_hit.num_hits << " " << num_valid_hits << " tid " << simple_hit.tid << std::endl;
                 // if we had equally good hits in both directions
                 // add the rc hit here (since we added the fw)
                 // above if the best hit was either FW or BOTH
                 if (best_hit_dir == mapping::util_bin::HitDirection::BOTH) {
                     auto second_hit = kv.second.get_rc_hit();
-                    second_hit.bin_id = kv.first;
-                    second_hit.tid = kv.second.tid;
-                    accepted_hits.emplace_back(second_hit);
+                        second_hit.bin_id = kv.first;
+                        second_hit.tid = kv.second.tid;
+                        accepted_hits.emplace_back(second_hit);
                 }
-            } else {
-                // best_alt_score = simple_hit.score > best_alt_score ? simple_hit.score :
-                // best_alt_score;
-                best_alt_hits =
-                    simple_hit.num_hits > best_alt_hits ? simple_hit.num_hits : best_alt_hits;
+                 else {
+                    // best_alt_score = simple_hit.score > best_alt_score ? simple_hit.score :
+                    // best_alt_score;
+                    best_alt_hits =
+                        simple_hit.num_hits > best_alt_hits ? simple_hit.num_hits : best_alt_hits;
+                }
             }
         }
 
@@ -1265,6 +1266,7 @@ inline void merge_se_mappings(mapping_cache_info& map_cache_left,
 
     size_t num_accepted_left = accepted_left.size();
     size_t num_accepted_right = accepted_right.size();
+    
     // std::cout << "num_accepted " << num_accepted_left << " " << 
     //     "num_accepted_right" << num_accepted_right << "\n";
     if ((num_accepted_left > 0) and (num_accepted_right > 0)) {
@@ -1332,6 +1334,8 @@ inline void merge_se_mappings(mapping_cache_info& map_cache_left,
                             // if left is fw and right is rc then
                             // fragment length is (right_pos + right_len - left_pos) + 1
                             // otherwise it is (left_pos + left_len - right_pos) + 1
+                        
+                        
                             bool right_is_rc = !first2->is_fw;
                             int32_t tlen = right_is_rc
                                                ? ((first2->pos + right_len - first1->pos) + 1)
@@ -1385,6 +1389,7 @@ inline void merge_se_mappings(mapping_cache_info& map_cache_left,
 
     size_t num_accepted_left = accepted_left.size();
     size_t num_accepted_right = accepted_right.size();
+    std::unordered_map<int32_t, int8_t> hit_pos; // A read that can map to two bins but at the same position, we only want 1 entry
     // std::cout << "num hits " << num_accepted_left << " " << num_accepted_right << "\n";
     // std::cout << "matching kmers " << had_matching_kmers_left << " " << had_matching_kmers_right << "\n";
     if ((num_accepted_left > 0) and (num_accepted_right > 0)) {
@@ -1431,10 +1436,10 @@ inline void merge_se_mappings(mapping_cache_info& map_cache_left,
         auto back_inserter = std::back_inserter(map_cache_out.accepted_hits);
         using iter_t = decltype(first_fw1);
         using out_iter_t = decltype(back_inserter);
-        // auto merge_lists = [left_len, right_len](iter_t first1, iter_t last1, iter_t first2,
-        //                                          iter_t last2, out_iter_t out) -> out_iter_t {
-        auto merge_lists = [left_len, right_len, ri](iter_t first1, iter_t last1, iter_t first2,
+        auto merge_lists = [left_len, right_len, &hit_pos](iter_t first1, iter_t last1, iter_t first2,
                                                  iter_t last2, out_iter_t out) -> out_iter_t {
+        // auto merge_lists = [left_len, right_len, ri](iter_t first1, iter_t last1, iter_t first2,
+        //                                          iter_t last2, out_iter_t out) -> out_iter_t {
             // https://en.cppreference.com/w/cpp/algorithm/set_intersection
             while (first1 != last1 && first2 != last2) {
                 if (first1->bin_id < first2->bin_id) {
@@ -1458,8 +1463,12 @@ inline void merge_se_mappings(mapping_cache_info& map_cache_left,
                             int32_t tlen = right_is_rc
                                                ? ((first2->pos + right_len - first1->pos) + 1)
                                                : ((first1->pos + left_len - first2->pos) + 1);
-                            *out++ = {first1->is_fw, first2->is_fw, first1->pos, 0.0, 0,
+                            if (hit_pos.find(first1->pos)==hit_pos.end()) {
+                               hit_pos[first1->pos] = 1;
+
+                                *out++ = {first1->is_fw, first2->is_fw, first1->pos, 0.0, std::min(first1->num_hits, first2->num_hits),
                                       first1->tid, first1->bin_id,   first2->pos,   tlen};
+                            }
                             ++first1;
                         }
                     }
@@ -1493,6 +1502,21 @@ inline void merge_se_mappings(mapping_cache_info& map_cache_left,
     } else {
         // return nothing
     }
+
+    if (map_cache_out.accepted_hits.size() > 0) {
+        std::vector<mapping::util_bin::simple_hit> accepted_hits;
+        uint32_t max_num_hits = 0;
+        for (const auto& hit:map_cache_out.accepted_hits)  {
+            max_num_hits = std::max(hit.num_hits, max_num_hits);
+        }
+        for (const auto& hit:map_cache_out.accepted_hits)  {
+            if (hit.num_hits >= max_num_hits) {
+                accepted_hits.emplace_back(hit);
+            }
+        }
+        map_cache_out.accepted_hits = accepted_hits;    
+    }
+    
     // std::cout << "hits right\n";
     // print_hits(map_cache_right.accepted_hits);
     // std::cout << "hits left\n";
