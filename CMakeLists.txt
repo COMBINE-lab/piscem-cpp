@@ -44,6 +44,7 @@ find_package(ZLIB REQUIRED)
 set(THREADS_PREFER_PTHREAD_FLAG TRUE)
 find_package(Threads REQUIRED) # for pthreads
 
+#find_package(GPerfTools REQUIRED) ## gperftools
 # Prepare the `jemalloc` library. It provides scalable concurrency support and better avoidance
 # of fragmentation.
 set(MALLOC_LIB "")

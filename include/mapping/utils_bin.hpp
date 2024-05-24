@@ -28,7 +28,7 @@ constexpr int32_t invalid_mate_pos = std::numeric_limits<int32_t>::min();
 
 enum class orientation_filter : uint8_t { NONE, FORWARD_ONLY, RC_ONLY };
 
-inline std::pair<uint32_t, uint32_t> get_bin_id(int32_t pos, int32_t bin_size=20000, int32_t overlap=1000) {
+inline std::pair<uint32_t, uint32_t> get_bin_id(int32_t pos, int32_t bin_size=20000, int32_t overlap=300) {
     uint32_t bin1 = (pos+1)/bin_size; // 1 added since 0 based
     uint32_t bin2 = (pos+1) > (bin1+1)*bin_size-overlap ? (bin1+1) :
         std::numeric_limits<uint32_t>::max(); // std::numeric_limits<uint32_t>::max() indicates that the kmer does not belong to the overlapping region
@@ -944,7 +944,7 @@ inline bool map_atac_read(std::string* read_seq, mapping_cache_info& map_cache,
             [&max_stretch, &min_occ, &hit_map, &num_valid_hits, &total_occs, &largest_occ,
              &early_stop, signed_rl, k, &map_cache, perform_ambig_filtering,
              verbose, psc_off, ps_skip, &thr, &ri](auto& raw_hits, auto& prev_read_pos, auto& max_allowed_occ,
-                      auto& ambiguous_hit_indices, auto& had_alt_max_occ, auto& thr, auto &ri) -> bool {
+                      auto& ambiguous_hit_indices, auto& had_alt_max_occ) -> bool {
             int32_t hit_idx{0};
             // return false;
             for (auto& raw_hit : raw_hits) {
@@ -1066,7 +1066,7 @@ inline bool map_atac_read(std::string* read_seq, mapping_cache_info& map_cache,
 
         // else {
             early_stop = collect_mappings_from_hits_thr(raw_hits, prev_read_pos, mao_first_pass,
-                                       map_cache.ambiguous_hit_indices, _discard, thr, ri);
+                                       map_cache.ambiguous_hit_indices, _discard);
             // std::cout << early_stop << "thr\n"                           ;
             // If our default threshold was too stringent, then fallback to a more liberal
             // threshold and look up the k-mers that occur the least frequently.
@@ -1079,7 +1079,7 @@ inline bool map_atac_read(std::string* read_seq, mapping_cache_info& map_cache,
                 uint64_t max_allowed_occ = min_occ;
                 early_stop =
                     collect_mappings_from_hits_thr(raw_hits, prev_read_pos, max_allowed_occ,
-                                    map_cache.ambiguous_hit_indices, had_alt_max_occ, thr, ri);
+                                    map_cache.ambiguous_hit_indices, had_alt_max_occ);
             }
         // }
 
