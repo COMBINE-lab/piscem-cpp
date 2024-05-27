@@ -83,11 +83,14 @@ bool map_fragment(fastx_parser::ReadTrip& record, mapping_cache_info& map_cache_
     //     }
     //     return read_map;
     // }
-
+    
     bool early_exit_left = mapping::util_bin::map_atac_read(&record.first.seq, map_cache_left, false, km, ri);
+    // bool early_exit_left = mapping::util::map_atac_read(&record.first.seq, map_cache_left, false, km, ri);
     
     bool right_km = false;
+    
     bool early_exit_right = mapping::util_bin::map_atac_read(&record.second.seq, map_cache_right, false, right_km, ri);
+    // bool early_exit_right = mapping::util::map_atac_read(&record.second.seq, map_cache_right, false, right_km, ri);
 
     if(km | right_km) {
         ++k_match;
@@ -98,6 +101,8 @@ bool map_fragment(fastx_parser::ReadTrip& record, mapping_cache_info& map_cache_
     
     mapping::util_bin::merge_se_mappings(map_cache_left, map_cache_right, left_len, right_len,
                                      map_cache_out);
+    // mapping::util::merge_se_mappings(map_cache_left, map_cache_right, left_len, right_len,
+    //                                  map_cache_out);
 
     return (early_exit_left or early_exit_right);
 }
@@ -166,14 +171,17 @@ bool map_fragment(fastx_parser::ReadTrip& record, mapping_cache_info& map_cache_
     //     }
     //     return read_map;
     // }
-
+    
     bool early_exit_left = mapping::util_bin::map_atac_read(&record.first.seq, map_cache_left, false, 
                                     km, ri, psc_off, ps_skip, thr);
+    // bool early_exit_left = mapping::util_bin::map_atac_read(&record.first.seq, map_cache_left, false, 
+    //                                 km, ri, psc_off, ps_skip, thr);
     // std::cout << "first record is " << record.first.seq << std::endl;
     // std::cout << "left is " << early_exit_left << std::endl;  
     // std::cout << "second record is " << record.second.seq << std::endl;  
     bool right_km = false;
     bool early_exit_right = mapping::util_bin::map_atac_read(&record.second.seq, map_cache_right, false, right_km, ri, psc_off, ps_skip, thr);
+    // bool early_exit_right = mapping::util::map_atac_read(&record.second.seq, map_cache_right, false, right_km, ri, psc_off, ps_skip, thr);
     // std::cout << "right is " << early_exit_right << std::endl;  
     // std::cout << "record.second.seq " << record.second.seq << std::endl;  
     // std::cout << "right right km is " << km << std::endl;  
@@ -183,7 +191,10 @@ bool map_fragment(fastx_parser::ReadTrip& record, mapping_cache_info& map_cache_
 
     int32_t left_len = static_cast<int32_t>(record.first.seq.length());
     int32_t right_len = static_cast<int32_t>(record.second.seq.length());
-    
+
+    // mapping::util::merge_se_mappings(map_cache_left, map_cache_right, left_len, right_len,
+    //                                  map_cache_out, ri);
+
     mapping::util_bin::merge_se_mappings(map_cache_left, map_cache_right, left_len, right_len,
                                      map_cache_out, ri);
 

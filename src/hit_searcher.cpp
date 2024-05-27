@@ -604,6 +604,7 @@ bool hit_searcher::get_raw_hits_sketch_everykmer(std::string &read,
     projected_hits phits;
     auto& raw_hits = isLeft ? left_rawHits : right_rawHits;
     pufferfish::CanonicalKmerIterator kit(read), kit_end;
+    qc.reset_state();
     while(kit != kit_end) {
         phits = pfi_->query(kit, qc);
         if (!phits.empty()) {
