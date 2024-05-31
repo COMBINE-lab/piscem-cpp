@@ -74,6 +74,7 @@ add_library(sshash_static STATIC
 )
 target_include_directories(sshash_static PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/include)
 
+
 add_library(pesc_static STATIC
   src/pesc_bulk.cpp src/pesc_sc.cpp src/pesc_sc_atac.cpp src/hit_searcher.cpp src/FastxParser.cpp
 )
@@ -116,7 +117,8 @@ target_link_libraries(pesc-bulk pesc_static ZLIB::ZLIB Threads::Threads sshash_s
 
 add_executable(pesc-sc-atac src/pesc_sc_atac_runner.cpp) 
 target_include_directories(pesc-sc-atac PUBLIC ${CMAKE_SOURCE_DIR}/include ${ZLIB_INCLUDE_DIRS})
-target_link_libraries(pesc-sc-atac pesc_static ZLIB::ZLIB Threads::Threads sshash_static ${MALLOC_LIB})
+target_link_libraries(pesc-sc-atac pesc_static profiler ZLIB::ZLIB Threads::Threads sshash_static ${MALLOC_LIB})
+target_link_directories(pesc-sc-atac PUBLIC /fs/cbcb-lab/rob/students/noor/miniforge3/lib)
 
 add_executable(temp src/temp.cpp)
 target_include_directories(temp PUBLIC ${CMAKE_SOURCE_DIR}/include ${ZLIB_INCLUDE_DIRS})

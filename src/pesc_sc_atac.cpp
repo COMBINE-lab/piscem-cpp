@@ -66,7 +66,7 @@ struct pesc_atac_options {
 // paried-end
 bool map_fragment(fastx_parser::ReadTrip& record, mapping_cache_info& map_cache_left,
                   mapping_cache_info& map_cache_right, mapping_cache_info& map_cache_out, 
-                  std::atomic<uint64_t>& k_match, mindex::reference_index& ri) {
+                  std::atomic<uint64_t>& k_match, mapping::util_bin::bin_pos& binning) {
 // bool map_fragment(fastx_parser::ReadTrip& record, mapping_cache_info& map_cache_left,
 //                   mapping_cache_info& map_cache_right, mapping_cache_info& map_cache_out) {
     check_overlap::MateOverlap mov;
@@ -84,12 +84,12 @@ bool map_fragment(fastx_parser::ReadTrip& record, mapping_cache_info& map_cache_
     //     return read_map;
     // }
     
-    bool early_exit_left = mapping::util_bin::map_atac_read(&record.first.seq, map_cache_left, false, km, ri);
+    bool early_exit_left = mapping::util_bin::map_atac_read(&record.first.seq, map_cache_left, false, km, binning);
     // bool early_exit_left = mapping::util::map_atac_read(&record.first.seq, map_cache_left, false, km, ri);
     
     bool right_km = false;
     
-    bool early_exit_right = mapping::util_bin::map_atac_read(&record.second.seq, map_cache_right, false, right_km, ri);
+    bool early_exit_right = mapping::util_bin::map_atac_read(&record.second.seq, map_cache_right, false, right_km, binning);
     // bool early_exit_right = mapping::util::map_atac_read(&record.second.seq, map_cache_right, false, right_km, ri);
 
     if(km | right_km) {
@@ -154,9 +154,9 @@ bool map_fragment(fastx_parser::ReadTrip& record, mapping_cache_info& map_cache_
 bool map_fragment(fastx_parser::ReadTrip& record, mapping_cache_info& map_cache_left,
                   mapping_cache_info& map_cache_right, mapping_cache_info& map_cache_out, 
                   std::atomic<uint64_t>& k_match, bool psc_off, bool ps_skip, float thr, 
-                  mindex::reference_index& ri) {
-    check_overlap::MateOverlap mov;
-    check_overlap::findOverlapBetweenPairedEndReads(record.first.seq, record.second.seq, mov, 30);
+                  mapping::util_bin::bin_pos& binning) {
+    // check_overlap::MateOverlap mov;
+    // check_overlap::findOverlapBetweenPairedEndReads(record.first.seq, record.second.seq, mov, 30);
     bool km = false; //kmatch checker
     // std::cout << mov.frag << std::endl;
     // if(mov.frag != "") {
@@ -173,14 +173,14 @@ bool map_fragment(fastx_parser::ReadTrip& record, mapping_cache_info& map_cache_
     // }
     
     bool early_exit_left = mapping::util_bin::map_atac_read(&record.first.seq, map_cache_left, false, 
-                                    km, ri, psc_off, ps_skip, thr);
+                                    km, binning, psc_off, ps_skip, thr);
     // bool early_exit_left = mapping::util_bin::map_atac_read(&record.first.seq, map_cache_left, false, 
     //                                 km, ri, psc_off, ps_skip, thr);
     // std::cout << "first record is " << record.first.seq << std::endl;
     // std::cout << "left is " << early_exit_left << std::endl;  
     // std::cout << "second record is " << record.second.seq << std::endl;  
     bool right_km = false;
-    bool early_exit_right = mapping::util_bin::map_atac_read(&record.second.seq, map_cache_right, false, right_km, ri, psc_off, ps_skip, thr);
+    bool early_exit_right = mapping::util_bin::map_atac_read(&record.second.seq, map_cache_right, false, right_km, binning, psc_off, ps_skip, thr);
     // bool early_exit_right = mapping::util::map_atac_read(&record.second.seq, map_cache_right, false, right_km, ri, psc_off, ps_skip, thr);
     // std::cout << "right is " << early_exit_right << std::endl;  
     // std::cout << "record.second.seq " << record.second.seq << std::endl;  
@@ -196,7 +196,7 @@ bool map_fragment(fastx_parser::ReadTrip& record, mapping_cache_info& map_cache_
     //                                  map_cache_out, ri);
 
     mapping::util_bin::merge_se_mappings(map_cache_left, map_cache_right, left_len, right_len,
-                                     map_cache_out, ri);
+                                     map_cache_out);
 
     return (early_exit_left or early_exit_right);
 }
@@ -281,6 +281,7 @@ void do_map(mindex::reference_index& ri,
     mapping_cache_info map_cache_right(ri);
     mapping_cache_info map_cache_out(ri);
 
+    mapping::util_bin::bin_pos binning(&ri);
     size_t max_chunk_reads = 5000;
 
     auto rg = parser.getReadGroup();
@@ -323,15 +324,8 @@ void do_map(mindex::reference_index& ri,
             //    map_fragment(record, map_cache_left, map_cache_right, map_cache_out, k_match,
                 //    psc_off, ps_skip, thr);
                map_fragment(record, map_cache_left, map_cache_right, map_cache_out, k_match,
-                   psc_off, ps_skip, thr, ri);
+                   psc_off, ps_skip, thr, binning);
             (void)had_early_stop;
-            // if (map_cache_out.accepted_hits.size() != 0) {
-            //     mapping::util_bin::print_hits(map_cache_out.accepted_hits);
-            // }
-    
-            // std::cout << "left size" << map_cache_left.accepted_hits.size() << "\n";
-            // std::cout << "right size" << map_cache_right.accepted_hits.size() << "\n";
-            // std::cout << "mapped cache" << map_cache_out.accepted_hits.size() << "\n";
             
             if (!map_cache_out.accepted_hits.empty()) {
                 temp_seq_buff += std::to_string(hctr);

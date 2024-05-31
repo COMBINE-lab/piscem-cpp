@@ -28,12 +28,41 @@ constexpr int32_t invalid_mate_pos = std::numeric_limits<int32_t>::min();
 
 enum class orientation_filter : uint8_t { NONE, FORWARD_ONLY, RC_ONLY };
 
-inline std::pair<uint32_t, uint32_t> get_bin_id(int32_t pos, int32_t bin_size=20000, int32_t overlap=300) {
-    uint32_t bin1 = (pos+1)/bin_size; // 1 added since 0 based
-    uint32_t bin2 = (pos+1) > (bin1+1)*bin_size-overlap ? (bin1+1) :
-        std::numeric_limits<uint32_t>::max(); // std::numeric_limits<uint32_t>::max() indicates that the kmer does not belong to the overlapping region
-    return {bin1, bin2};
-}
+class bin_pos {
+    public:
+        explicit bin_pos(mindex::reference_index* pfi)  { 
+            pfi_ = pfi ,
+            compute_cum_rank();
+        };
+
+        uint32_t get_cum_len(size_t i) {
+            return cum_ref_lens[i];
+        }
+        
+        std::pair<uint32_t, uint32_t> get_bin_id(size_t tid, int32_t pos, int32_t bin_size=20000, int32_t overlap=300) {
+            uint32_t cum_len = get_cum_len(tid);
+
+            uint32_t bin1 = (cum_len + pos + 1)/bin_size; // 1 added since 0 based
+            uint32_t bin2 = (cum_len + pos + 1) > (bin1+1)*bin_size-overlap ? (bin1+1) :
+                std::numeric_limits<uint32_t>::max(); // std::numeric_limits<uint32_t>::max() indicates that the kmer does not belong to the overlapping region
+            return {bin1, bin2};
+        }
+        mindex::reference_index* get_ref() { return pfi_;}
+
+
+    private:
+        mindex::reference_index* pfi_;
+        std::vector<uint32_t> cum_ref_lens;
+        void compute_cum_rank() {
+            size_t n_refs = pfi_->num_refs();
+            cum_ref_lens.reserve(n_refs);
+            cum_ref_lens[0] = 0;
+            for(int i = 1; i < n_refs; i++) {
+                cum_ref_lens[i] = cum_ref_lens[i-1] + pfi_->ref_len(i);
+            }
+        }
+};
+
 struct simple_hit {
     bool is_fw{false};
     bool mate_is_fw{false};
@@ -797,7 +826,7 @@ inline bool map_read(std::string* read_seq, mapping_cache_info& map_cache, bool&
 }
 
 inline bool map_atac_read(std::string* read_seq, mapping_cache_info& map_cache,
-    bool verbose, bool& k_match, mindex::reference_index& ri, bool psc_off=false, bool ps_skip=true, float thr=1.0) {
+    bool verbose, bool& k_match, bin_pos& binning, bool psc_off=false, bool ps_skip=true, float thr=1.0) {
     map_cache.clear();
     // rebind map_cache variables to
     // local names
@@ -942,8 +971,8 @@ inline bool map_atac_read(std::string* read_seq, mapping_cache_info& map_cache,
 
         auto collect_mappings_from_hits_thr =
             [&max_stretch, &min_occ, &hit_map, &num_valid_hits, &total_occs, &largest_occ,
-             &early_stop, signed_rl, k, &map_cache, perform_ambig_filtering,
-             verbose, psc_off, ps_skip, &thr, &ri](auto& raw_hits, auto& prev_read_pos, auto& max_allowed_occ,
+             &early_stop, signed_rl, k, &map_cache, &binning, perform_ambig_filtering,
+             verbose, psc_off, ps_skip, &thr](auto& raw_hits, auto& prev_read_pos, auto& max_allowed_occ,
                       auto& ambiguous_hit_indices, auto& had_alt_max_occ) -> bool {
             int32_t hit_idx{0};
             // return false;
@@ -969,7 +998,7 @@ inline bool map_atac_read(std::string* read_seq, mapping_cache_info& map_cache,
                         const auto& ref_pos_ori = proj_hits.decode_hit(v);
                         uint32_t tid = sshash::util::transcript_id(v);
                         int32_t pos = static_cast<int32_t>(ref_pos_ori.pos);
-                        std::pair<uint32_t, uint32_t> bins = get_bin_id(pos); 
+                        std::pair<uint32_t, uint32_t> bins = binning.get_bin_id(tid, pos);
                         bool ori = ref_pos_ori.isFW;
                         // std::cout << "tid " << tid << std::endl;
                         
@@ -1253,133 +1282,10 @@ void print_hits(const std::vector<mapping::util_bin::simple_hit> &hits ) {
     }
 }
  
-
 inline void merge_se_mappings(mapping_cache_info& map_cache_left,
                               mapping_cache_info& map_cache_right, int32_t left_len,
-                              int32_t right_len, mapping_cache_info& map_cache_out) {
-    map_cache_out.clear();
-    auto& accepted_left = map_cache_left.accepted_hits;
-    auto& accepted_right = map_cache_right.accepted_hits;
-
-    size_t had_matching_kmers_left = map_cache_left.has_matching_kmers;
-    size_t had_matching_kmers_right = map_cache_right.has_matching_kmers;
-
-    size_t num_accepted_left = accepted_left.size();
-    size_t num_accepted_right = accepted_right.size();
-    
-    // std::cout << "num_accepted " << num_accepted_left << " " << 
-    //     "num_accepted_right" << num_accepted_right << "\n";
-    if ((num_accepted_left > 0) and (num_accepted_right > 0)) {
-        // std::cout << "entered both\n";
-        // print_hits(accepted_left);
-        // std::cout << "left right\n";
-        // print_hits(accepted_right);
-        // look for paired end mappings
-        // so we have to sort our accepted hits
-        struct {
-            // sort first by orientation, then by transcript id, and finally by position
-            bool operator()(const mapping::util_bin::simple_hit& a,
-                            const mapping::util_bin::simple_hit& b) {
-                if (a.is_fw != b.is_fw) { return a.is_fw > b.is_fw; }
-                // orientations are the same
-                if (a.tid != b.tid) { return a.tid < b.tid; }
-                return a.pos < b.pos;
-            }
-        } simple_hit_less;
-        std::sort(accepted_left.begin(), accepted_left.end(), simple_hit_less);
-        std::sort(accepted_right.begin(), accepted_right.end(), simple_hit_less);
-
-        const mapping::util_bin::simple_hit smallest_rc_hit = {false, false, -1, 0.0, 0, 0};
-        // start of forward sub-list
-        auto first_fw1 = accepted_left.begin();
-        // end of forward sub-list is first non-forward hit
-        auto last_fw1 = std::lower_bound(accepted_left.begin(), accepted_left.end(),
-                                         smallest_rc_hit, simple_hit_less);
-        // start of rc list
-        auto first_rc1 = last_fw1;
-        // end of rc list
-        auto last_rc1 = accepted_left.end();
-
-        // start of forward sub-list
-        auto first_fw2 = accepted_right.begin();
-        // end of forward sub-list is first non-forward hit
-        auto last_fw2 = std::lower_bound(accepted_right.begin(), accepted_right.end(),
-                                         smallest_rc_hit, simple_hit_less);
-        // start of rc list
-        auto first_rc2 = last_fw2;
-        // end of rc list
-        auto last_rc2 = accepted_right.end();
-
-        auto back_inserter = std::back_inserter(map_cache_out.accepted_hits);
-        using iter_t = decltype(first_fw1);
-        using out_iter_t = decltype(back_inserter);
-
-        auto merge_lists = [left_len, right_len](iter_t first1, iter_t last1, iter_t first2,
-                                                 iter_t last2, out_iter_t out) -> out_iter_t {
-            // https://en.cppreference.com/w/cpp/algorithm/set_intersection
-            while (first1 != last1 && first2 != last2) {
-                if (first1->tid < first2->tid) {
-                    ++first1;
-                } else {
-                    if (!(first2->tid < first1->tid)) {
-                        // first1->tid == first2->tid have the same transcript.
-                        int32_t pos_fw = first1->is_fw ? first1->pos : first2->pos;
-                        int32_t pos_rc = first1->is_fw ? first2->pos : first1->pos;
-                        int32_t frag_len = (pos_rc - pos_fw);
-                        if (frag_len == 0) {
-                            // std::cout << "0 fragment length";
-                        }
-                        // std::cout << first1->tid << " tids " << first2->tid << "pos " << pos_fw << " " << pos_rc << " frag len " << frag_len << "\n";
-                        if ((-20 < frag_len) and (frag_len < 1000)) {
-                            // if left is fw and right is rc then
-                            // fragment length is (right_pos + right_len - left_pos) + 1
-                            // otherwise it is (left_pos + left_len - right_pos) + 1
-                        
-                        
-                            bool right_is_rc = !first2->is_fw;
-                            int32_t tlen = right_is_rc
-                                               ? ((first2->pos + right_len - first1->pos) + 1)
-                                               : ((first1->pos + left_len - first2->pos) + 1);
-                            *out++ = {first1->is_fw, first2->is_fw, first1->pos, 0.0, 0,
-                                      first1->tid,   first2->pos,   tlen};
-                            ++first1;
-                        }
-                    }
-                    ++first2;
-                }
-            }
-            return out;
-        };
-
-        // find hits of form 1:fw, 2:rc
-        merge_lists(first_fw1, last_fw1, first_rc2, last_rc2, back_inserter);
-        // find hits of form 1:rc, 2:fw
-        merge_lists(first_rc1, last_rc1, first_fw2, last_fw2, back_inserter);
-
-        map_cache_out.map_type = (map_cache_out.accepted_hits.size() > 0) ? MappingType::MAPPED_PAIR
-                                                                          : MappingType::UNMAPPED;
-        // std::cout << "map cache " << map_cache_out.accepted_hits.size() << std::endl;
-    } else if ((num_accepted_left > 0) and !had_matching_kmers_right) {
-        // just return the left mappings
-        std::swap(map_cache_left.accepted_hits, map_cache_out.accepted_hits);
-        map_cache_out.map_type = (map_cache_out.accepted_hits.size() > 0)
-                                     ? MappingType::MAPPED_FIRST_ORPHAN
-                                     : MappingType::UNMAPPED;
-    } else if ((num_accepted_right > 0) and !had_matching_kmers_left) {
-        // just return the right mappings
-        std::swap(map_cache_right.accepted_hits, map_cache_out.accepted_hits);
-        map_cache_out.map_type = (map_cache_out.accepted_hits.size() > 0)
-                                     ? MappingType::MAPPED_SECOND_ORPHAN
-                                     : MappingType::UNMAPPED;
-    } else {
-        // return nothing
-    }
-}
-
-inline void merge_se_mappings(mapping_cache_info& map_cache_left,
-                              mapping_cache_info& map_cache_right, int32_t left_len,
-                              int32_t right_len, mapping_cache_info& map_cache_out, 
-                              mindex::reference_index& ri) {
+                              int32_t right_len, mapping_cache_info& map_cache_out 
+                              ) {
     map_cache_out.clear();
     auto& accepted_left = map_cache_left.accepted_hits;
     auto& accepted_right = map_cache_right.accepted_hits;
