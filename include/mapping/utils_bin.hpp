@@ -35,16 +35,16 @@ class bin_pos {
             compute_cum_rank();
         };
 
-        uint32_t get_cum_len(size_t i) {
+        uint64_t get_cum_len(size_t i) {
             return cum_ref_lens[i];
         }
         
-        std::pair<uint32_t, uint32_t> get_bin_id(size_t tid, int32_t pos, int32_t bin_size=20000, int32_t overlap=300) {
-            uint32_t cum_len = get_cum_len(tid);
+        std::pair<uint64_t, uint64_t> get_bin_id(size_t tid, int32_t pos, int32_t bin_size=20000, int32_t overlap=300) {
+            uint64_t cum_len = get_cum_len(tid);
 
-            uint32_t bin1 = (cum_len + pos + 1)/bin_size; // 1 added since 0 based
-            uint32_t bin2 = (cum_len + pos + 1) > (bin1+1)*bin_size-overlap ? (bin1+1) :
-                std::numeric_limits<uint32_t>::max(); // std::numeric_limits<uint32_t>::max() indicates that the kmer does not belong to the overlapping region
+            uint64_t bin1 = (cum_len + pos + 1)/bin_size; // 1 added since 0 based
+            uint64_t bin2 = (cum_len + pos + 1) > (bin1+1)*bin_size-overlap ? (bin1+1) :
+                std::numeric_limits<uint64_t>::max(); // std::numeric_limits<uint32_t>::max() indicates that the kmer does not belong to the overlapping region
             return {bin1, bin2};
         }
         mindex::reference_index* get_ref() { return pfi_;}
@@ -52,7 +52,7 @@ class bin_pos {
 
     private:
         mindex::reference_index* pfi_;
-        std::vector<uint32_t> cum_ref_lens;
+        std::vector<uint64_t> cum_ref_lens;
         void compute_cum_rank() {
             size_t n_refs = pfi_->num_refs();
             cum_ref_lens.reserve(n_refs);
@@ -70,7 +70,7 @@ struct simple_hit {
     float score{0.0};
     uint32_t num_hits{0};
     uint32_t tid{std::numeric_limits<uint32_t>::max()};
-    uint32_t bin_id{std::numeric_limits<uint32_t>::max()};
+    uint64_t bin_id{std::numeric_limits<uint64_t>::max()};
     int32_t mate_pos{std::numeric_limits<int32_t>::max()};
     int32_t fragment_length{std::numeric_limits<int32_t>::max()};
     inline bool valid_pos(int32_t read_len, uint32_t txp_len, int32_t max_over) {
@@ -501,7 +501,7 @@ public:
     mapping::util_bin::MappingType map_type{mapping::util_bin::MappingType::UNMAPPED};
 
     // map from reference id to hit info
-    phmap::flat_hash_map<uint32_t, mapping::util_bin::sketch_hit_info> hit_map;
+    phmap::flat_hash_map<uint64_t, mapping::util_bin::sketch_hit_info> hit_map;
     std::vector<mapping::util_bin::simple_hit> accepted_hits;
 
     // map to recall the number of unmapped reads we see
@@ -1040,7 +1040,7 @@ inline bool map_atac_read(std::string* read_seq, mapping_cache_info& map_cache,
                                         max_stretch, score_inc);
                         }
                     
-                        if (bins.second!=std::numeric_limits<uint32_t>::max()) {
+                        if (bins.second!=std::numeric_limits<uint64_t>::max()) {
                             target2.tid = tid;
                             if (ori) {
                                 if (psc_off) {
