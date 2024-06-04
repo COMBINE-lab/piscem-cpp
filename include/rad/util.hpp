@@ -11,6 +11,19 @@
 #include "rad_header.hpp"
 #include "rad_writer.hpp"
 
+#include "../libradicl/RAD_Writer.hpp"
+#include "../libradicl/Alignment_Record.hpp"
+#include "../libradicl/Read_Record.hpp"
+#include "../libradicl/Byte_Array.hpp"
+#include "../libradicl/Tags.hpp"
+#include "../libradicl/Header.hpp"
+#include "../src/libradicl/Header.cpp"
+#include "../src/libradicl/Tags.cpp"
+#include "../src/libradicl/RAD_Writer.cpp"
+#include "../src/libradicl/Byte_Array.cpp"
+#include "../src/libradicl/Buffer.cpp"
+
+
 namespace rad {
 namespace util {
 
@@ -176,6 +189,21 @@ inline size_t write_rad_header_bulk(mindex::reference_index& ri, bool is_paired,
     rad_file << bw;
     bw.clear();
     return chunk_offset;
+}
+
+inline void write_rad_header_atac(mindex::reference_index& ri, std::vector<std::string>& refs, RAD::Tag_Defn& tag_defn) {
+    
+    for (size_t i = 0; i < ri.num_refs(); ++i) { refs.emplace_back(ri.ref_name(i)); }
+
+    tag_defn.add_file_tag<RAD::Type::u32>("ref_lengths");
+    tag_defn.add_file_tag<RAD::Type::str>("cblen");
+
+    tag_defn.add_read_tag<RAD::Type::u16>("barcode");
+
+    tag_defn.add_aln_tag<RAD::Type::u32>("start_pos");
+    tag_defn.add_aln_tag<RAD::Type::u16>("frag_len");
+    tag_defn.add_aln_tag<RAD::Type::u32>("ref_name");
+
 }
 
 inline void write_to_rad_stream(bc_kmer_t& bck, umi_kmer_t& umi,

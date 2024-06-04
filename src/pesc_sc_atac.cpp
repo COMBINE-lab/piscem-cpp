@@ -211,11 +211,18 @@ public:
     // of chunks written to be_file
     std::atomic<size_t> num_chunks{0};
     // the output stream where the actual
-    // RAD records are written
+    // BED records are written
     std::ofstream bed_file;
     // the mutex for safely writing to
-    // rad_file
+    // bed_file
     std::mutex bed_mutex;
+
+    // the output stream where the actual
+    // RAD records are written
+    std::ofstream rad_file;
+    // the mutex for safely writing to
+    // rad_file
+    std::mutex rad_mutex;
 
     // the output stream where the counts
     // of observed barcodes for unmapped
@@ -433,28 +440,47 @@ int run_pesc_sc_atac(int argc, char** argv) {
     ghc::filesystem::create_directories(output_path);
 
     ghc::filesystem::path bed_file_path = output_path / "map.bed";
+    // ghc::filesystem::path rad_file_path = output_path / "map.rad";
     ghc::filesystem::path unmapped_bc_file_path = output_path / "unmapped_bc_count.bin";
     ghc::filesystem::path mapped_bc_file_path = output_path / "mapped_bc.txt";
     
 
     std::ofstream bed_file(bed_file_path.string());
+
     if (!bed_file.good()) {
         spdlog::critical("Could not open {} for writing.", bed_file_path.string());
-        throw std::runtime_error("error creating output file.");
+        throw std::runtime_error("error creating bed file.");
     }
+
+    // if (!rad_file.good()) {
+    //     spdlog::critical("Could not open {} for writing.", rad_file_path.string());
+    //     throw std::runtime_error("error creating rad file.");
+    // }
 
     std::ofstream unmapped_bc_file(unmapped_bc_file_path.string());
     if (!unmapped_bc_file.good()) {
         spdlog::critical("Could not open {} for writing.", unmapped_bc_file_path.string());
-        throw std::runtime_error("error creating output file.");
+        throw std::runtime_error("error creating unmapped barcode file.");
     }
 
 
     pesc_output_info out_info;
     out_info.bed_file = std::move(bed_file);
+    // out_info.rad_file = std::move(rad_file);
     out_info.unmapped_bc_file = std::move(unmapped_bc_file);
-
+    
     mindex::reference_index ri(po.index_basename);
+    bool is_paired = true; // need to include single_end
+    std::string rad_file_path = output_path;
+    rad_file_path.append("/map.rad");
+    RAD::Tag_Defn tag_defn;
+    std::vector<std::string> refs;
+    rad::util::write_rad_header_atac(ri, refs, tag_defn);
+    const RAD::Header header(is_paired, refs.size(), refs);
+    
+    RAD::RAD_Writer rw(header, tag_defn, rad_file_path);
+    rw.close();
+    
     std::string cmdline;
     size_t narg = static_cast<size_t>(argc);
     for (size_t i = 0; i < narg; ++i) {
@@ -498,7 +524,7 @@ int run_pesc_sc_atac(int argc, char** argv) {
     out_info.bed_file.close();
     if (!out_info.bed_file) {
         spdlog::critical(
-            "The RAD file stream had an invalid status after "
+            "The BED file stream had an invalid status after "
             "close; so some operation(s) may"
             "have failed!\nA common cause for this is lack "
             "of output disk space.\n"
@@ -517,6 +543,7 @@ int run_pesc_sc_atac(int argc, char** argv) {
     rs.num_kmatch(k_match.load());
 
     ghc::filesystem::path map_info_file_path = output_path / "map_info.json";
+    std::cout << map_info_file_path << std::endl;
     bool info_ok = piscem::meta_info::write_map_info(rs, map_info_file_path);
     if (!info_ok) { spdlog::critical("failed to write map_info.json file"); }
 

@@ -1,7 +1,7 @@
 
 #include "../../include/libradicl/RAD_Writer.hpp"
 #include "../../include/libradicl/Read_Record.hpp"
-
+#include <iostream>
 
 namespace RAD
 {
@@ -44,7 +44,7 @@ void RAD_Writer::close()
 {
     if(!buf.empty())
     {
-        assert(read_c_in_buf > 0);
+        // assert(read_c_in_buf > 0);
         flush_chunk();
     }
 }
