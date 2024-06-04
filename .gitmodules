@@ -1,3 +1,7 @@
 [submodule "external/pthash"]
 	path = external/pthash
 	url = https://github.com/jermp/pthash.git
+[submodule "external/libradicl"]
+	path = external/libradicl
+	url = git@github.com:jamshed/libradicl.git
+	branch = develop

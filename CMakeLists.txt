@@ -3,6 +3,7 @@
 cmake_minimum_required(VERSION 3.15)
 project(SSHASH)
 
+add_subdirectory(${CMAKE_SOURCE_DIR}/external/libradicl)
 # Set path for modules required to search for existing packages in the system.
 set(CMAKE_MODULE_PATH ${CMAKE_MODULE_PATH} "${CMAKE_SOURCE_DIR}/cmake/Modules/")
 
@@ -116,14 +117,16 @@ target_include_directories(pesc-bulk PUBLIC ${CMAKE_SOURCE_DIR}/include ${ZLIB_I
 target_link_libraries(pesc-bulk pesc_static ZLIB::ZLIB Threads::Threads sshash_static ${MALLOC_LIB})
 
 add_executable(pesc-sc-atac src/pesc_sc_atac_runner.cpp) 
-target_include_directories(pesc-sc-atac PUBLIC ${CMAKE_SOURCE_DIR}/include ${ZLIB_INCLUDE_DIRS})
-target_link_libraries(pesc-sc-atac pesc_static profiler ZLIB::ZLIB Threads::Threads sshash_static ${MALLOC_LIB})
+target_include_directories(pesc-sc-atac PUBLIC ${CMAKE_SOURCE_DIR}/include ${ZLIB_INCLUDE_DIRS}
+${CMAKE_SOURCE_DIR}/external/libradicl/include)
+target_link_libraries(pesc-sc-atac pesc_static profiler ZLIB::ZLIB Threads::Threads sshash_static ${MALLOC_LIB} radicl)
 target_link_directories(pesc-sc-atac PUBLIC /fs/cbcb-lab/rob/students/noor/miniforge3/lib)
+add_dependencies(pesc-sc-atac radicl)
 
 add_executable(temp src/temp.cpp)
-target_include_directories(temp PUBLIC ${CMAKE_SOURCE_DIR}/include ${ZLIB_INCLUDE_DIRS})
-target_link_libraries(temp pesc_static ZLIB::ZLIB Threads::Threads sshash_static ${MALLOC_LIB})
-
+target_include_directories(temp PUBLIC ${CMAKE_SOURCE_DIR}/include ${ZLIB_INCLUDE_DIRS} ${CMAKE_SOURCE_DIR}/external/libradicl/include)
+target_link_libraries(temp pesc_static ZLIB::ZLIB Threads::Threads sshash_static ${MALLOC_LIB} radicl)
+add_dependencies(temp radicl)
 
 #add_executable(mapper src/mapper.cpp src/hit_searcher.cpp) 
 #target_include_directories(mapper PUBLIC ${CMAKE_SOURCE_DIR}/include ${ZLIB_INCLUDE_DIRS})
