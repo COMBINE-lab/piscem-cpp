@@ -11,18 +11,6 @@
 #include "rad_header.hpp"
 #include "rad_writer.hpp"
 
-// #include "../libradicl/RAD_Writer.hpp"
-// #include "../libradicl/Alignment_Record.hpp"
-// #include "../libradicl/Read_Record.hpp"
-// #include "../libradicl/Byte_Array.hpp"
-// #include "../libradicl/Tags.hpp"
-// #include "../libradicl/Header.hpp"
-// #include "../src/libradicl/Header.cpp"
-// #include "../src/libradicl/Tags.cpp"
-// #include "../src/libradicl/RAD_Writer.cpp"
-// #include "../src/libradicl/Byte_Array.cpp"
-// #include "../src/libradicl/Buffer.cpp"
-
 #include "../../external/libradicl/include/RAD_Writer.hpp"
 #include "../../external/libradicl/include/Alignment_Record.hpp"
 #include "../../external/libradicl/include/Read_Record.hpp"
