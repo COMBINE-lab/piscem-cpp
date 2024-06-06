@@ -240,12 +240,14 @@ void do_map(mindex::reference_index& ri,
                     fastx_parser::FastxParser<FragT>& parser, 
                     std::atomic<uint64_t>& global_nr, 
                     std::atomic<uint64_t>& global_nhits,
+                    std::atomic<uint64_t>& global_nmult,
                     pesc_output_info& out_info,
                     std::mutex& iomut,
                     std::atomic<uint64_t>& k_match,
                     bool psc_off,
                     bool ps_skip,
-                    float& thr) {
+                    float& thr,
+                    RAD::RAD_Writer& rw) {
 
     auto log_level = spdlog::get_level();
     auto write_mapping_rate = false;
@@ -327,10 +329,16 @@ void do_map(mindex::reference_index& ri,
             
             
             global_nhits += map_cache_out.accepted_hits.empty() ? 0 : 1;
+            global_nmult += map_cache_out.accepted_hits.size() > 1 ? 1 : 0;
+            RAD::Paired_End_Read read_rec;
+            read_rec.set(map_cache_out.accepted_hits.size(), record.first.seq.size(), 
+                        record.second.seq.size());
+            read_rec.add_tag(RAD::Type::str(record.third.seq));
+            
             rad::util::write_to_rad_stream_atac(bc_kmer, map_cache_out.map_type, map_cache_out.accepted_hits,
                                                 map_cache_out.unmapped_bc_map, num_reads_in_chunk, 
-                                                temp_buff, *bc, ri);
-
+                                                temp_buff, *bc, ri, read_rec);
+            rw.add(read_rec);
             // dump buffer
             if (num_reads_in_chunk > max_chunk_reads) {
                 out_info.num_chunks++;
@@ -391,7 +399,7 @@ int run_pesc_sc_atac(int argc, char** argv) {
     // // std::vector<std::string> right_read_filenames;
     // // std::vector<std::string> single_read_filenames;
     // std::string output_stem;
-    size_t nthread{16};
+    size_t nthread{1};
     bool quiet{false};
     CLI::App app{"Single cell Atac Seq mapper"};
     app.add_option("-i,--index", po.index_basename, "input index prefix")->required();
@@ -409,7 +417,7 @@ int run_pesc_sc_atac(int argc, char** argv) {
     //     ->required();
     app.add_option("-t,--threads", po.nthread,
                    "An integer that specifies the number of threads to use")
-        ->default_val(16);
+        ->default_val(1);
     app.add_option("--psc_off", po.psc_off,
                    "whether to switch structural constraints off")
         ->default_val(false);
@@ -479,7 +487,6 @@ int run_pesc_sc_atac(int argc, char** argv) {
     const RAD::Header header(is_paired, refs.size(), refs);
     
     RAD::RAD_Writer rw(header, tag_defn, rad_file_path);
-    rw.close();
     
     std::string cmdline;
     size_t narg = static_cast<size_t>(argc);
@@ -494,13 +501,14 @@ int run_pesc_sc_atac(int argc, char** argv) {
     
     std::atomic<uint64_t> global_nr{0};
     std::atomic<uint64_t> global_nh{0};
+    std::atomic<uint64_t> global_nmult{0}; // number of multimapping
     std::atomic<uint64_t> k_match{0}; //whether the kmer exists in the unitig table
     std::mutex iomut;
 
     bool psc_off=po.psc_off;
     bool ps_skip=po.ps_skip;
     float thr=po.thr;
-    
+    nthread = 1;
     fastx_parser::FastxParser<fastx_parser::ReadTrip> rparser(
     po.left_read_filenames, po.right_read_filenames, po.barcode_filenames, nthread, np);
     rparser.start();
@@ -509,14 +517,18 @@ int run_pesc_sc_atac(int argc, char** argv) {
             nthread -= 1;
     }
     std::vector<std::thread> workers;
-    for (size_t i = 0; i < nthread; ++i) {
-        workers.push_back(std::thread(
-            [&ri, &rparser, &global_nr, &global_nh, &out_info, &iomut, &k_match, 
-            &psc_off, &ps_skip, &thr]() {
-                do_map(ri, rparser, global_nr, global_nh, out_info, iomut, 
-                    k_match, psc_off, ps_skip, thr);
-            }));
-    }
+    
+    // for (size_t i = 0; i < nthread; ++i) {
+    //     workers.push_back(std::thread(
+    //         [&ri, &rparser, &global_nr, &global_nh, &global_nmult, &out_info, &iomut, &k_match, 
+    //         &psc_off, &ps_skip, &thr, &rw]() {
+    //             do_map(ri, rparser, global_nr, global_nh, global_nmult, out_info, iomut, 
+    //                 k_match, psc_off, ps_skip, thr, rw);
+    //         }));
+    // }
+    do_map(ri, rparser, global_nr, global_nh, global_nmult, out_info, iomut, 
+                    k_match, psc_off, ps_skip, thr, rw);
+    rw.close();
     for (auto& w : workers) { w.join(); }
     rparser.stop();
     spdlog::info("finished mapping.");

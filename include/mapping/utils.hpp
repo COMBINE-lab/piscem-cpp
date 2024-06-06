@@ -936,7 +936,7 @@ inline bool map_atac_read(std::string* read_seq, mapping_cache_info& map_cache,
             [&max_stretch, &min_occ, &hit_map, &num_valid_hits, &total_occs, &largest_occ,
              &early_stop, signed_rl, k, &map_cache, perform_ambig_filtering,
              verbose, psc_off, ps_skip, &thr, &ri](auto& raw_hits, auto& prev_read_pos, auto& max_allowed_occ,
-                      auto& ambiguous_hit_indices, auto& had_alt_max_occ) -> bool {
+            auto& ambiguous_hit_indices, auto& had_alt_max_occ) -> bool {
             int32_t hit_idx{0};
             // return false;
             for (auto& raw_hit : raw_hits) {
