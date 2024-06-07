@@ -296,7 +296,6 @@ void do_map(mindex::reference_index& ri,
     std::string temp_seq_buff="";
     temp_buff.reserve(max_chunk_reads*(9*2+16+5+12+5));
     temp_seq_buff.reserve(max_chunk_reads*(60));
-    rw.close();
     while (parser.refill(rg)) {
         for (auto& record : rg) {
             ++global_nr;
@@ -314,8 +313,10 @@ void do_map(mindex::reference_index& ri,
             }
             std::string* bc = &record.third.seq; // need to modify this
             bc_kmer_t bc_kmer;
-
-            // std::cout << *bc << " barcode " << record.first.seq <<"\n";
+        
+            bool bc_ok = bc_kmer.fromChars(*bc);
+            if (!bc_ok) { continue; }
+        
             auto recovered = single_cell::util::recover_barcode(*bc);
             // std::cout << *bc << "\n";
             
@@ -332,14 +333,11 @@ void do_map(mindex::reference_index& ri,
             global_nhits += map_cache_out.accepted_hits.empty() ? 0 : 1;
             global_nmult += map_cache_out.accepted_hits.size() > 1 ? 1 : 0;
             RAD::Paired_End_Read read_rec;
-            read_rec.set(map_cache_out.accepted_hits.size(), record.first.seq.size(), 
-                        record.second.seq.size());
-            read_rec.add_tag(RAD::Type::str(record.third.seq));
             
             rad::util::write_to_rad_stream_atac(bc_kmer, map_cache_out.map_type, map_cache_out.accepted_hits,
                                                 map_cache_out.unmapped_bc_map, num_reads_in_chunk, 
                                                 temp_buff, *bc, ri, read_rec);
-            // rw.add(read_rec);
+            rw.add(read_rec);
             // dump buffer
             if (num_reads_in_chunk > max_chunk_reads) {
                 out_info.num_chunks++;
@@ -483,11 +481,14 @@ int run_pesc_sc_atac(int argc, char** argv) {
     std::string rad_file_path = output_path;
     rad_file_path.append("/map.rad");
     RAD::Tag_Defn tag_defn;
+    RAD::Tag_List file_tag_vals;
+    file_tag_vals.add(RAD::Type::u16(16));
+
     std::vector<std::string> refs;
     rad::util::write_rad_header_atac(ri, refs, tag_defn);
     const RAD::Header header(is_paired, refs.size(), refs);
     
-    RAD::RAD_Writer rw(header, tag_defn, rad_file_path);
+    RAD::RAD_Writer rw(header, tag_defn, file_tag_vals, rad_file_path);
     
     std::string cmdline;
     size_t narg = static_cast<size_t>(argc);
@@ -529,7 +530,7 @@ int run_pesc_sc_atac(int argc, char** argv) {
     // }
     do_map(ri, rparser, global_nr, global_nh, global_nmult, out_info, iomut,
                     k_match, psc_off, ps_skip, thr, rw);
-    // rw.close();
+    rw.close();
     for (auto& w : workers) { w.join(); }
     rparser.stop();
     spdlog::info("finished mapping.");

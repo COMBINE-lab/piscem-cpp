@@ -188,11 +188,13 @@ inline void write_rad_header_atac(mindex::reference_index& ri, std::vector<std::
     
     for (size_t i = 0; i < ri.num_refs(); ++i) { refs.emplace_back(ri.ref_name(i)); }
 
-    tag_defn.add_file_tag<RAD::Type::u32>("ref_lengths");
+    // tag_defn.add_file_tag<RAD::Type::u32>("ref_lengths");
     tag_defn.add_file_tag<RAD::Type::u16>("cblen");
 
-    tag_defn.add_read_tag<RAD::Type::str>("barcode");
+    tag_defn.add_read_tag<RAD::Type::u32>("barcode");
 
+    tag_defn.add_aln_tag<RAD::Type::u32>("ref");
+    tag_defn.add_aln_tag<RAD::Type::u8>("type");
     tag_defn.add_aln_tag<RAD::Type::u32>("start_pos");
     tag_defn.add_aln_tag<RAD::Type::u16>("frag_len");
 }
@@ -322,15 +324,21 @@ inline void write_to_rad_stream_atac(bc_kmer_t& bck, mapping::util_bin::MappingT
         // do nothing here
         return;
     }
-
-    // otherwise, we always write the number of mappings
-    // strbuff += barcode;
-    // strbuff << static_cast<uint32_t>(accepted_hits.size());
-    // for each fragment
-
+    read_rec.set(accepted_hits.size());
+    const uint32_t barcode_len = bc_kmer_t::k();
+    if (barcode_len <= 32) {
+        if (barcode_len <= 16) {  // can use 32-bit int
+            uint32_t shortbck = static_cast<uint32_t>(0x00000000FFFFFFFF & bck.word(0));
+            read_rec.add_tag(RAD::Type::u32(shortbck));
+        } else {  // must use 64-bit int
+            read_rec.add_tag(RAD::Type::u64(bck.word(0)));
+        }
+    } else {
+            std::cerr << "should not happen\n";
+    }
     for (auto& aln : accepted_hits) {
         RAD::Aln_Record aln_rec;
-        uint8_t type;
+        // uint8_t type;
         // top 2 bits are fw,rc ori
         uint32_t fw_mask = aln.is_fw ? 0x80000000 : 0x00000000;
         uint32_t mate_fw_mask = aln.mate_is_fw ? 0x40000000 : 0x00000000;
@@ -380,7 +388,8 @@ inline void write_to_rad_stream_atac(bc_kmer_t& bck, mapping::util_bin::MappingT
                 break;
         }
         
-        aln_rec.set(aln.tid, type);
+        aln_rec.add_tag(RAD::Type::u32(aln.tid));
+        aln_rec.add_tag(RAD::Type::u8(type));
         aln_rec.add_tag(RAD::Type::u32(leftmost_pos));
         aln_rec.add_tag(RAD::Type::u32(frag_len));
         read_rec.add_aln_rec(aln_rec);
