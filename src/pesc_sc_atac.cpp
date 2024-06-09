@@ -314,14 +314,14 @@ void do_map(mindex::reference_index& ri,
             std::string* bc = &record.third.seq; // need to modify this
             bc_kmer_t bc_kmer;
         
+            auto recovered = single_cell::util::recover_barcode(*bc);
+            if (recovered == BarCodeRecovered::NOT_RECOVERED) { continue; }
+            
             bool bc_ok = bc_kmer.fromChars(*bc);
             if (!bc_ok) { continue; }
-        
-            auto recovered = single_cell::util::recover_barcode(*bc);
-            // std::cout << *bc << "\n";
             
             // if we couldn't correct it with 1 `N`, then skip.
-            if (recovered == BarCodeRecovered::NOT_RECOVERED) { continue; }
+            
             bool had_early_stop = 
             //    map_fragment(record, map_cache_left, map_cache_right, map_cache_out, k_match,
                 //    psc_off, ps_skip, thr);
@@ -332,12 +332,11 @@ void do_map(mindex::reference_index& ri,
             
             global_nhits += map_cache_out.accepted_hits.empty() ? 0 : 1;
             global_nmult += map_cache_out.accepted_hits.size() > 1 ? 1 : 0;
-            RAD::Paired_End_Read read_rec;
             
             rad::util::write_to_rad_stream_atac(bc_kmer, map_cache_out.map_type, map_cache_out.accepted_hits,
                                                 map_cache_out.unmapped_bc_map, num_reads_in_chunk, 
-                                                temp_buff, *bc, ri, read_rec);
-            rw.add(read_rec);
+                                                temp_buff, *bc, ri, rw);
+            
             // dump buffer
             if (num_reads_in_chunk > max_chunk_reads) {
                 out_info.num_chunks++;
@@ -485,6 +484,7 @@ int run_pesc_sc_atac(int argc, char** argv) {
     file_tag_vals.add(RAD::Type::u16(16));
 
     std::vector<std::string> refs;
+    bc_kmer_t::k(16);
     rad::util::write_rad_header_atac(ri, refs, tag_defn);
     const RAD::Header header(is_paired, refs.size(), refs);
     
@@ -557,7 +557,6 @@ int run_pesc_sc_atac(int argc, char** argv) {
     rs.num_kmatch(k_match.load());
 
     ghc::filesystem::path map_info_file_path = output_path / "map_info.json";
-    std::cout << map_info_file_path << std::endl;
     bool info_ok = piscem::meta_info::write_map_info(rs, map_info_file_path);
     if (!info_ok) { spdlog::critical("failed to write map_info.json file"); }
 

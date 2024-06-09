@@ -318,13 +318,16 @@ inline void write_to_rad_stream_atac(bc_kmer_t& bck, mapping::util_bin::MappingT
                                      phmap::flat_hash_map<uint64_t, uint32_t>& unmapped_bc_map,
                                      uint32_t& num_reads_in_chunk, std::string& strbuff, 
                                      std::string& barcode, mindex::reference_index& ri, 
-                                     RAD::Paired_End_Read& read_rec) {
+                                     RAD::RAD_Writer& rw) {
+                                        
     if (map_type == mapping::util_bin::MappingType::UNMAPPED) {
         unmapped_bc_map[bck.word(0)] += 1;
         // do nothing here
         return;
     }
+    RAD::Paired_End_Read read_rec;
     read_rec.set(accepted_hits.size());
+    
     const uint32_t barcode_len = bc_kmer_t::k();
     if (barcode_len <= 32) {
         if (barcode_len <= 16) {  // can use 32-bit int
@@ -338,7 +341,7 @@ inline void write_to_rad_stream_atac(bc_kmer_t& bck, mapping::util_bin::MappingT
     }
     for (auto& aln : accepted_hits) {
         RAD::Aln_Record aln_rec;
-        // uint8_t type;
+        uint8_t type;
         // top 2 bits are fw,rc ori
         uint32_t fw_mask = aln.is_fw ? 0x80000000 : 0x00000000;
         uint32_t mate_fw_mask = aln.mate_is_fw ? 0x40000000 : 0x00000000;
@@ -391,9 +394,9 @@ inline void write_to_rad_stream_atac(bc_kmer_t& bck, mapping::util_bin::MappingT
         aln_rec.add_tag(RAD::Type::u32(aln.tid));
         aln_rec.add_tag(RAD::Type::u8(type));
         aln_rec.add_tag(RAD::Type::u32(leftmost_pos));
-        aln_rec.add_tag(RAD::Type::u32(frag_len));
+        aln_rec.add_tag(RAD::Type::u16(frag_len));
         read_rec.add_aln_rec(aln_rec);
-
+        
         strbuff += std::to_string(leftmost_pos);
         strbuff += "\t";
         strbuff += std::to_string(leftmost_pos + frag_len);
@@ -403,6 +406,7 @@ inline void write_to_rad_stream_atac(bc_kmer_t& bck, mapping::util_bin::MappingT
         strbuff += std::to_string(accepted_hits.size());
         strbuff += "\n";
     }
+    rw.add(read_rec);
     ++num_reads_in_chunk;
 }
 
