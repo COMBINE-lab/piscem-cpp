@@ -123,10 +123,10 @@ target_link_libraries(pesc-sc-atac pesc_static profiler ZLIB::ZLIB Threads::Thre
 target_link_directories(pesc-sc-atac PUBLIC /fs/cbcb-lab/rob/students/noor/miniforge3/lib)
 add_dependencies(pesc-sc-atac radicl)
 
-add_executable(temp src/temp.cpp)
-target_include_directories(temp PUBLIC ${CMAKE_SOURCE_DIR}/include ${ZLIB_INCLUDE_DIRS} ${CMAKE_SOURCE_DIR}/external/libradicl/include)
-target_link_libraries(temp pesc_static ZLIB::ZLIB Threads::Threads sshash_static ${MALLOC_LIB} radicl)
-add_dependencies(temp radicl)
+# add_executable(temp src/temp.cpp)
+# target_include_directories(temp PUBLIC ${CMAKE_SOURCE_DIR}/include ${ZLIB_INCLUDE_DIRS} ${CMAKE_SOURCE_DIR}/external/libradicl/include)
+# target_link_libraries(temp pesc_static ZLIB::ZLIB Threads::Threads sshash_static ${MALLOC_LIB} radicl)
+# add_dependencies(temp radicl)
 
 #add_executable(mapper src/mapper.cpp src/hit_searcher.cpp) 
 #target_include_directories(mapper PUBLIC ${CMAKE_SOURCE_DIR}/include ${ZLIB_INCLUDE_DIRS})
