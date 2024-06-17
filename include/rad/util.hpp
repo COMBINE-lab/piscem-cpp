@@ -325,7 +325,7 @@ inline void write_to_rad_stream_atac(bc_kmer_t& bck, mapping::util_bin::MappingT
         // do nothing here
         return;
     }
-    RAD::Paired_End_Read read_rec;
+    RAD::Read read_rec;
     read_rec.set(accepted_hits.size());
     
     const uint32_t barcode_len = bc_kmer_t::k();
@@ -390,7 +390,7 @@ inline void write_to_rad_stream_atac(bc_kmer_t& bck, mapping::util_bin::MappingT
                 // don't do anything here
                 break;
         }
-        
+        aln_rec.set();
         aln_rec.add_tag(RAD::Type::u32(aln.tid));
         aln_rec.add_tag(RAD::Type::u8(type));
         aln_rec.add_tag(RAD::Type::u32(leftmost_pos));
