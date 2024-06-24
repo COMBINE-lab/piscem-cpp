@@ -16,6 +16,7 @@
 #include "../../external/libradicl/include/Read_Record.hpp"
 #include "../../external/libradicl/include/Byte_Array.hpp"
 #include "../../external/libradicl/include/Tags.hpp"
+#include "../../external/libradicl/include/Tags.hpp"
 
 namespace rad {
 namespace util {
@@ -326,6 +327,8 @@ inline void write_to_rad_stream_atac(bc_kmer_t& bck, mapping::util_bin::MappingT
         return;
     }
     RAD::Read read_rec;
+    std::cout << "ds\n";
+    const auto token = rw.get_token();
     read_rec.set(accepted_hits.size());
     
     const uint32_t barcode_len = bc_kmer_t::k();
@@ -390,7 +393,7 @@ inline void write_to_rad_stream_atac(bc_kmer_t& bck, mapping::util_bin::MappingT
                 // don't do anything here
                 break;
         }
-        aln_rec.set();
+        aln_rec.clear();
         aln_rec.add_tag(RAD::Type::u32(aln.tid));
         aln_rec.add_tag(RAD::Type::u8(type));
         aln_rec.add_tag(RAD::Type::u32(leftmost_pos));
@@ -406,7 +409,8 @@ inline void write_to_rad_stream_atac(bc_kmer_t& bck, mapping::util_bin::MappingT
         strbuff += std::to_string(accepted_hits.size());
         strbuff += "\n";
     }
-    rw.add(read_rec);
+    
+    rw.add(read_rec, token);
     ++num_reads_in_chunk;
 }
 

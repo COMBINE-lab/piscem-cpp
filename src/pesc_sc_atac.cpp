@@ -53,7 +53,7 @@ struct pesc_atac_options {
     bool quiet{false};
     bool check_ambig_hits{false};
     uint32_t max_ec_card{256};
-    size_t nthread{1};
+    size_t nthread{16};
 };
 
 // bool map_fragment(fastx_parser::ReadSeq& record, mapping_cache_info& map_cache_left,
@@ -251,7 +251,7 @@ void do_map(mindex::reference_index& ri,
 
     auto log_level = spdlog::get_level();
     auto write_mapping_rate = false;
-    
+    std::cout << "entee\n";
     switch (log_level) {
         case spdlog::level::level_enum::trace:
             write_mapping_rate = true;
@@ -296,7 +296,11 @@ void do_map(mindex::reference_index& ri,
     std::string temp_seq_buff="";
     temp_buff.reserve(max_chunk_reads*(9*2+16+5+12+5));
     temp_seq_buff.reserve(max_chunk_reads*(60));
+    std::cout << "do_map\n";
+
     while (parser.refill(rg)) {
+        std::cout << "do_\n";
+
         for (auto& record : rg) {
             ++global_nr;
             ++read_num;
@@ -332,7 +336,6 @@ void do_map(mindex::reference_index& ri,
             
             global_nhits += map_cache_out.accepted_hits.empty() ? 0 : 1;
             global_nmult += map_cache_out.accepted_hits.size() > 1 ? 1 : 0;
-            
             rad::util::write_to_rad_stream_atac(bc_kmer, map_cache_out.map_type, map_cache_out.accepted_hits,
                                                 map_cache_out.unmapped_bc_map, num_reads_in_chunk, 
                                                 temp_buff, *bc, ri, rw);
@@ -397,7 +400,7 @@ int run_pesc_sc_atac(int argc, char** argv) {
     // // std::vector<std::string> right_read_filenames;
     // // std::vector<std::string> single_read_filenames;
     // std::string output_stem;
-    size_t nthread{1};
+    size_t nthread{16};
     bool quiet{false};
     CLI::App app{"Single cell Atac Seq mapper"};
     app.add_option("-i,--index", po.index_basename, "input index prefix")->required();
@@ -488,7 +491,9 @@ int run_pesc_sc_atac(int argc, char** argv) {
     rad::util::write_rad_header_atac(ri, refs, tag_defn);
     const RAD::Header header(is_paired, refs.size(), refs);
     
-    RAD::RAD_Writer rw(header, tag_defn, file_tag_vals, rad_file_path);
+    // std::cout << nthread << " nthread" << std::endl;
+    nthread=1;
+    RAD::RAD_Writer rw(header, tag_defn, file_tag_vals, rad_file_path, nthread);
     
     std::string cmdline;
     size_t narg = static_cast<size_t>(argc);
@@ -510,7 +515,6 @@ int run_pesc_sc_atac(int argc, char** argv) {
     bool psc_off=po.psc_off;
     bool ps_skip=po.ps_skip;
     float thr=po.thr;
-    nthread = 1;
     fastx_parser::FastxParser<fastx_parser::ReadTrip> rparser(
     po.left_read_filenames, po.right_read_filenames, po.barcode_filenames, nthread, np);
     rparser.start();
@@ -521,6 +525,7 @@ int run_pesc_sc_atac(int argc, char** argv) {
     std::vector<std::thread> workers;
     
     // for (size_t i = 0; i < nthread; ++i) {
+    //     std::cout << "endd i " << i << std::endl;
     //     workers.push_back(std::thread(
     //         [&ri, &rparser, &global_nr, &global_nh, &global_nmult, &out_info, &iomut, &k_match, 
     //         &psc_off, &ps_skip, &thr, &rw]() {
@@ -530,12 +535,13 @@ int run_pesc_sc_atac(int argc, char** argv) {
     // }
     do_map(ri, rparser, global_nr, global_nh, global_nmult, out_info, iomut,
                     k_match, psc_off, ps_skip, thr, rw);
-    rw.close();
+    
     for (auto& w : workers) { w.join(); }
     rparser.stop();
     spdlog::info("finished mapping.");
-
+    rw.close();
     out_info.bed_file.close();
+    
     if (!out_info.bed_file) {
         spdlog::critical(
             "The BED file stream had an invalid status after "
