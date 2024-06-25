@@ -191,6 +191,16 @@ add_executable(poison_filter src/poison_read_filter.cpp)
 target_include_directories(poison_filter PUBLIC ${CMAKE_SOURCE_DIR}/include ${ZLIB_INCLUDE_DIRS})
 target_link_libraries(poison_filter Threads::Threads sshash_static pesc_static ${CLOUDFLARE_ZLIB}) 
 
+## tests
+add_subdirectory(external/doctest)
+
+# Make test executable
+add_executable(tests tests/test_geom_extractor.cpp)
+target_compile_features(tests PRIVATE cxx_std_17)
+target_include_directories(tests PRIVATE doctest)
+target_link_libraries(tests PRIVATE doctest pesc_static)
+
+
 ## depend on the cloudflare zlib library
 add_dependencies(check zlib-cloudflare)
 add_dependencies(evaluator zlib-cloudflare)
