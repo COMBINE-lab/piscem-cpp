@@ -194,11 +194,28 @@ Length <- [1-9][0-9]*
 } // namespace util
 } // namespace single_cell
 
-class chromium_v4_3p {
+// tells us which reads should be used for mapping
+enum class ReadsToMap { FIRST, SECOND, BOTH, NONE };
+
+// holds the alignable portions of each read
+struct AlignableReadSeqs {
+  std::string *seq1{nullptr};
+  std::string *seq2{nullptr};
+
+  ReadsToMap get_reads_to_map() {
+    return (seq1 == nullptr)
+             // seq1 null here
+             ? ((seq2 == nullptr) ? ReadsToMap::NONE : ReadsToMap::SECOND)
+             // seq1 not null here
+             : ((seq2 == nullptr) ? ReadsToMap::FIRST : ReadsToMap::BOTH);
+  }
+};
+
+class chromium_v4_5p {
 public:
-  chromium_v4_3p() = default;
+  chromium_v4_5p() = default;
   // copy constructor
-  chromium_v4_3p(const chromium_v4_3p &o) = default;
+  chromium_v4_5p(const chromium_v4_5p &o) = default;
 
   // We'd really like an std::optional<string&> here, but C++17
   // said no to that.
@@ -221,6 +238,17 @@ public:
     return &r2;
   }
 
+  AlignableReadSeqs get_mappable_read_sequences(std::string &r1,
+                                                std::string &r2) {
+    std::string *r1_ptr = nullptr;
+    if (r1.length() > (bc_len + umi_len)) {
+      r1_buffer.clear();
+      r1_buffer.assign(r1, bc_len + umi_len);
+      r1_ptr = &r1_buffer;
+    }
+    return AlignableReadSeqs{r1_ptr, &r2};
+  }
+
   bool validate() const { return true; }
   size_t get_bc_len() const { return bc_len; }
   size_t get_umi_len() const { return umi_len; }
@@ -228,6 +256,101 @@ public:
 private:
   std::string umi;
   std::string bc;
+  std::string r1_buffer;
+  const size_t bc_len = 16;
+  const size_t umi_len = 12;
+};
+
+class chromium_v4_3p {
+public:
+  chromium_v4_3p() = default;
+  // copy constructor
+  chromium_v4_3p(const chromium_v4_3p &o) = default;
+
+  // We'd really like an std::optional<string&> here, but C++17
+  // said no to that.
+  std::string *extract_bc(std::string &r1, std::string &r2) {
+    (void)r2;
+    return (r1.length() >= bc_len) ? (bc.assign(r1, 0, bc_len), &bc) : nullptr;
+  }
+
+  // We'd really like an std::optional<string&> here, but C++17
+  // said no to that.
+  std::string *extract_umi(std::string &r1, std::string &r2) {
+    (void)r2;
+    return (r1.length() >= (bc_len + umi_len))
+             ? (umi.assign(r1, bc_len, umi_len), &umi)
+             : nullptr;
+  }
+
+  AlignableReadSeqs get_mappable_read_sequences(std::string &r1,
+                                                std::string &r2) {
+    (void)r1;
+    return AlignableReadSeqs{nullptr, &r2};
+  }
+
+  std::string *extract_mappable_read(std::string &r1, std::string &r2) {
+    (void)r1;
+    return &r2;
+  }
+
+  bool validate() const { return true; }
+  size_t get_bc_len() const { return bc_len; }
+  size_t get_umi_len() const { return umi_len; }
+
+private:
+  std::string umi;
+  std::string bc;
+  const size_t bc_len = 16;
+  const size_t umi_len = 12;
+};
+
+class chromium_v3_5p {
+public:
+  chromium_v3_5p() = default;
+  // copy constructor
+  chromium_v3_5p(const chromium_v3_5p &o) = default;
+
+  // We'd really like an std::optional<string&> here, but C++17
+  // said no to that.
+  std::string *extract_bc(std::string &r1, std::string &r2) {
+    (void)r2;
+    return (r1.length() >= bc_len) ? (bc.assign(r1, 0, bc_len), &bc) : nullptr;
+  }
+
+  // We'd really like an std::optional<string&> here, but C++17
+  // said no to that.
+  std::string *extract_umi(std::string &r1, std::string &r2) {
+    (void)r2;
+    return (r1.length() >= (bc_len + umi_len))
+             ? (umi.assign(r1, bc_len, umi_len), &umi)
+             : nullptr;
+  }
+
+  std::string *extract_mappable_read(std::string &r1, std::string &r2) {
+    (void)r1;
+    return &r2;
+  }
+
+  AlignableReadSeqs get_mappable_read_sequences(std::string &r1,
+                                                std::string &r2) {
+    std::string *r1_ptr = nullptr;
+    if (r1.length() > (bc_len + umi_len)) {
+      r1_buffer.clear();
+      r1_buffer.assign(r1, bc_len + umi_len);
+      r1_ptr = &r1_buffer;
+    }
+    return AlignableReadSeqs{r1_ptr, &r2};
+  }
+
+  bool validate() const { return true; }
+  size_t get_bc_len() const { return bc_len; }
+  size_t get_umi_len() const { return umi_len; }
+
+private:
+  std::string umi;
+  std::string bc;
+  std::string r1_buffer;
   const size_t bc_len = 16;
   const size_t umi_len = 12;
 };
@@ -252,6 +375,12 @@ public:
     return (r1.length() >= (bc_len + umi_len))
              ? (umi.assign(r1, bc_len, umi_len), &umi)
              : nullptr;
+  }
+
+  AlignableReadSeqs get_mappable_read_sequences(std::string &r1,
+                                                std::string &r2) {
+    (void)r1;
+    return AlignableReadSeqs{nullptr, &r2};
   }
 
   std::string *extract_mappable_read(std::string &r1, std::string &r2) {
@@ -290,6 +419,12 @@ public:
     return (r1.length() >= (bc_len + umi_len))
              ? (umi.assign(r1, bc_len, umi_len), &umi)
              : nullptr;
+  }
+
+  AlignableReadSeqs get_mappable_read_sequences(std::string &r1,
+                                                std::string &r2) {
+    (void)r1;
+    return AlignableReadSeqs{nullptr, &r2};
   }
 
   std::string *extract_mappable_read(std::string &r1, std::string &r2) {
@@ -511,7 +646,7 @@ public:
           return nullptr;
         }
         size_t len = (up.len == -1) ? std::string::npos : up.len;
-        umi_buffer.append(r2, up.offset, len);
+        read_buffer.append(r2, up.offset, len);
       }
     } else if (uses_r1) {
       read_buffer.clear();
@@ -523,10 +658,70 @@ public:
           return nullptr;
         }
         size_t len = (up.len == -1) ? std::string::npos : up.len;
-        umi_buffer.append(r1, up.offset, len);
+        read_buffer.append(r1, up.offset, len);
       }
     }
     return &read_buffer;
+  }
+
+  AlignableReadSeqs get_mappable_read_sequences(std::string &r1,
+                                                std::string &r2) {
+    // we start out with nothing alignable
+    std::string *r1_ptr = nullptr;
+    std::string *r2_ptr = nullptr;
+
+    // do we use r1 and r2 for alignable sequence
+    bool uses_r1 = !read_slices_r1.empty();
+    bool uses_r2 = !read_slices_r2.empty();
+
+    // if we need r1
+    if (uses_r1) {
+      // if it's all of r1, just grab that
+      if (read_slices_r1[0].offset == 0 and read_slices_r1[0].len == -1) {
+        r1_ptr = &r1;
+      } else {
+        // otherwise grab the appropriate part of r1
+        r1_buffer.clear();
+        size_t r1_len = r1.size();
+        for (auto &up : read_slices_r1) {
+          size_t check_offset =
+            (up.len > 0) ? (up.offset + up.len - 1) : up.offset;
+          if (check_offset >= r1_len) {
+            r1_ptr = nullptr;
+            r1_buffer.clear();
+            break;
+          }
+          size_t len = (up.len == -1) ? std::string::npos : up.len;
+          r1_buffer.append(r1, up.offset, len);
+        }
+        r1_ptr = (r1_buffer.length() > 0) ? &r1_buffer : nullptr;
+      }
+    }
+
+    // if we need r2
+    if (uses_r2) {
+      // if it's all of r2 just grab that
+      if (read_slices_r2[0].offset == 0 and read_slices_r2[0].len == -1) {
+        r2_ptr = &r2;
+      } else {
+        // otherwise extract the part we need
+        r2_buffer.clear();
+        size_t r2_len = r2.size();
+        for (auto &up : read_slices_r2) {
+          size_t check_offset =
+            (up.len > 0) ? (up.offset + up.len - 1) : up.offset;
+          if (check_offset >= r2_len) {
+            r2_ptr = nullptr;
+            r2_buffer.clear();
+          }
+          size_t len = (up.len == -1) ? std::string::npos : up.len;
+          r2_buffer.append(r2, up.offset, len);
+        }
+        r2_ptr = (r2_buffer.length() > 0) ? &r2_buffer : nullptr;
+      }
+    }
+
+    return AlignableReadSeqs{r1_ptr, r2_ptr};
   }
 
   friend std::ostream &operator<<(std::ostream &os, const custom_protocol &p);
@@ -540,6 +735,8 @@ private:
   std::string bc_buffer;
   std::string umi_buffer;
   std::string read_buffer;
+  std::string r1_buffer;
+  std::string r2_buffer;
 
   itlib::small_vector<str_slice, 8> bc_slices_r1;
   itlib::small_vector<str_slice, 8> umi_slices_r1;
