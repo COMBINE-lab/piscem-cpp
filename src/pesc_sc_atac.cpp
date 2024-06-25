@@ -247,11 +247,12 @@ void do_map(mindex::reference_index& ri,
                     bool psc_off,
                     bool ps_skip,
                     float& thr,
-                    RAD::RAD_Writer& rw) {
+                    RAD::RAD_Writer& rw,
+                    RAD::Token token) {
 
     auto log_level = spdlog::get_level();
     auto write_mapping_rate = false;
-    std::cout << "entee\n";
+
     switch (log_level) {
         case spdlog::level::level_enum::trace:
             write_mapping_rate = true;
@@ -293,22 +294,16 @@ void do_map(mindex::reference_index& ri,
     uint64_t read_num = 0;
 
     std::string temp_buff="";
-    std::string temp_seq_buff="";
-    temp_buff.reserve(max_chunk_reads*(9*2+16+5+12+5));
-    temp_seq_buff.reserve(max_chunk_reads*(60));
-    std::cout << "do_map\n";
+    // std::string temp_seq_buff="";
+    // temp_buff.reserve(max_chunk_reads*(9*2+16+5+12+5));
+    // temp_seq_buff.reserve(max_chunk_reads*(60));
 
     while (parser.refill(rg)) {
-        std::cout << "do_\n";
-
         for (auto& record : rg) {
             ++global_nr;
             ++read_num;
             auto rctr = global_nr.load();
             auto hctr = global_nhits.load();
-            // if(read_num > 100) {
-            //     break;
-            // }
 
             if (write_mapping_rate and (rctr % 500000 == 0)) {
                 iomut.lock();
@@ -338,7 +333,7 @@ void do_map(mindex::reference_index& ri,
             global_nmult += map_cache_out.accepted_hits.size() > 1 ? 1 : 0;
             rad::util::write_to_rad_stream_atac(bc_kmer, map_cache_out.map_type, map_cache_out.accepted_hits,
                                                 map_cache_out.unmapped_bc_map, num_reads_in_chunk, 
-                                                temp_buff, *bc, ri, rw);
+                                                temp_buff, *bc, ri, rw, token);
             
             // dump buffer
             if (num_reads_in_chunk > max_chunk_reads) {
@@ -358,9 +353,9 @@ void do_map(mindex::reference_index& ri,
     if (num_reads_in_chunk > 0) {
         out_info.num_chunks++;
         
-        out_info.bed_mutex.lock();
-        out_info.bed_file << temp_buff;
-        out_info.bed_mutex.unlock();
+        // out_info.bed_mutex.lock();
+        // out_info.bed_file << temp_buff;
+        // out_info.bed_mutex.unlock();
         temp_buff = "";
         num_reads_in_chunk = 0;
     }
@@ -491,8 +486,6 @@ int run_pesc_sc_atac(int argc, char** argv) {
     rad::util::write_rad_header_atac(ri, refs, tag_defn);
     const RAD::Header header(is_paired, refs.size(), refs);
     
-    // std::cout << nthread << " nthread" << std::endl;
-    nthread=1;
     RAD::RAD_Writer rw(header, tag_defn, file_tag_vals, rad_file_path, nthread);
     
     std::string cmdline;
@@ -524,17 +517,17 @@ int run_pesc_sc_atac(int argc, char** argv) {
     }
     std::vector<std::thread> workers;
     
-    // for (size_t i = 0; i < nthread; ++i) {
-    //     std::cout << "endd i " << i << std::endl;
-    //     workers.push_back(std::thread(
-    //         [&ri, &rparser, &global_nr, &global_nh, &global_nmult, &out_info, &iomut, &k_match, 
-    //         &psc_off, &ps_skip, &thr, &rw]() {
-    //             do_map(ri, rparser, global_nr, global_nh, global_nmult, out_info, iomut, 
+    for (size_t i = 0; i < nthread; ++i) {
+        const auto token = rw.get_token();
+        workers.push_back(std::thread(
+            [&ri, &rparser, &global_nr, &global_nh, &global_nmult, &out_info, &iomut, &k_match, 
+            &psc_off, &ps_skip, &thr, &rw, &token]() {
+                do_map(ri, rparser, global_nr, global_nh, global_nmult, out_info, iomut, 
+                    k_match, psc_off, ps_skip, thr, rw, token);
+            }));
+    }
+    // do_map(ri, rparser, global_nr, global_nh, global_nmult, out_info, iomut,
     //                 k_match, psc_off, ps_skip, thr, rw);
-    //         }));
-    // }
-    do_map(ri, rparser, global_nr, global_nh, global_nmult, out_info, iomut,
-                    k_match, psc_off, ps_skip, thr, rw);
     
     for (auto& w : workers) { w.join(); }
     rparser.stop();

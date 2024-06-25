@@ -319,7 +319,7 @@ inline void write_to_rad_stream_atac(bc_kmer_t& bck, mapping::util_bin::MappingT
                                      phmap::flat_hash_map<uint64_t, uint32_t>& unmapped_bc_map,
                                      uint32_t& num_reads_in_chunk, std::string& strbuff, 
                                      std::string& barcode, mindex::reference_index& ri, 
-                                     RAD::RAD_Writer& rw) {
+                                     RAD::RAD_Writer& rw, RAD::Token& token) {
                                         
     if (map_type == mapping::util_bin::MappingType::UNMAPPED) {
         unmapped_bc_map[bck.word(0)] += 1;
@@ -327,8 +327,7 @@ inline void write_to_rad_stream_atac(bc_kmer_t& bck, mapping::util_bin::MappingT
         return;
     }
     RAD::Read read_rec;
-    std::cout << "ds\n";
-    const auto token = rw.get_token();
+    
     read_rec.set(accepted_hits.size());
     
     const uint32_t barcode_len = bc_kmer_t::k();
@@ -350,8 +349,8 @@ inline void write_to_rad_stream_atac(bc_kmer_t& bck, mapping::util_bin::MappingT
         uint32_t mate_fw_mask = aln.mate_is_fw ? 0x40000000 : 0x00000000;
         // bottom 30 bits are target id
         // strbuff += std::to_string((0x3FFFFFFF & aln.tid) | fw_mask | mate_fw_mask);
-        strbuff += ri.ref_name(aln.tid);
-        strbuff += "\t";
+        // strbuff += ri.ref_name(aln.tid);
+        // strbuff += "\t";
         int32_t leftmost_pos = 0;
         // placeholder value for no fragment length
         uint16_t frag_len = std::numeric_limits<uint16_t>::max();
@@ -400,14 +399,14 @@ inline void write_to_rad_stream_atac(bc_kmer_t& bck, mapping::util_bin::MappingT
         aln_rec.add_tag(RAD::Type::u16(frag_len));
         read_rec.add_aln_rec(aln_rec);
         
-        strbuff += std::to_string(leftmost_pos);
-        strbuff += "\t";
-        strbuff += std::to_string(leftmost_pos + frag_len);
-        strbuff += "\t";
-        strbuff += barcode;
-        strbuff += "\t";
-        strbuff += std::to_string(accepted_hits.size());
-        strbuff += "\n";
+        // strbuff += std::to_string(leftmost_pos);
+        // strbuff += "\t";
+        // strbuff += std::to_string(leftmost_pos + frag_len);
+        // strbuff += "\t";
+        // strbuff += barcode;
+        // strbuff += "\t";
+        // strbuff += std::to_string(accepted_hits.size());
+        // strbuff += "\n";
     }
     
     rw.add(read_rec, token);
