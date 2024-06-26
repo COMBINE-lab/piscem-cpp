@@ -202,7 +202,7 @@ struct AlignableReadSeqs {
   std::string *seq1{nullptr};
   std::string *seq2{nullptr};
 
-  ReadsToMap get_reads_to_map() {
+  inline ReadsToMap get_reads_to_map() const {
     return (seq1 == nullptr)
              // seq1 null here
              ? ((seq2 == nullptr) ? ReadsToMap::NONE : ReadsToMap::SECOND)
@@ -493,10 +493,13 @@ public:
       int32_t len = static_cast<int32_t>(gp.len);
       if (gp.ttype == geo_tag_type::BC) {
         bc_slices_r1.push_back({current_offset, len});
+        has_barcode = true;
       } else if (gp.ttype == geo_tag_type::UMI) {
         umi_slices_r1.push_back({current_offset, len});
+        has_umi = true;
       } else if (gp.ttype == geo_tag_type::READ) {
         read_slices_r1.push_back({current_offset, len});
+        has_biological_read = true;
       }
       current_offset += gp.len;
     }
@@ -505,10 +508,13 @@ public:
       int32_t len = static_cast<int32_t>(gp.len);
       if (gp.ttype == geo_tag_type::BC) {
         bc_slices_r2.push_back({current_offset, len});
+        has_barcode = true;
       } else if (gp.ttype == geo_tag_type::UMI) {
         umi_slices_r2.push_back({current_offset, len});
+        has_umi = true;
       } else if (gp.ttype == geo_tag_type::READ) {
         read_slices_r2.push_back({current_offset, len});
+        has_biological_read = true;
       }
       current_offset += gp.len;
     }
