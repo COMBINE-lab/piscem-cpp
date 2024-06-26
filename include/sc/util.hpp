@@ -202,6 +202,18 @@ struct AlignableReadSeqs {
   std::string *seq1{nullptr};
   std::string *seq2{nullptr};
 
+  // NOTE: this assumes the underlying protocol has a single
+  // biologically meaningful read. It will return the first
+  // non-null sequence it encounters between seq1 and seq2,
+  // checking seq2 first since that is the hot path in most
+  // single-end protocols.
+  //
+  // WARNING: If both seq1 and seq2 are null pointers, this
+  // will return `nullptr`.
+  inline std::string *get_alignable_seq() const {
+    return (seq2 != nullptr) ? seq2 : seq1;
+  }
+
   inline ReadsToMap get_reads_to_map() const {
     return (seq1 == nullptr)
              // seq1 null here
@@ -216,6 +228,8 @@ public:
   chromium_v4_5p() = default;
   // copy constructor
   chromium_v4_5p(const chromium_v4_5p &o) = default;
+
+  std::string get_name() const { return "chromium_v4_5p"; }
 
   // We'd really like an std::optional<string&> here, but C++17
   // said no to that.
@@ -269,6 +283,8 @@ public:
   // copy constructor
   chromium_v4_3p(const chromium_v4_3p &o) = default;
 
+  std::string get_name() const { return "chromium_v4_3p"; }
+
   // We'd really like an std::optional<string&> here, but C++17
   // said no to that.
   std::string *extract_bc(std::string &r1, std::string &r2) {
@@ -284,7 +300,7 @@ public:
              ? (umi.assign(r1, bc_len, umi_len), &umi)
              : nullptr;
   }
-  
+
   bool is_bio_paired_end() const { return false; }
 
   AlignableReadSeqs get_mappable_read_sequences(std::string &r1,
@@ -314,6 +330,8 @@ public:
   chromium_v3_5p() = default;
   // copy constructor
   chromium_v3_5p(const chromium_v3_5p &o) = default;
+
+  std::string get_name() const { return "chromium_v3_5p"; }
 
   // We'd really like an std::optional<string&> here, but C++17
   // said no to that.
@@ -367,6 +385,8 @@ public:
   // copy constructor
   chromium_v3(const chromium_v3 &o) = default;
 
+  std::string get_name() const { return "chromium_v3_3p"; }
+
   // We'd really like an std::optional<string&> here, but C++17
   // said no to that.
   std::string *extract_bc(std::string &r1, std::string &r2) {
@@ -412,6 +432,8 @@ public:
   chromium_v2() = default;
   // copy constructor
   chromium_v2(const chromium_v2 &o) = default;
+
+  std::string get_name() const { return "chromium_v2"; }
 
   // We'd really like an std::optional<string&> here, but C++17
   // said no to that.
@@ -568,6 +590,8 @@ public:
     }
   }
 
+  std::string get_name() const { return "custom"; }
+
   size_t get_bc_len() const { return bc_len; }
   size_t get_umi_len() const { return umi_len; }
 
@@ -638,9 +662,8 @@ public:
     return &umi_buffer;
   }
 
-
   // Does this geometry use "biological" paired-end reads?
-  // In other words, is there alignable sequence on both 
+  // In other words, is there alignable sequence on both
   // the first and second read (this function will return true)
   // or is one of the reads purely technical (this function
   // will return false).

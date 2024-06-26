@@ -8,6 +8,7 @@
 #include "../include/meta_info.hpp"
 #include "../include/parallel_hashmap/phmap.h"
 #include "../include/parallel_hashmap/phmap_dump.h"
+#include "../include/poison_table.hpp"
 #include "../include/projected_hits.hpp"
 #include "../include/query/streaming_query_canonical_parsing.hpp"
 #include "../include/rad/rad_header.hpp"
@@ -29,16 +30,27 @@
 #include <optional>
 #include <sstream>
 #include <thread>
+#include <type_traits>
 #include <vector>
 
 using namespace klibpp;
 using BarCodeRecovered = single_cell::util::BarCodeRecovered;
 using umi_kmer_t = rad::util::umi_kmer_t;
 using bc_kmer_t = rad::util::bc_kmer_t;
-// using poison_map_t = phmap::flat_hash_map<uint64_t, uint64_t,
-// sshash::RobinHoodHash>;
+using mapping::util::mapping_cache_info;
+using mapping::util::poison_state_t;
 
-enum class protocol_t : uint8_t { CHROM_V2, CHROM_V3, CHROM_V4_3P, CUSTOM };
+struct SingleEndBioSeq;
+struct PairedEndBioSeq;
+
+enum class protocol_t : uint8_t {
+  CHROM_V2,
+  CHROM_V3,
+  CHROM_V3_5P,
+  CHROM_V4_3P,
+  CHROM_V4_5P,
+  CUSTOM
+};
 
 struct pesc_sc_options {
   std::string index_basename;
@@ -86,7 +98,75 @@ public:
   std::mutex unmapped_bc_mutex;
 };
 
-template <typename Protocol, typename SketchHitT>
+// single-end
+template <typename mapping_cache_info_t>
+bool map_se_fragment(AlignableReadSeqs &records, poison_state_t &poison_state,
+                     mindex::SkippingStrategy skip_strat,
+                     mapping_cache_info_t &map_cache_left,
+                     mapping_cache_info_t &map_cache_right,
+                     mapping_cache_info_t &map_cache_out) {
+  (void)map_cache_left;
+  (void)map_cache_right;
+  poison_state.clear();
+  return mapping::util::map_read(records.get_alignable_seq(), map_cache_out,
+                                 poison_state, skip_strat);
+}
+
+// paried-end
+template <typename mapping_cache_info_t>
+bool map_pe_fragment(AlignableReadSeqs &records, poison_state_t &poison_state,
+                     mindex::SkippingStrategy skip_strat,
+                     mapping_cache_info_t &map_cache_left,
+                     mapping_cache_info_t &map_cache_right,
+                     mapping_cache_info_t &map_cache_out) {
+  poison_state.clear();
+  // don't map a poisned read pair
+  poison_state.set_fragment_end(mapping::util::fragment_end::LEFT);
+  // if we have a first read for this record, map it
+  bool early_exit_left =
+    (records.seq1 != nullptr)
+      ? (map_cache_left.clear(), false)
+      : mapping::util::map_read(records.seq1, map_cache_left, poison_state,
+                                skip_strat);
+  if (poison_state.is_poisoned()) {
+    return false;
+  }
+
+  poison_state.set_fragment_end(mapping::util::fragment_end::RIGHT);
+  // if we have a second read for this record, map it
+  bool early_exit_right =
+    (records.seq2 != nullptr)
+      ? (map_cache_right.clear(), false)
+      : mapping::util::map_read(records.seq2, map_cache_right, poison_state,
+                                skip_strat);
+
+  if (poison_state.is_poisoned()) {
+    return false;
+  }
+
+  int32_t left_len = static_cast<int32_t>(records.seq1->length());
+  int32_t right_len = static_cast<int32_t>(records.seq2->length());
+
+  /*
+  for (auto& lh : map_cache_left.accepted_hits) {
+    std::cerr << "left: " << lh.tid << ", " << lh.pos << " (" << (lh.is_fw ?
+  "fw" : "rc") <<
+  ")\n";
+  }
+  for (auto& lh : map_cache_right.accepted_hits) {
+    std::cerr << "right: " << lh.tid << ", " << lh.pos << " (" << (lh.is_fw ?
+  "fw" : "rc") <<
+  ")\n";
+  }
+  */
+
+  mapping::util::merge_se_mappings(map_cache_left, map_cache_right, left_len,
+                                   right_len, map_cache_out);
+
+  return (early_exit_left or early_exit_right);
+}
+
+template <typename Protocol, typename SketchHitT, typename PairedEndT>
 void do_map(mindex::reference_index &ri,
             fastx_parser::FastxParser<fastx_parser::ReadPair> &parser,
             poison_table &poison_map, const Protocol &p,
@@ -94,6 +174,7 @@ void do_map(mindex::reference_index &ri,
             std::atomic<uint64_t> &global_nhits,
             std::atomic<uint64_t> &global_npoisoned, pesc_output_info &out_info,
             std::mutex &iomut) {
+
   auto log_level = spdlog_piscem::get_level();
   auto write_mapping_rate = false;
   switch (log_level) {
@@ -122,41 +203,41 @@ void do_map(mindex::reference_index &ri,
     write_mapping_rate = false;
   }
 
-  bool use_poison = !poison_map.empty();
-  auto pmap_end = poison_map.kmer_end();
-  mapping::util::poison_state_t poison_state;
   pufferfish::CanonicalKmerIterator kit_end;
 
-  // checks if a read is "poisned", returns true if it is
-  // and false otherwise.
-  auto is_poisoned = [&](const std::string &seq) -> bool {
-    pufferfish::CanonicalKmerIterator kit(seq);
-    while (kit != kit_end) {
-      // current canonical k-mer
-      if (kit->first.is_homopolymer()) {
-        kit++;
-        continue;
-      }
+  // set up the poison table
+  bool use_poison = !poison_map.empty();
+  mapping::util::poison_state_t poison_state;
+  if (use_poison) {
+    poison_state.ptab = &poison_map;
+  }
 
-      auto pmap_it = poison_map.find_kmer(kit->first.getCanonicalWord());
-      if (pmap_it != pmap_end) {
-        return true;
-      }
-      ++kit;
-    }
-    return false;
-  };
+  poison_state.paired_for_mapping = std::is_same_v<PairedEndT, PairedEndBioSeq>;
 
   // put these in struct
   size_t num_short_umi{0};
   size_t num_ambig_umi{0};
 
-  mapping::util::mapping_cache_info<SketchHitT> map_cache(ri);
-  map_cache.max_ec_card = po.max_ec_card;
-  map_cache.max_hit_occ = po.max_hit_occ;
-  map_cache.max_hit_occ_recover = po.max_hit_occ_recover;
-  map_cache.max_read_occ = po.max_read_occ;
-  map_cache.attempt_occ_recover = po.attempt_occ_recover;
+  mapping_cache_info<SketchHitT> map_cache_left(ri);
+  map_cache_left.max_ec_card = po.max_ec_card;
+  map_cache_left.max_hit_occ = po.max_hit_occ;
+  map_cache_left.max_hit_occ_recover = po.max_hit_occ_recover;
+  map_cache_left.max_read_occ = po.max_read_occ;
+  map_cache_left.attempt_occ_recover = po.attempt_occ_recover;
+
+  mapping_cache_info<SketchHitT> map_cache_right(ri);
+  map_cache_right.max_ec_card = po.max_ec_card;
+  map_cache_right.max_hit_occ = po.max_hit_occ;
+  map_cache_right.max_hit_occ_recover = po.max_hit_occ_recover;
+  map_cache_right.max_read_occ = po.max_read_occ;
+  map_cache_right.attempt_occ_recover = po.attempt_occ_recover;
+
+  mapping_cache_info<SketchHitT> map_cache_out(ri);
+  map_cache_out.max_ec_card = po.max_ec_card;
+  map_cache_out.max_hit_occ = po.max_hit_occ;
+  map_cache_out.max_hit_occ_recover = po.max_hit_occ_recover;
+  map_cache_out.max_read_occ = po.max_read_occ;
+  map_cache_out.attempt_occ_recover = po.attempt_occ_recover;
 
   size_t max_chunk_reads = 5000;
   // Get the read group by which this thread will
@@ -226,28 +307,34 @@ void do_map(mindex::reference_index &ri,
       }
 
       // alt_max_occ = 0;
-      std::string *read_seq =
-        protocol.extract_mappable_read(record.first.seq, record.second.seq);
-
-      poison_state.clear();
-      if (use_poison) {
-        poison_state.poisoned_left = is_poisoned(*read_seq);
-      }
+      AlignableReadSeqs read_seqs = protocol.get_mappable_read_sequences(
+        record.first.seq, record.second.seq);
 
       bool had_early_stop = false;
-      if (poison_state.is_poisoned()) {
-        ++global_npoisoned;
-        map_cache.clear();
+      // dispatch on the *compile-time determined* paired-endness of this
+      // protocol.
+      if constexpr (std::is_same_v<PairedEndT, SingleEndBioSeq>) {
+        had_early_stop =
+          map_se_fragment(read_seqs, poison_state, po.skip_strat,
+                          map_cache_left, map_cache_right, map_cache_out);
       } else {
-        mapping::util::map_read(read_seq, map_cache, poison_state,
-                                po.skip_strat);
+        had_early_stop =
+          map_pe_fragment(read_seqs, poison_state, po.skip_strat,
+                          map_cache_left, map_cache_right, map_cache_out);
       }
       (void)had_early_stop;
+      if (poison_state.is_poisoned()) {
+        global_npoisoned++;
+        // should we do this here?
+        // map_cache_left.clear()
+        // map_cache_right.clear()
+        // map_cache_out.clear()
+      }
 
-      global_nhits += map_cache.accepted_hits.empty() ? 0 : 1;
+      global_nhits += map_cache_out.accepted_hits.empty() ? 0 : 1;
       rad::util::write_to_rad_stream(
-        bc_kmer, umi_kmer, map_cache.map_type, map_cache.accepted_hits,
-        map_cache.unmapped_bc_map, num_reads_in_chunk, rad_w);
+        bc_kmer, umi_kmer, map_cache_out.map_type, map_cache_out.accepted_hits,
+        map_cache_out.unmapped_bc_map, num_reads_in_chunk, rad_w);
 
       // dump buffer
       if (num_reads_in_chunk > max_chunk_reads) {
@@ -284,7 +371,7 @@ void do_map(mindex::reference_index &ri,
   // unmapped barcode writer
   { // make a scope and dump the unmapped barcode counts
     rad_writer ubcw;
-    for (auto &kv : map_cache.unmapped_bc_map) {
+    for (auto &kv : map_cache_out.unmapped_bc_map) {
       ubcw << kv.first;
       ubcw << kv.second;
     }
@@ -292,6 +379,46 @@ void do_map(mindex::reference_index &ri,
     out_info.unmapped_bc_file << ubcw;
     out_info.unmapped_bc_mutex.unlock();
     ubcw.clear();
+  }
+}
+
+template <typename Protocol>
+void do_map_dispatch(mindex::reference_index &ri,
+                     fastx_parser::FastxParser<fastx_parser::ReadPair> &parser,
+                     poison_table &poison_map, const Protocol &p,
+                     const pesc_sc_options &po,
+                     std::atomic<uint64_t> &global_nr,
+                     std::atomic<uint64_t> &global_nhits,
+                     std::atomic<uint64_t> &global_npoisoned,
+                     pesc_output_info &out_info, std::mutex &iomut) {
+
+  const bool bio_paired_end = p.is_bio_paired_end();
+  spdlog_piscem::debug("mapping configuration: protocol = {}, structural "
+                       "constraints = {}, bio. paired end = {}",
+                       p.get_name(), po.enable_structural_constraints,
+                       bio_paired_end);
+  if (!po.enable_structural_constraints) {
+    using SketchHitT = mapping::util::sketch_hit_info_no_struct_constraint;
+    if (bio_paired_end) {
+      do_map<Protocol, SketchHitT, PairedEndBioSeq>(
+        ri, parser, poison_map, p, po, global_nr, global_nhits,
+        global_npoisoned, out_info, iomut);
+    } else {
+      do_map<Protocol, SketchHitT, SingleEndBioSeq>(
+        ri, parser, poison_map, p, po, global_nr, global_nhits,
+        global_npoisoned, out_info, iomut);
+    }
+  } else {
+    using SketchHitT = mapping::util::sketch_hit_info;
+    if (bio_paired_end) {
+      do_map<Protocol, SketchHitT, PairedEndBioSeq>(
+        ri, parser, poison_map, p, po, global_nr, global_nhits,
+        global_npoisoned, out_info, iomut);
+    } else {
+      do_map<Protocol, SketchHitT, SingleEndBioSeq>(
+        ri, parser, poison_map, p, po, global_nr, global_nhits,
+        global_npoisoned, out_info, iomut);
+    }
   }
 }
 
@@ -535,80 +662,61 @@ int run_pesc_sc(int argc, char **argv) {
     switch (po.pt) {
     case protocol_t::CHROM_V2: {
       chromium_v2 prot;
-      workers.push_back(
-        std::thread([&ri, &rparser, &ptab, &prot, &po, &global_nr, &global_nh,
-                     &global_np, &iomut, &out_info]() {
-          if (!po.enable_structural_constraints) {
-            using SketchHitT =
-              mapping::util::sketch_hit_info_no_struct_constraint;
-            do_map<decltype(prot), SketchHitT>(ri, rparser, ptab, prot, po,
-                                               global_nr, global_nh, global_np,
-                                               out_info, iomut);
-          } else {
-            using SketchHitT = mapping::util::sketch_hit_info;
-            do_map<decltype(prot), SketchHitT>(ri, rparser, ptab, prot, po,
-                                               global_nr, global_nh, global_np,
-                                               out_info, iomut);
-          }
-        }));
+      workers.push_back(std::thread([&ri, &rparser, &ptab, &prot, &po,
+                                     &global_nr, &global_nh, &global_np, &iomut,
+                                     &out_info]() {
+        do_map_dispatch<decltype(prot)>(ri, rparser, ptab, prot, po, global_nr,
+                                        global_nh, global_np, out_info, iomut);
+      }));
       break;
     }
     case protocol_t::CHROM_V3: {
       chromium_v3 prot;
-      workers.push_back(
-        std::thread([&ri, &rparser, &ptab, &prot, &po, &global_nr, &global_nh,
-                     &global_np, &iomut, &out_info]() {
-          if (!po.enable_structural_constraints) {
-            using SketchHitT =
-              mapping::util::sketch_hit_info_no_struct_constraint;
-            do_map<decltype(prot), SketchHitT>(ri, rparser, ptab, prot, po,
-                                               global_nr, global_nh, global_np,
-                                               out_info, iomut);
-          } else {
-            using SketchHitT = mapping::util::sketch_hit_info;
-            do_map<decltype(prot), SketchHitT>(ri, rparser, ptab, prot, po,
-                                               global_nr, global_nh, global_np,
-                                               out_info, iomut);
-          }
-        }));
+      workers.push_back(std::thread([&ri, &rparser, &ptab, &prot, &po,
+                                     &global_nr, &global_nh, &global_np, &iomut,
+                                     &out_info]() {
+        do_map_dispatch<decltype(prot)>(ri, rparser, ptab, prot, po, global_nr,
+                                        global_nh, global_np, out_info, iomut);
+      }));
+      break;
+    }
+    case protocol_t::CHROM_V3_5P: {
+      chromium_v3_5p prot;
+      workers.push_back(std::thread([&ri, &rparser, &ptab, &prot, &po,
+                                     &global_nr, &global_nh, &global_np, &iomut,
+                                     &out_info]() {
+        do_map_dispatch<decltype(prot)>(ri, rparser, ptab, prot, po, global_nr,
+                                        global_nh, global_np, out_info, iomut);
+      }));
       break;
     }
     case protocol_t::CHROM_V4_3P: {
       chromium_v4_3p prot;
-      workers.push_back(
-        std::thread([&ri, &rparser, &ptab, &prot, &po, &global_nr, &global_nh,
-                     &global_np, &iomut, &out_info]() {
-          if (!po.enable_structural_constraints) {
-            using SketchHitT =
-              mapping::util::sketch_hit_info_no_struct_constraint;
-            do_map<decltype(prot), SketchHitT>(ri, rparser, ptab, prot, po,
-                                               global_nr, global_nh, global_np,
-                                               out_info, iomut);
-          } else {
-            using SketchHitT = mapping::util::sketch_hit_info;
-            do_map<decltype(prot), SketchHitT>(ri, rparser, ptab, prot, po,
-                                               global_nr, global_nh, global_np,
-                                               out_info, iomut);
-          }
-        }));
+      workers.push_back(std::thread([&ri, &rparser, &ptab, &prot, &po,
+                                     &global_nr, &global_nh, &global_np, &iomut,
+                                     &out_info]() {
+        do_map_dispatch<decltype(prot)>(ri, rparser, ptab, prot, po, global_nr,
+                                        global_nh, global_np, out_info, iomut);
+      }));
+      break;
+    }
+    case protocol_t::CHROM_V4_5P: {
+      chromium_v4_5p prot;
+      workers.push_back(std::thread([&ri, &rparser, &ptab, &prot, &po,
+                                     &global_nr, &global_nh, &global_np, &iomut,
+                                     &out_info]() {
+        do_map_dispatch<decltype(prot)>(ri, rparser, ptab, prot, po, global_nr,
+                                        global_nh, global_np, out_info, iomut);
+      }));
       break;
     }
     case protocol_t::CUSTOM: {
       workers.push_back(
         std::thread([&ri, &rparser, &ptab, &po, &global_nr, &global_nh,
                      &global_np, &iomut, &out_info]() {
-          if (!po.enable_structural_constraints) {
-            using SketchHitT =
-              mapping::util::sketch_hit_info_no_struct_constraint;
-            do_map<decltype(*(po.p)), SketchHitT>(ri, rparser, ptab, *(po.p),
-                                                  po, global_nr, global_nh,
-                                                  global_np, out_info, iomut);
-          } else {
-            using SketchHitT = mapping::util::sketch_hit_info;
-            do_map<decltype(*(po.p)), SketchHitT>(ri, rparser, ptab, *(po.p),
-                                                  po, global_nr, global_nh,
-                                                  global_np, out_info, iomut);
-          }
+          do_map_dispatch<decltype(*(po.p))>(ri, rparser, ptab, *(po.p), po,
+                                             global_nr, global_nh, global_np,
+                                             out_info, iomut);
         }));
       break;
     }
