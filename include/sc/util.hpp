@@ -233,6 +233,8 @@ public:
              : nullptr;
   }
 
+  bool is_bio_paired_end() const { return true; }
+
   std::string *extract_mappable_read(std::string &r1, std::string &r2) {
     (void)r1;
     return &r2;
@@ -282,6 +284,8 @@ public:
              ? (umi.assign(r1, bc_len, umi_len), &umi)
              : nullptr;
   }
+  
+  bool is_bio_paired_end() const { return false; }
 
   AlignableReadSeqs get_mappable_read_sequences(std::string &r1,
                                                 std::string &r2) {
@@ -326,6 +330,8 @@ public:
              ? (umi.assign(r1, bc_len, umi_len), &umi)
              : nullptr;
   }
+
+  bool is_bio_paired_end() const { return true; }
 
   std::string *extract_mappable_read(std::string &r1, std::string &r2) {
     (void)r1;
@@ -377,6 +383,8 @@ public:
              : nullptr;
   }
 
+  bool is_bio_paired_end() const { return false; }
+
   AlignableReadSeqs get_mappable_read_sequences(std::string &r1,
                                                 std::string &r2) {
     (void)r1;
@@ -420,6 +428,8 @@ public:
              ? (umi.assign(r1, bc_len, umi_len), &umi)
              : nullptr;
   }
+
+  bool is_bio_paired_end() const { return false; }
 
   AlignableReadSeqs get_mappable_read_sequences(std::string &r1,
                                                 std::string &r2) {
@@ -626,6 +636,18 @@ public:
       umi_buffer.append(r2, up.offset, up.len);
     }
     return &umi_buffer;
+  }
+
+
+  // Does this geometry use "biological" paired-end reads?
+  // In other words, is there alignable sequence on both 
+  // the first and second read (this function will return true)
+  // or is one of the reads purely technical (this function
+  // will return false).
+  bool is_bio_paired_end() const {
+    bool uses_r1 = !read_slices_r1.empty();
+    bool uses_r2 = !read_slices_r2.empty();
+    return (uses_r1 and uses_r2);
   }
 
   std::string *extract_mappable_read(std::string &r1, std::string &r2) {

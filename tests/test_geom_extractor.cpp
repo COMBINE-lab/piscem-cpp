@@ -19,6 +19,7 @@ TEST_CASE("10x_v2_is_right") {
   CHECK(*mappable_seqs.seq2 == r2);
 
   CHECK(mappable_seqs.get_reads_to_map() == ReadsToMap::SECOND);
+  CHECK(geom.is_bio_paired_end() == false);
 }
 
 TEST_CASE("10x_v4_3p_is_right") {
@@ -35,6 +36,7 @@ TEST_CASE("10x_v4_3p_is_right") {
   CHECK(*mappable_seqs.seq2 == r2);
 
   CHECK(mappable_seqs.get_reads_to_map() == ReadsToMap::SECOND);
+  CHECK(geom.is_bio_paired_end() == false);
 }
 
 TEST_CASE("10x_v4_5p_is_right") {
@@ -51,6 +53,7 @@ TEST_CASE("10x_v4_5p_is_right") {
   CHECK(*mappable_seqs.seq2 == r2);
 
   CHECK(mappable_seqs.get_reads_to_map() == ReadsToMap::BOTH);
+  CHECK(geom.is_bio_paired_end() == true);
 }
 
 TEST_CASE("10x_v3_is_right") {
@@ -67,6 +70,7 @@ TEST_CASE("10x_v3_is_right") {
   CHECK(*mappable_seqs.seq2 == r2);
 
   CHECK(mappable_seqs.get_reads_to_map() == ReadsToMap::SECOND);
+  CHECK(geom.is_bio_paired_end() == false);
 }
 
 TEST_CASE("10x_v3_5p_is_right") {
@@ -83,6 +87,7 @@ TEST_CASE("10x_v3_5p_is_right") {
   CHECK(*mappable_seqs.seq2 == r2);
 
   CHECK(mappable_seqs.get_reads_to_map() == ReadsToMap::BOTH);
+  CHECK(geom.is_bio_paired_end() == true);
 }
 
 TEST_CASE("custom_single_read_is_correct") {
@@ -98,6 +103,7 @@ TEST_CASE("custom_single_read_is_correct") {
   CHECK(*mappable_seqs.seq2 == r2);
 
   CHECK(mappable_seqs.get_reads_to_map() == ReadsToMap::SECOND);
+  CHECK(custom_geo_ptr->is_bio_paired_end() == false);
 }
 
 TEST_CASE("custom_pe_read_is_correct") {
@@ -113,6 +119,7 @@ TEST_CASE("custom_pe_read_is_correct") {
   CHECK(*mappable_seqs.seq2 == r2);
 
   CHECK(mappable_seqs.get_reads_to_map() == ReadsToMap::BOTH);
+  CHECK(custom_geo_ptr->is_bio_paired_end() == true);
 }
 
 
@@ -130,6 +137,7 @@ TEST_CASE("custom_just_r1_is_correct") {
   CHECK(mappable_seqs.seq2 == nullptr);
 
   CHECK(mappable_seqs.get_reads_to_map() == ReadsToMap::FIRST);
+  CHECK(custom_geo_ptr->is_bio_paired_end() == false);
 }
 
 TEST_CASE("invalid_geo_is_null") {
