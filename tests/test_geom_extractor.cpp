@@ -2,9 +2,6 @@
 #include "doctest/doctest.h"
 #include "../include/sc/util.hpp"
 
-
-
-
 TEST_CASE("10x_v2_is_right") {
 
   std::string r1{"ACGGATGGTGAGGTTGCCGTATGAGAGG"};
@@ -22,35 +19,18 @@ TEST_CASE("10x_v2_is_right") {
   CHECK(geom.is_bio_paired_end() == false);
 }
 
-TEST_CASE("10x_v4_3p_is_right") {
-
-  std::string r1{"ACGGATGGTGAGGTTGCCGTATGAGAGG"};
-  std::string r2{"ACGAGACATTTGCACATGACTGAATGGGGGGTTGTCCACACCTAGAGTTATAGGCATATGC"};
-
-  chromium_v4_3p geom;
-
-  CHECK(*geom.extract_bc(r1, r2) == r1.substr(0, 16));
-  CHECK(*geom.extract_umi(r1, r2) == r1.substr(16, 12));
-  auto mappable_seqs = geom.get_mappable_read_sequences(r1, r2);
-  CHECK(mappable_seqs.seq1 == nullptr);
-  CHECK(*mappable_seqs.seq2 == r2);
-
-  CHECK(mappable_seqs.get_reads_to_map() == ReadsToMap::SECOND);
-  CHECK(geom.is_bio_paired_end() == false);
-}
-
-TEST_CASE("10x_v4_5p_is_right") {
+TEST_CASE("10x_v2_5p_is_right") {
 
   std::string r1{"ACGGATGGTGAGGTTGCCGTATGAGAGGACTACTGGTACAGGGTGTGTCATGGTGACGTGA"};
   std::string r2{"ACGAGACATTTGCACATGACTGAATGGGGGGTTGTCCACACCTAGAGTTATAGGCATATGC"};
 
-  chromium_v4_5p geom;
+  chromium_v2_5p geom;
   constexpr size_t tso_len = 13;
 
   CHECK(*geom.extract_bc(r1, r2) == r1.substr(0, 16));
-  CHECK(*geom.extract_umi(r1, r2) == r1.substr(16, 12));
+  CHECK(*geom.extract_umi(r1, r2) == r1.substr(16, 10));
   auto mappable_seqs = geom.get_mappable_read_sequences(r1, r2);
-  CHECK(*mappable_seqs.seq1 == r1.substr(28 + tso_len));
+  CHECK(*mappable_seqs.seq1 == r1.substr(26 + tso_len));
   CHECK(*mappable_seqs.seq2 == r2);
 
   CHECK(mappable_seqs.get_reads_to_map() == ReadsToMap::BOTH);
@@ -90,6 +70,23 @@ TEST_CASE("10x_v3_5p_is_right") {
 
   CHECK(mappable_seqs.get_reads_to_map() == ReadsToMap::BOTH);
   CHECK(geom.is_bio_paired_end() == true);
+}
+
+TEST_CASE("10x_v4_3p_is_right") {
+
+  std::string r1{"ACGGATGGTGAGGTTGCCGTATGAGAGG"};
+  std::string r2{"ACGAGACATTTGCACATGACTGAATGGGGGGTTGTCCACACCTAGAGTTATAGGCATATGC"};
+
+  chromium_v4_3p geom;
+
+  CHECK(*geom.extract_bc(r1, r2) == r1.substr(0, 16));
+  CHECK(*geom.extract_umi(r1, r2) == r1.substr(16, 12));
+  auto mappable_seqs = geom.get_mappable_read_sequences(r1, r2);
+  CHECK(mappable_seqs.seq1 == nullptr);
+  CHECK(*mappable_seqs.seq2 == r2);
+
+  CHECK(mappable_seqs.get_reads_to_map() == ReadsToMap::SECOND);
+  CHECK(geom.is_bio_paired_end() == false);
 }
 
 TEST_CASE("custom_single_read_is_correct") {

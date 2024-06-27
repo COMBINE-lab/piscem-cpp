@@ -45,10 +45,10 @@ struct PairedEndBioSeq;
 
 enum class protocol_t : uint8_t {
   CHROM_V2,
+  CHROM_V2_5P,
   CHROM_V3,
   CHROM_V3_5P,
   CHROM_V4_3P,
-  CHROM_V4_5P,
   CUSTOM
 };
 
@@ -110,6 +110,16 @@ bool map_se_fragment(AlignableReadSeqs &records, poison_state_t &poison_state,
   poison_state.clear();
   return mapping::util::map_read(records.get_alignable_seq(), map_cache_out,
                                  poison_state, skip_strat);
+
+  /*
+  std::cerr << "\n\nnew_read: " << *records.get_alignable_seq() << "\n";
+  for (auto& lh : map_cache_out.accepted_hits) {
+    std::cerr << "single: " << lh.tid << ", " << lh.pos << " (" << (lh.is_fw ?
+  "fw" : "rc") <<
+  ")\n";
+  }
+  return r;
+  */
 }
 
 // paried-end
@@ -119,12 +129,18 @@ bool map_pe_fragment(AlignableReadSeqs &records, poison_state_t &poison_state,
                      mapping_cache_info_t &map_cache_left,
                      mapping_cache_info_t &map_cache_right,
                      mapping_cache_info_t &map_cache_out) {
+
   poison_state.clear();
+
+  // we have to clear map_cache_out here in case we 
+  // exit early.
+  map_cache_out.clear();
+
   // don't map a poisned read pair
   poison_state.set_fragment_end(mapping::util::fragment_end::LEFT);
   // if we have a first read for this record, map it
   bool early_exit_left =
-    (records.seq1 != nullptr)
+    (records.seq1 == nullptr)
       ? (map_cache_left.clear(), false)
       : mapping::util::map_read(records.seq1, map_cache_left, poison_state,
                                 skip_strat);
@@ -135,7 +151,7 @@ bool map_pe_fragment(AlignableReadSeqs &records, poison_state_t &poison_state,
   poison_state.set_fragment_end(mapping::util::fragment_end::RIGHT);
   // if we have a second read for this record, map it
   bool early_exit_right =
-    (records.seq2 != nullptr)
+    (records.seq2 == nullptr)
       ? (map_cache_right.clear(), false)
       : mapping::util::map_read(records.seq2, map_cache_right, poison_state,
                                 skip_strat);
@@ -144,10 +160,11 @@ bool map_pe_fragment(AlignableReadSeqs &records, poison_state_t &poison_state,
     return false;
   }
 
-  int32_t left_len = static_cast<int32_t>(records.seq1->length());
-  int32_t right_len = static_cast<int32_t>(records.seq2->length());
+  int32_t left_len = (records.seq1 == nullptr) ? 0 : static_cast<int32_t>(records.seq1->length());
+  int32_t right_len = (records.seq2 == nullptr) ? 0 : static_cast<int32_t>(records.seq2->length());
 
   /*
+  std::cerr << "\n\nnew_read: " << *records.seq2 << "\n";
   for (auto& lh : map_cache_left.accepted_hits) {
     std::cerr << "left: " << lh.tid << ", " << lh.pos << " (" << (lh.is_fw ?
   "fw" : "rc") <<
@@ -159,7 +176,6 @@ bool map_pe_fragment(AlignableReadSeqs &records, poison_state_t &poison_state,
   ")\n";
   }
   */
-
   mapping::util::merge_se_mappings(map_cache_left, map_cache_right, left_len,
                                    right_len, map_cache_out);
 
@@ -428,10 +444,18 @@ bool set_geometry(std::string &library_geometry, protocol_t &pt,
     umi_kmer_t::k(10);
     bc_kmer_t::k(16);
     pt = protocol_t::CHROM_V2;
+  } else if (library_geometry == "chromium_v2_5p") {
+    umi_kmer_t::k(10);
+    bc_kmer_t::k(16);
+    pt = protocol_t::CHROM_V2_5P;
   } else if (library_geometry == "chromium_v3") {
     umi_kmer_t::k(12);
     bc_kmer_t::k(16);
     pt = protocol_t::CHROM_V3;
+  } else if (library_geometry == "chromium_v3_5p") {
+    umi_kmer_t::k(12);
+    bc_kmer_t::k(16);
+    pt = protocol_t::CHROM_V3_5P;
   } else if (library_geometry == "chromium_v4_3p") {
     umi_kmer_t::k(12);
     bc_kmer_t::k(16);
@@ -670,6 +694,16 @@ int run_pesc_sc(int argc, char **argv) {
       }));
       break;
     }
+    case protocol_t::CHROM_V2_5P: {
+      chromium_v2_5p prot;
+      workers.push_back(std::thread([&ri, &rparser, &ptab, &prot, &po,
+                                     &global_nr, &global_nh, &global_np, &iomut,
+                                     &out_info]() {
+        do_map_dispatch<decltype(prot)>(ri, rparser, ptab, prot, po, global_nr,
+                                        global_nh, global_np, out_info, iomut);
+      }));
+      break;
+    }
     case protocol_t::CHROM_V3: {
       chromium_v3 prot;
       workers.push_back(std::thread([&ri, &rparser, &ptab, &prot, &po,
@@ -692,16 +726,6 @@ int run_pesc_sc(int argc, char **argv) {
     }
     case protocol_t::CHROM_V4_3P: {
       chromium_v4_3p prot;
-      workers.push_back(std::thread([&ri, &rparser, &ptab, &prot, &po,
-                                     &global_nr, &global_nh, &global_np, &iomut,
-                                     &out_info]() {
-        do_map_dispatch<decltype(prot)>(ri, rparser, ptab, prot, po, global_nr,
-                                        global_nh, global_np, out_info, iomut);
-      }));
-      break;
-    }
-    case protocol_t::CHROM_V4_5P: {
-      chromium_v4_5p prot;
       workers.push_back(std::thread([&ri, &rparser, &ptab, &prot, &po,
                                      &global_nr, &global_nh, &global_np, &iomut,
                                      &out_info]() {

@@ -90,6 +90,7 @@ bool map_fragment(fastx_parser::ReadSeq &record, poison_state_t &poison_state,
                   mapping_cache_info_t &map_cache_out) {
   (void)map_cache_left;
   (void)map_cache_right;
+  poison_state.clear();
   return mapping::util::map_read(&record.seq, map_cache_out, poison_state,
                                  skip_strat);
 }
@@ -101,7 +102,14 @@ bool map_fragment(fastx_parser::ReadPair &record, poison_state_t &poison_state,
                   mapping_cache_info_t &map_cache_left,
                   mapping_cache_info_t &map_cache_right,
                   mapping_cache_info_t &map_cache_out) {
-  // don't map a poisned read pair
+
+  // we have to clear map_cache_out here in case we 
+  // exit early.
+  map_cache_out.clear();
+
+  poison_state.clear();
+
+  // don't map a poisoned read pair
   poison_state.set_fragment_end(mapping::util::fragment_end::LEFT);
   bool early_exit_left = mapping::util::map_read(
     &record.first.seq, map_cache_left, poison_state, skip_strat);
@@ -499,8 +507,6 @@ void do_map(mindex::reference_index &ri,
                   << ") had mappings.";
         iomut.unlock();
       }
-
-      poison_state.clear();
 
       // this *overloaded* function will just do the right thing.
       // If record is single-end, just map that read, otherwise, map both and
