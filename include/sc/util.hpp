@@ -223,7 +223,10 @@ struct AlignableReadSeqs {
   }
 };
 
+
 class chromium_v4_5p {
+private: 
+  static constexpr size_t tso_len = 13;
 public:
   chromium_v4_5p() = default;
   // copy constructor
@@ -257,9 +260,9 @@ public:
   AlignableReadSeqs get_mappable_read_sequences(std::string &r1,
                                                 std::string &r2) {
     std::string *r1_ptr = nullptr;
-    if (r1.length() > (bc_len + umi_len)) {
+    if (r1.length() > (bc_len + umi_len + tso_len)) {
       r1_buffer.clear();
-      r1_buffer.assign(r1, bc_len + umi_len);
+      r1_buffer.assign(r1, bc_len + umi_len + tso_len);
       r1_ptr = &r1_buffer;
     }
     return AlignableReadSeqs{r1_ptr, &r2};
@@ -326,6 +329,8 @@ private:
 };
 
 class chromium_v3_5p {
+private: 
+  static constexpr size_t tso_len = 13;
 public:
   chromium_v3_5p() = default;
   // copy constructor
@@ -359,9 +364,9 @@ public:
   AlignableReadSeqs get_mappable_read_sequences(std::string &r1,
                                                 std::string &r2) {
     std::string *r1_ptr = nullptr;
-    if (r1.length() > (bc_len + umi_len)) {
+    if (r1.length() > (bc_len + umi_len + tso_len)) {
       r1_buffer.clear();
-      r1_buffer.assign(r1, bc_len + umi_len);
+      r1_buffer.assign(r1, bc_len + umi_len + tso_len);
       r1_ptr = &r1_buffer;
     }
     return AlignableReadSeqs{r1_ptr, &r2};
