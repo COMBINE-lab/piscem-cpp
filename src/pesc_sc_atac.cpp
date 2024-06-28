@@ -518,10 +518,10 @@ int run_pesc_sc_atac(int argc, char** argv) {
     std::vector<std::thread> workers;
     
     for (size_t i = 0; i < nthread; ++i) {
-        const auto token = rw.get_token();
         workers.push_back(std::thread(
             [&ri, &rparser, &global_nr, &global_nh, &global_nmult, &out_info, &iomut, &k_match, 
-            &psc_off, &ps_skip, &thr, &rw, &token]() {
+            &psc_off, &ps_skip, &thr, &rw]() {
+                const auto token = rw.get_token();
                 do_map(ri, rparser, global_nr, global_nh, global_nmult, out_info, iomut, 
                     k_match, psc_off, ps_skip, thr, rw, token);
             }));
