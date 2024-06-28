@@ -4,6 +4,7 @@
 #include "../itlib/small_vector.hpp"
 #include "../peglib.h"
 #include <memory>
+#include <string_view>
 
 // forward declaration, even though this
 // is in the *same file*
@@ -193,6 +194,10 @@ Length <- [1-9][0-9]*
 
 } // namespace util
 } // namespace single_cell
+
+using namespace std::literals::string_view_literals; // Enables sv suffix only
+[[maybe_unused]] constexpr std::array builtin_geometries = {"chromium_v2"sv, "chromium_v2_5p"sv, "chromium_v3"sv, "chromium_v3_5p"sv, 
+  "chromium_v4_3p"sv, "custom (must provide specification string)"sv};
 
 // tells us which reads should be used for mapping
 enum class ReadsToMap { FIRST, SECOND, BOTH, NONE };

@@ -487,13 +487,27 @@ int run_pesc_sc(int argc, char **argv);
 
 int run_pesc_sc(int argc, char **argv) {
   /**
-   * PESC : Pseudoalignment Enhanced with Structural Constraints
+   * piscem single-cell mapper
    **/
   std::ios_base::sync_with_stdio(false);
 
   std::string skipping_rule;
   pesc_sc_options po;
+
+  // if the user requested to list the geometries, then do that and 
+  // exit.
+  auto list_geometries = [](std::size_t s) {
+    (void)s;
+    std::cout << "supported geometry names\n";
+    std::cout << "========================\n";
+    for (auto& geo : builtin_geometries) {
+      std::cout << geo << "\n";
+    }
+    std::exit(0);
+  };
+
   CLI::App app{"PESC — single-cell RNA-seq mapper for alevin-fry"};
+  app.add_flag("--list-geometries", list_geometries, "List the known geometries")->trigger_on_parse();
   app.add_option("-i,--index", po.index_basename, "Input index prefix")
     ->required();
   app
@@ -577,6 +591,7 @@ int run_pesc_sc(int argc, char **argv) {
   if (po.quiet) {
     spdlog_piscem::set_level(spdlog_piscem::level::warn);
   }
+
   spdlog_piscem::info("enable structural constraints : {}",
                       po.enable_structural_constraints);
 
