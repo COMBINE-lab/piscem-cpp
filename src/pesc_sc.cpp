@@ -498,11 +498,16 @@ int run_pesc_sc(int argc, char **argv) {
   // exit.
   auto list_geometries = [](std::size_t s) {
     (void)s;
-    std::cout << "supported geometry names\n";
-    std::cout << "========================\n";
-    for (auto& geo : builtin_geometries) {
-      std::cout << geo << "\n";
+    std::cout << "{\n \"supported_geometries\": [\n";
+    for (size_t geo_idx = 0; geo_idx < builtin_geometries.size(); ++geo_idx) {
+      auto& geo = builtin_geometries[geo_idx];
+      std::cout << "  \"" << geo << "\"";
+      if (geo_idx < builtin_geometries.size() - 1) {
+        std::cout << ", ";
+      }
+      std::cout << '\n';
     }
+    std::cout << "  ]\n}\n";
     std::exit(0);
   };
 
