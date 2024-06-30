@@ -196,7 +196,7 @@ Length <- [1-9][0-9]*
 } // namespace single_cell
 
 using namespace std::literals::string_view_literals; // Enables sv suffix only
-[[maybe_unused]] constexpr std::array builtin_geometries = {"chromium_v2"sv, "chromium_v2_5p"sv, "chromium_v3"sv, "chromium_v3_5p"sv, 
+[[maybe_unused]] constexpr std::array<std::string_view, 6> builtin_geometries = {"chromium_v2"sv, "chromium_v2_5p"sv, "chromium_v3"sv, "chromium_v3_5p"sv, 
   "chromium_v4_3p"sv, "custom (must provide specification string)"sv};
 
 // tells us which reads should be used for mapping
