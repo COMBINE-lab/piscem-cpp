@@ -3,6 +3,7 @@
 
 #include "../itlib/small_vector.hpp"
 #include "../peglib.h"
+#include <array>
 #include <memory>
 #include <string_view>
 
