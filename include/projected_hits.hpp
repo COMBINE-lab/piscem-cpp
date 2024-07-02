@@ -1,6 +1,5 @@
 #pragma once
 
-#include "nonstd/span.hpp"
 #include "util.hpp"
 #include <iostream>
 struct ref_pos {

@@ -8,10 +8,9 @@
 #include "../include/parallel_hashmap/phmap_dump.h"
 #include "../include/poison_table.hpp"
 #include "../include/reference_index.hpp"
-#include "../include/util.hpp"
 #include "../include/spdlog_piscem/sinks/stdout_color_sinks.h"
 #include "../include/spdlog_piscem/spdlog.h"
-
+#include "../include/util.hpp"
 
 #include <algorithm>
 #include <cstdio>
@@ -227,7 +226,6 @@ int run_build_poison_table(int argc, char *argv[]) {
   poison_kmer_occs.resize(po.nthreads);
 
   std::atomic<uint64_t> global_nk{0};
-  std::atomic<uint64_t> global_np{0};
 
   {
     fastx_parser::FastxParser<fastx_parser::ReadSeq> rparser(

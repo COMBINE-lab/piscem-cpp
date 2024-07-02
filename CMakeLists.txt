@@ -70,9 +70,38 @@ if (UNIX)
     set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -fsanitize=address -fno-omit-frame-pointer")
   endif()
 
+  if (CONDA_BUILD)
+    # because of the kind of ridiculous RAM limitations on the conda build jobs
+    add_compile_options("SHELL:--param ggc-min-expand=20" "SHELL:--param ggc-min-heapsize=8192")
+  endif()
+
 endif()
 
-find_package(ZLIB REQUIRED)
+#add_subdirectory(external/zlib-cloudflare)
+include(ExternalProject)
+ExternalProject_Add(zlib-cloudflare
+  GIT_REPOSITORY https://github.com/cloudflare/zlib
+  GIT_TAG 7aa510344e06fecd6fe09195ac22e9a424ceb660
+  CMAKE_ARGS -DCMAKE_INSTALL_PREFIX=${CMAKE_BINARY_DIR}/zlib-cloudflare
+  SOURCE_DIR ${CMAKE_SOURCE_DIR}/external/zlib-cloudflare
+)
+
+## can't reply on find_package because the ExternalProject_Add
+# steps won't complete by compile time, when the find_package 
+# looks for the ZLIB
+#set(ZLIB_ROOT ${CMAKE_BINARY_DIR}/zlib-cloudflare)
+#find_package(ZLIB REQUIRED)
+
+
+# install path to the lib / include directories of the 
+# cloudflare libz
+include_directories(${CMAKE_BINARY_DIR}/zlib-cloudflare/include)
+link_directories(${CMAKE_BINARY_DIR}/zlib-cloudflare/lib)
+
+# direct path to the cloudflare libz
+set(CLOUDFLARE_ZLIB ${CMAKE_BINARY_DIR}/zlib-cloudflare/lib/libz.a)
+
+
 set(THREADS_PREFER_PTHREAD_FLAG TRUE)
 find_package(Threads REQUIRED) # for pthreads
 
@@ -123,7 +152,7 @@ target_include_directories(build_static PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/incl
 #target_include_directories(bench PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/include)
 
 add_executable(check src/check.cpp src/FastxParser.cpp) 
-target_link_libraries(check ZLIB::ZLIB sshash_static Threads::Threads)
+target_link_libraries(check ${CLOUDFLARE_ZLIB} sshash_static Threads::Threads)
 target_include_directories(check PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/include ${ZLIB_INCLUDE_DIRS})
 
 #add_executable(query src/query.cpp ${SSHASH_SOURCES} ${Z_LIB_SOURCES})
@@ -132,35 +161,54 @@ target_include_directories(check PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/include ${Z
 
 #add_executable(test_load src/test_load.cpp)
 #target_include_directories(test_load PUBLIC ${CMAKE_SOURCE_DIR}/include ${ZLIB_INCLUDE_DIRS})
-#target_link_libraries(test_load ZLIB::ZLIB sshash_static Threads::Threads)
+#target_link_libraries(test_load ${CLOUDFLARE_ZLIB} sshash_static Threads::Threads)
 
 add_executable(pesc-sc src/pesc_sc_runner.cpp) 
 target_include_directories(pesc-sc PUBLIC ${CMAKE_SOURCE_DIR}/include ${ZLIB_INCLUDE_DIRS})
-target_link_libraries(pesc-sc pesc_static ZLIB::ZLIB Threads::Threads sshash_static ${MALLOC_LIB}) 
+target_link_libraries(pesc-sc pesc_static ${CLOUDFLARE_ZLIB} Threads::Threads sshash_static ${MALLOC_LIB}) 
 
 add_executable(pesc-bulk src/pesc_bulk_runner.cpp) 
 target_include_directories(pesc-bulk PUBLIC ${CMAKE_SOURCE_DIR}/include ${ZLIB_INCLUDE_DIRS})
-target_link_libraries(pesc-bulk pesc_static ZLIB::ZLIB Threads::Threads sshash_static ${MALLOC_LIB}) 
+target_link_libraries(pesc-bulk pesc_static ${CLOUDFLARE_ZLIB} Threads::Threads sshash_static ${MALLOC_LIB}) 
 
 #add_executable(mapper src/mapper.cpp src/hit_searcher.cpp) 
 #target_include_directories(mapper PUBLIC ${CMAKE_SOURCE_DIR}/include ${ZLIB_INCLUDE_DIRS})
-#target_link_libraries(mapper ZLIB::ZLIB Threads::Threads sshash_static ${MALLOC_LIB}) 
+#target_link_libraries(mapper ${CLOUDFLARE_ZLIB} Threads::Threads sshash_static ${MALLOC_LIB}) 
 
 add_executable(build src/build_runner.cpp) 
 target_include_directories(build PUBLIC ${CMAKE_SOURCE_DIR}/include ${ZLIB_INCLUDE_DIRS})
-target_link_libraries(build Threads::Threads build_static sshash_static ZLIB::ZLIB ${MALLOC_LIB}) 
+target_link_libraries(build Threads::Threads build_static sshash_static ${CLOUDFLARE_ZLIB} ${MALLOC_LIB}) 
 
 add_executable(evaluator src/index_evaluator.cpp) 
 target_include_directories(evaluator PUBLIC ${CMAKE_SOURCE_DIR}/include ${ZLIB_INCLUDE_DIRS})
-target_link_libraries(evaluator ZLIB::ZLIB Threads::Threads sshash_static) 
+target_link_libraries(evaluator ${CLOUDFLARE_ZLIB} Threads::Threads sshash_static) 
 
 add_executable(build-poison-table src/poison_table_build_runner.cpp) 
 target_include_directories(build-poison-table PUBLIC ${CMAKE_SOURCE_DIR}/include ${ZLIB_INCLUDE_DIRS})
-target_link_libraries(build-poison-table Threads::Threads build_static sshash_static pesc_static ZLIB::ZLIB ${MALLOC_LIB})
+target_link_libraries(build-poison-table Threads::Threads build_static sshash_static pesc_static ${CLOUDFLARE_ZLIB} ${MALLOC_LIB})
 
 add_executable(poison_filter src/poison_read_filter.cpp) 
 target_include_directories(poison_filter PUBLIC ${CMAKE_SOURCE_DIR}/include ${ZLIB_INCLUDE_DIRS})
-target_link_libraries(poison_filter Threads::Threads sshash_static pesc_static ZLIB::ZLIB) 
+target_link_libraries(poison_filter Threads::Threads sshash_static pesc_static ${CLOUDFLARE_ZLIB}) 
+
+## tests
+add_subdirectory(external/doctest)
+
+# Make test executable
+add_executable(tests tests/test_geom_extractor.cpp)
+target_compile_features(tests PRIVATE cxx_std_17)
+target_include_directories(tests PRIVATE doctest)
+target_link_libraries(tests PRIVATE doctest pesc_static)
+
+
+## depend on the cloudflare zlib library
+add_dependencies(check zlib-cloudflare)
+add_dependencies(evaluator zlib-cloudflare)
+add_dependencies(build zlib-cloudflare)
+add_dependencies(pesc-sc zlib-cloudflare)
+add_dependencies(pesc-bulk zlib-cloudflare)
+add_dependencies(build-poison-table zlib-cloudflare)
+add_dependencies(poison_filter zlib-cloudflare)
 
 
 #add_executable(test_parse src/test_parse_geo.cpp)
