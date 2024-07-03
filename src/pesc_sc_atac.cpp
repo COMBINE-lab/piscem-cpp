@@ -104,7 +104,7 @@ bool map_fragment(fastx_parser::ReadTrip& record, mapping_cache_info& map_cache_
                                      map_cache_out);
     // mapping::util::merge_se_mappings(map_cache_left, map_cache_right, left_len, right_len,
     //                                  map_cache_out);
-
+    // std::cout << "merged\n";
     return (early_exit_left or early_exit_right);
 }
 
@@ -198,7 +198,7 @@ bool map_fragment(fastx_parser::ReadTrip& record, mapping_cache_info& map_cache_
 
     mapping::util_bin::merge_se_mappings(map_cache_left, map_cache_right, left_len, right_len,
                                      map_cache_out);
-
+    // std::cout <<"merged\n";
     return (early_exit_left or early_exit_right);
 }
 
@@ -390,7 +390,6 @@ int run_pesc_sc_atac(int argc, char** argv) {
     // std::vector<std::string> barcode_file = {"/fs/cbcb-lab/rob/students/noor/Atacseq/b.fastq"};
 
     std::ios_base::sync_with_stdio(false);
-    std::cout << "eeeee\n";
     pesc_atac_options po;
     // // std::string index_basename;
     // // std::vector<std::string> left_read_filenames;
@@ -476,7 +475,6 @@ int run_pesc_sc_atac(int argc, char** argv) {
     out_info.unmapped_bc_file = std::move(unmapped_bc_file);
     
     mindex::reference_index ri(po.index_basename);
-    std::cout << "sjsjs\n";
     uint8_t is_paired = 1; // need to include single_end
     std::string rad_file_path = output_path;
     rad_file_path.append("/map.rad");

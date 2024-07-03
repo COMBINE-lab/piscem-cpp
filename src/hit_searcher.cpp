@@ -439,16 +439,16 @@ struct SkipContext {
 };
 
 struct EveryKmer {
-  size_t cStartPos;
-  size_t cEndPos;
+  int64_t cStartPos;
+  int64_t cEndPos;
   int64_t cCurrPos;
   int32_t direction;
   int64_t dist_to_contig_end;
-  size_t k;
+  int32_t k;
   bool new_state;
-  EveryKmer(size_t k): 
-    cStartPos(std::numeric_limits<size_t>::max()),
-    cEndPos(std::numeric_limits<size_t>::max()),
+  EveryKmer(int32_t k): 
+    cStartPos(std::numeric_limits<int64_t>::max()),
+    cEndPos(std::numeric_limits<int64_t>::max()),
     cCurrPos(std::numeric_limits<int64_t>::max()),
     direction(std::numeric_limits<int32_t>::max()),
     dist_to_contig_end(std::numeric_limits<int64_t>::max()),
@@ -457,8 +457,8 @@ struct EveryKmer {
 
   }
   EveryKmer(projected_hits ph, size_t k) :
-    cStartPos(ph.globalPos_ - ph.contigPos_),
-    cEndPos(ph.globalPos_ - ph.contigPos_ + ph.contigLen_),
+    cStartPos(static_cast<int64_t>(ph.globalPos_ - ph.contigPos_)),
+    cEndPos(static_cast<int64_t>(ph.globalPos_ - ph.contigPos_ + ph.contigLen_)),
     cCurrPos(static_cast<int64_t>(ph.globalPos_))
     {
       if (ph.contigOrientation_) {
@@ -470,12 +470,12 @@ struct EveryKmer {
         dist_to_contig_end = static_cast<int64_t>(ph.contigPos_);
       }
       k = k;
-      new_state = dist_to_contig_end == 0? true : false;
+      new_state = (dist_to_contig_end <= 0) ? true : false;
     }
   
-  void set_state(projected_hits ph) {
-    cStartPos = ph.globalPos_ - ph.contigPos_;
-    cEndPos = cStartPos + ph.contigLen_;
+  void set_state(projected_hits &ph) {
+    cStartPos = static_cast<int64_t>(ph.globalPos_ - ph.contigPos_);
+    cEndPos = static_cast<int64_t>(cStartPos + ph.contigLen_);
     cCurrPos = static_cast<int64_t>(ph.globalPos_);
     if (ph.contigOrientation_) {
       direction = 1;
@@ -484,7 +484,7 @@ struct EveryKmer {
       direction = -1;
       dist_to_contig_end = static_cast<int64_t>(ph.contigPos_);
     }
-    new_state = dist_to_contig_end == 0 ? true : false;
+    new_state = (dist_to_contig_end <= 0) ? true : false;
   }
 
   void query_kmer(pufferfish::CanonicalKmerIterator& kit,
@@ -494,7 +494,7 @@ struct EveryKmer {
     
     if (!ph.empty()) {
         raw_hits.push_back(std::make_pair(kit->second, ph));
-        // set_state(ph);
+        set_state(ph);
     }
     else {
       new_state = true;
@@ -503,12 +503,15 @@ struct EveryKmer {
 
   bool check_match(sshash::bit_vector_iterator &ref_contig_it,
                   pufferfish::CanonicalKmerIterator& kit) {
-    // std::cout << "een\n";
-    int32_t cpos = cCurrPos + direction;
-    ref_contig_it.at(2 * cpos);
+    
+    int64_t cpos = cCurrPos + direction;
+    
+    ref_contig_it.at(2*cpos);
     auto ref_kmer = ref_contig_it.read(2 * k);
+    
     auto match_type = kit->first.isEquivalent(ref_kmer);
     bool matches = (match_type != KmerMatchType::NO_MATCH);
+    
     return matches;
   }
 
@@ -518,7 +521,7 @@ struct EveryKmer {
     ph.globalPos_ += direction;
     ph.contigPos_ += direction;
     raw_hits.push_back(std::make_pair(kit->second, ph));
-    // set_state(ph);
+    set_state(ph);
   }
 };
 
@@ -715,9 +718,12 @@ bool hit_searcher::get_raw_hits_sketch_everykmer(std::string &read,
             evs.query_kmer(kit, pfi_, raw_hits, qc); 
           }
       }
+      // auto phits = pfi_->query(kit, qc);
+      // if (!phits.empty()) {
+      //   raw_hits.push_back(std::make_pair(kit->second, phits));
+      // }
       ++kit;
     }
-    // std::cout << "sd\n";
     return raw_hits.size() != 0;
 }
 
