@@ -567,6 +567,7 @@ bool hit_searcher::get_raw_hits_sketch(std::string &read,
                   bool isLeft,
                   bool verbose) {
   (void) verbose;
+  qc.reset_state();
   clear();
   projected_hits phits;
   auto& raw_hits = isLeft ? left_rawHits : right_rawHits;
