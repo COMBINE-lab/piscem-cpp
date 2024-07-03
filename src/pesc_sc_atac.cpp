@@ -354,9 +354,9 @@ void do_map(mindex::reference_index& ri,
     if (num_reads_in_chunk > 0) {
         out_info.num_chunks++;
         
-        // out_info.bed_mutex.lock();
-        // out_info.bed_file << temp_buff;
-        // out_info.bed_mutex.unlock();
+        out_info.bed_mutex.lock();
+        out_info.bed_file << temp_buff;
+        out_info.bed_mutex.unlock();
         temp_buff = "";
         num_reads_in_chunk = 0;
     }
@@ -414,7 +414,7 @@ int run_pesc_sc_atac(int argc, char** argv) {
     //     ->required();
     app.add_option("-t,--threads", po.nthread,
                    "An integer that specifies the number of threads to use")
-        ->default_val(1);
+        ->default_val(16);
     app.add_option("--psc_off", po.psc_off,
                    "whether to switch structural constraints off")
         ->default_val(false);
@@ -518,6 +518,7 @@ int run_pesc_sc_atac(int argc, char** argv) {
     }
     std::vector<std::thread> workers;
     // nthread = 1;
+    
     for (size_t i = 0; i < nthread; ++i) {
         workers.push_back(std::thread(
             [&ri, &rparser, &global_nr, &global_nh, &global_nmult, &out_info, &iomut, &k_match, 

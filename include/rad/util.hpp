@@ -399,14 +399,14 @@ inline void write_to_rad_stream_atac(bc_kmer_t& bck, mapping::util_bin::MappingT
         aln_rec.add_tag(RAD::Type::u16(frag_len));
         read_rec.add_aln_rec(aln_rec);
         
-        // strbuff += std::to_string(leftmost_pos);
-        // strbuff += "\t";
-        // strbuff += std::to_string(leftmost_pos + frag_len);
-        // strbuff += "\t";
-        // strbuff += barcode;
-        // strbuff += "\t";
-        // strbuff += std::to_string(accepted_hits.size());
-        // strbuff += "\n";
+        strbuff += std::to_string(leftmost_pos);
+        strbuff += "\t";
+        strbuff += std::to_string(leftmost_pos + frag_len);
+        strbuff += "\t";
+        strbuff += barcode;
+        strbuff += "\t";
+        strbuff += std::to_string(accepted_hits.size());
+        strbuff += "\n";
     }
     
     rw.add(read_rec, token);
