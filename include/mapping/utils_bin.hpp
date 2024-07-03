@@ -54,10 +54,10 @@ class bin_pos {
         mindex::reference_index* pfi_;
         std::vector<uint64_t> cum_ref_lens;
         void compute_cum_rank() {
-            size_t n_refs = pfi_->num_refs();
+            int32_t n_refs = static_cast<int32_t>(pfi_->num_refs());
             cum_ref_lens.reserve(n_refs);
             cum_ref_lens[0] = 0;
-            for(int i = 1; i < n_refs; i++) {
+            for(int32_t i = 1; i < n_refs; i++) {
                 cum_ref_lens[i] = cum_ref_lens[i-1] + pfi_->ref_len(i);
             }
         }
@@ -839,7 +839,6 @@ inline bool map_atac_read(std::string* read_seq, mapping_cache_info& map_cache,
     const bool perform_ambig_filtering = map_cache.hs.get_index()->has_ec_table();
     auto k = map_cache.k;
 
-    
     if (ps_skip) {
         map_cache.has_matching_kmers = hs.get_raw_hits_sketch(*read_seq, q, true, verbose);
     }
