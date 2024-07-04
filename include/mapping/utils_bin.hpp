@@ -39,9 +39,9 @@ class bin_pos {
             return cum_ref_lens[i];
         }
         
-        std::pair<uint64_t, uint64_t> get_bin_id(size_t tid, int32_t pos, int32_t bin_size=20000, int32_t overlap=300) {
+        std::pair<uint64_t, uint64_t> get_bin_id(uint64_t tid, uint64_t pos, uint64_t bin_size=20000, uint64_t overlap=300) {
             uint64_t cum_len = get_cum_len(tid);
-
+            assert(bin_size > overlap);
             uint64_t bin1 = (cum_len + pos + 1)/bin_size; // 1 added since 0 based
             uint64_t bin2 = (cum_len + pos + 1) > (bin1+1)*bin_size-overlap ? (bin1+1) :
                 std::numeric_limits<uint64_t>::max(); // std::numeric_limits<uint32_t>::max() indicates that the kmer does not belong to the overlapping region
@@ -58,7 +58,7 @@ class bin_pos {
             cum_ref_lens.reserve(n_refs);
             cum_ref_lens[0] = 0;
             for(int32_t i = 1; i < n_refs; i++) {
-                cum_ref_lens[i] = cum_ref_lens[i-1] + pfi_->ref_len(i);
+                cum_ref_lens[i] = cum_ref_lens[i-1] + pfi_->ref_len(i-1);
             }
         }
 };
@@ -995,9 +995,9 @@ inline bool map_atac_read(std::string* read_seq, mapping_cache_info& map_cache,
                     
                     for (auto v : refs) {
                         const auto& ref_pos_ori = proj_hits.decode_hit(v);
-                        uint32_t tid = sshash::util::transcript_id(v);
-                        int32_t pos = static_cast<int32_t>(ref_pos_ori.pos);
-                        std::pair<uint32_t, uint32_t> bins = binning.get_bin_id(tid, pos);
+                        uint64_t tid = static_cast<uint32_t>(sshash::util::transcript_id(v));
+                        uint64_t pos = ref_pos_ori.pos;
+                        std::pair<uint64_t, uint64_t> bins = binning.get_bin_id(tid, pos);
                         bool ori = ref_pos_ori.isFW;
                         // std::cout << "tid " << tid << std::endl;
                         
