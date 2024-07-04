@@ -47,6 +47,12 @@ inline std::vector<std::pair<int, projected_hits>>& get_right_hits() {
 inline reference_index* get_index() const { return pfi_; }
 
 inline size_t get_k() {return k;}
+
+  uint64_t new_state_cnt{0};
+  uint64_t matches_cnt{0};
+  uint64_t non_matches_cnt{0};
+
+
 private:
   reference_index* pfi_;
   size_t k;

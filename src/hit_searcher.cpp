@@ -1,5 +1,6 @@
 #include "../include/hit_searcher.hpp"
 #include "../include/bit_vector_iterator.hpp"
+#include "../include/util.hpp"
 #include <cmath>
 #include <limits>
 
@@ -446,6 +447,7 @@ struct EveryKmer {
   int64_t dist_to_contig_end;
   int32_t k;
   bool new_state;
+
   EveryKmer(int32_t k): 
     cStartPos(std::numeric_limits<int64_t>::max()),
     cEndPos(std::numeric_limits<int64_t>::max()),
@@ -473,7 +475,7 @@ struct EveryKmer {
       new_state = (dist_to_contig_end <= 0) ? true : false;
     }
   
-  void set_state(projected_hits &ph) {
+  inline void set_state(projected_hits &ph) {
     cStartPos = static_cast<int64_t>(ph.globalPos_ - ph.contigPos_);
     cEndPos = static_cast<int64_t>(cStartPos + ph.contigLen_);
     cCurrPos = static_cast<int64_t>(ph.globalPos_);
@@ -487,9 +489,12 @@ struct EveryKmer {
     new_state = (dist_to_contig_end <= 0) ? true : false;
   }
 
-  void query_kmer(pufferfish::CanonicalKmerIterator& kit,
+  inline void query_kmer(pufferfish::CanonicalKmerIterator& kit,
   mindex::reference_index *pfi, std::vector<std::pair<int, projected_hits>> &raw_hits,
+  sshash::bit_vector_iterator &ref_contig_it,
   sshash::streaming_query_canonical_parsing& qc) {
+    (void)ref_contig_it;
+    //qc.reset_state();
     auto ph = pfi->query(kit, qc);
     
     if (!ph.empty()) {
@@ -501,13 +506,20 @@ struct EveryKmer {
     }
   }
 
-  bool check_match(sshash::bit_vector_iterator &ref_contig_it,
+  inline bool check_match(sshash::bit_vector_iterator &ref_contig_it,
                   pufferfish::CanonicalKmerIterator& kit) {
     
     int64_t cpos = cCurrPos + direction;
     
     ref_contig_it.at(2*cpos);
     auto ref_kmer = ref_contig_it.read(2 * k);
+	
+    /*
+    std::cerr << "\t(k = " << k << ") checking hit between " << kit->second << " and " << cpos << "\n";
+    auto k2 = kit->first;
+    k2.fromNum(ref_kmer);
+    std::cerr << "\t\t ref_kmer = " << k2.to_str() << ", kit = " << kit->first.to_str() << "\n";
+    */
     
     auto match_type = kit->first.isEquivalent(ref_kmer);
     bool matches = (match_type != KmerMatchType::NO_MATCH);
@@ -515,7 +527,7 @@ struct EveryKmer {
     return matches;
   }
 
-  void add_next(std::vector<std::pair<int, projected_hits>> &raw_hits,
+  inline void add_next(std::vector<std::pair<int, projected_hits>> &raw_hits,
     pufferfish::CanonicalKmerIterator& kit) {
     auto ph = raw_hits.back().second;
     ph.globalPos_ += direction;
@@ -710,19 +722,24 @@ bool hit_searcher::get_raw_hits_sketch_everykmer(std::string &read,
     
     while(kit != kit_end) {
       if (evs.new_state)  {
-        evs.query_kmer(kit, pfi_, raw_hits, qc);
+        evs.query_kmer(kit, pfi_, raw_hits, ref_contig_it, qc);
+	new_state_cnt++;
       } else {
           bool matches = evs.check_match(ref_contig_it, kit);
           if (matches) {
             evs.add_next(raw_hits, kit);
+	    matches_cnt++;
           } else {
-            evs.query_kmer(kit, pfi_, raw_hits, qc); 
+            evs.query_kmer(kit, pfi_, raw_hits, ref_contig_it, qc); 
+	    non_matches_cnt++;
           }
       }
-      // auto phits = pfi_->query(kit, qc);
-      // if (!phits.empty()) {
-      //   raw_hits.push_back(std::make_pair(kit->second, phits));
-      // }
+     /*
+      auto phits = pfi_->query(kit, qc);
+      if (!phits.empty()) {
+        raw_hits.push_back(std::make_pair(kit->second, phits));
+      }
+      */
       ++kit;
     }
     return raw_hits.size() != 0;

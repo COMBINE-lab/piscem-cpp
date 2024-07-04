@@ -373,6 +373,13 @@ void do_map(mindex::reference_index& ri,
         out_info.unmapped_bc_mutex.unlock();
         ubcw.clear();
     }
+	
+    std::cerr << "left new state: " << map_cache_left.hs.new_state_cnt << "\n";
+    std::cerr << "left matches : " << map_cache_left.hs.matches_cnt << "\n";
+    std::cerr << "left non matches : " << map_cache_left.hs.non_matches_cnt << "\n";
+    //map_cache_right(ri);
+    //map_cache_out(ri);
+
 
 }
 
@@ -438,6 +445,8 @@ int run_pesc_sc_atac(int argc, char** argv) {
 
     if (po.quiet) { logger->set_level(spdlog::level::warn); }
     spdlog::set_default_logger(logger);
+
+    nthread = po.nthread;
 
     auto start_t = std::chrono::high_resolution_clock::now();
 
