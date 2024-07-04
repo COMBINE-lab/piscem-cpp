@@ -20,6 +20,7 @@ MESSAGE(STATUS "CMAKE_BUILD_TYPE: " ${CMAKE_BUILD_TYPE})
 
 set(CMAKE_RUNTIME_OUTPUT_DIRECTORY ${CMAKE_BINARY_DIR})
 
+set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -DL1_CACHE_LINE_SIZE=64")
 if (UNIX)
 
   set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -std=c++17")
@@ -67,64 +68,70 @@ set(SSHASH_SOURCES
   include/info.cpp
 )
 
+set(LIBRADICL_INCLUDE ${CMAKE_CURRENT_SOURCE_DIR}/external/libradicl/include)
+
 # Create a static lib
 add_library(sshash_static STATIC
   ${Z_LIB_SOURCES}
   ${SSHASH_SOURCES}
   include/builder/build.cpp
 )
-target_include_directories(sshash_static PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/include)
+target_include_directories(sshash_static PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/include ${LIBRADICL_INCLUDE})
 
 
 add_library(pesc_static STATIC
   src/pesc_bulk.cpp src/pesc_sc.cpp src/pesc_sc_atac.cpp src/hit_searcher.cpp src/FastxParser.cpp
 )
-target_include_directories(pesc_static PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/include ${ZLIB_INCLUDE_DIRS})
+target_include_directories(pesc_static PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/include ${ZLIB_INCLUDE_DIRS} ${LIBRADICL_INCLUDE})
 
 add_library(build_static STATIC
   src/build.cpp)
-target_include_directories(build_static PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/include ${ZLIB_INCLUDE_DIRS})
+target_include_directories(build_static PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/include ${ZLIB_INCLUDE_DIRS} ${LIBRADICL_INCLUDE})
 
 #add_executable(build src/build.cpp)
 #target_link_libraries(build sshash_static z ${MALLOC_LIB})
-#target_include_directories(build PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/include)
+#target_include_directories(build PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/include ${LIBRADICL_INCLUDE})
+
 
 add_executable(bench src/bench.cpp ${SSHASH_SOURCES})
-target_include_directories(bench PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/include)
+target_include_directories(bench PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/include ${LIBRADICL_INCLUDE})
+
 
 add_executable(check src/check.cpp src/FastxParser.cpp) 
 target_link_libraries(check ZLIB::ZLIB sshash_static Threads::Threads)
-target_include_directories(check PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/include ${ZLIB_INCLUDE_DIRS})
+target_include_directories(check PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/include ${ZLIB_INCLUDE_DIRS} ${LIBRADICL_INCLUDE})
+
 
 add_executable(query src/query.cpp ${SSHASH_SOURCES} ${Z_LIB_SOURCES})
 target_link_libraries(query z Threads::Threads)
-target_include_directories(query PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/include)
+target_include_directories(query PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/include ${LIBRADICL_INCLUDE})
+
 
 # add_executable(check-overlap src/check_overlap.cpp) 
 # target_include_directories(check-overlap PUBLIC ${CMAKE_SOURCE_DIR}/include ${ZLIB_INCLUDE_DIRS})
 # target_link_libraries(check-overlap pesc_static ZLIB::ZLIB Threads::Threads sshash_static ${MALLOC_LIB})
 
 add_executable(test_load src/test_load.cpp)
-target_include_directories(test_load PUBLIC ${CMAKE_SOURCE_DIR}/include ${ZLIB_INCLUDE_DIRS})
+target_include_directories(test_load PUBLIC ${CMAKE_SOURCE_DIR}/include ${ZLIB_INCLUDE_DIRS} ${LIBRADICL_INCLUDE})
+
 target_link_libraries(test_load ZLIB::ZLIB sshash_static Threads::Threads)
 
 add_executable(pesc-sc src/pesc_sc_runner.cpp) 
-target_include_directories(pesc-sc PUBLIC ${CMAKE_SOURCE_DIR}/include ${ZLIB_INCLUDE_DIRS})
+target_include_directories(pesc-sc PUBLIC ${CMAKE_SOURCE_DIR}/include ${ZLIB_INCLUDE_DIRS} ${LIBRADICL_INCLUDE})
 target_link_libraries(pesc-sc pesc_static ZLIB::ZLIB Threads::Threads sshash_static ${MALLOC_LIB}) 
 
 add_executable(pesc-bulk src/pesc_bulk_runner.cpp) 
-target_include_directories(pesc-bulk PUBLIC ${CMAKE_SOURCE_DIR}/include ${ZLIB_INCLUDE_DIRS})
+target_include_directories(pesc-bulk PUBLIC ${CMAKE_SOURCE_DIR}/include ${ZLIB_INCLUDE_DIRS} ${LIBRADICL_INCLUDE})
 target_link_libraries(pesc-bulk pesc_static ZLIB::ZLIB Threads::Threads sshash_static ${MALLOC_LIB})
 
 add_executable(pesc-sc-atac src/pesc_sc_atac_runner.cpp) 
-target_include_directories(pesc-sc-atac PUBLIC ${CMAKE_SOURCE_DIR}/include ${ZLIB_INCLUDE_DIRS}
-${CMAKE_SOURCE_DIR}/external/libradicl/include)
-target_link_libraries(pesc-sc-atac pesc_static profiler ZLIB::ZLIB Threads::Threads sshash_static ${MALLOC_LIB} radicl)
-target_link_directories(pesc-sc-atac PUBLIC /fs/cbcb-lab/rob/students/noor/miniforge3/lib)
+target_include_directories(pesc-sc-atac PUBLIC ${CMAKE_SOURCE_DIR}/include ${ZLIB_INCLUDE_DIRS} ${LIBRADICL_INCLUDE})
+target_link_libraries(pesc-sc-atac pesc_static ZLIB::ZLIB Threads::Threads sshash_static ${MALLOC_LIB} radicl)
+#target_link_directories(pesc-sc-atac PUBLIC /fs/cbcb-lab/rob/students/noor/miniforge3/lib)
 add_dependencies(pesc-sc-atac radicl)
 
 # add_executable(temp src/temp.cpp)
-# target_include_directories(temp PUBLIC ${CMAKE_SOURCE_DIR}/include ${ZLIB_INCLUDE_DIRS} ${CMAKE_SOURCE_DIR}/external/libradicl/include)
+# target_include_directories(temp PUBLIC ${CMAKE_SOURCE_DIR}/include ${ZLIB_INCLUDE_DIRS} ${LIBRADICL_INCLUDE})
 # target_link_libraries(temp pesc_static ZLIB::ZLIB Threads::Threads sshash_static ${MALLOC_LIB} radicl)
 # add_dependencies(temp radicl)
 
@@ -133,11 +140,11 @@ add_dependencies(pesc-sc-atac radicl)
 #target_link_libraries(mapper ZLIB::ZLIB Threads::Threads sshash_static ${MALLOC_LIB}) 
 
 add_executable(build src/build_runner.cpp) 
-target_include_directories(build PUBLIC ${CMAKE_SOURCE_DIR}/include ${ZLIB_INCLUDE_DIRS})
+target_include_directories(build PUBLIC ${CMAKE_SOURCE_DIR}/include ${ZLIB_INCLUDE_DIRS} ${LIBRADICL_INCLUDE})
 target_link_libraries(build Threads::Threads build_static sshash_static ZLIB::ZLIB ${MALLOC_LIB}) 
 
 add_executable(evaluator src/index_evaluator.cpp) 
-target_include_directories(evaluator PUBLIC ${CMAKE_SOURCE_DIR}/include ${ZLIB_INCLUDE_DIRS})
+target_include_directories(evaluator PUBLIC ${CMAKE_SOURCE_DIR}/include ${ZLIB_INCLUDE_DIRS} ${LIBRADICL_INCLUDE})
 target_link_libraries(evaluator ZLIB::ZLIB Threads::Threads sshash_static) 
 
 #add_executable(test_parse src/test_parse_geo.cpp)

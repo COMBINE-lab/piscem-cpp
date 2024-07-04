@@ -1,5 +1,6 @@
 #include <iostream>
 #include <memory>
+#include <thread>
 
 #include "../external/pthash/external/cmd_line_parser/include/parser.hpp"
 #include "../include/dictionary.hpp"
@@ -23,6 +24,9 @@ extern "C" {
 
 
 int run_build(int argc, char** argv) {
+    constexpr uint32_t min_threads = 1;
+    constexpr uint32_t target_threads = 16;
+    uint32_t default_num_threads = std::max(min_threads, std::min(target_threads, static_cast<uint32_t>(std::thread::hardware_concurrency())));
     cmd_line_parser::parser parser(argc, argv);
 
     /* mandatory arguments */
@@ -55,6 +59,12 @@ int run_build(int argc, char** argv) {
         "Temporary directory used for construction in external memory. Default is directory '" +
             constants::default_tmp_dirname + "'.",
         "-d", false);
+    parser.add(
+        "num_threads",
+        "Number of threads to use for hash construction (much of the other index building is currently single-threaded, default is " +
+          std::to_string(default_num_threads) + ")",
+        "-t", false
+        );
     parser.add("canonical_parsing",
                "Canonical parsing of k-mers. This option changes the parsing and results in a "
                "trade-off between index space and lookup time.",
@@ -92,6 +102,23 @@ int run_build(int argc, char** argv) {
     if (parser.parsed("seed")) build_config.seed = parser.get<uint64_t>("seed");
     if (parser.parsed("l")) build_config.l = parser.get<double>("l");
     if (parser.parsed("c")) build_config.c = parser.get<double>("c");
+    if (parser.parsed("num_threads")) { 
+      // make sure less than hw concurrency
+      build_config.num_threads = parser.get<uint32_t>("num_threads");
+    } else {
+      build_config.num_threads = default_num_threads;
+    }
+
+    // make sure the number of requested threads is OK
+    if (build_config.num_threads == 0) {
+      spdlog::warn("specified 0 threads, defaulting to 1");
+      build_config.num_threads = 1;
+    }
+    uint64_t max_num_threads = std::thread::hardware_concurrency();
+    if (build_config.num_threads > max_num_threads) {
+      build_config.num_threads = max_num_threads;
+      spdlog::warn("too many threads specified, defaulting to {}", build_config.num_threads); 
+    }
 
 
     build_config.canonical_parsing = parser.get<bool>("canonical_parsing");

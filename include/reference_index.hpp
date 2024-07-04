@@ -81,7 +81,8 @@ public:
         // std::cout << "contig_size " << qres.contig_size << '\n';
 
         if (is_member) {
-            qres.contig_size += m_dict.k() - 1;
+	    const auto k = m_dict.k();
+            qres.contig_size += k - 1;
             auto start_pos = m_bct.m_ctg_offsets.access(qres.contig_id);
             auto end_pos = m_bct.m_ctg_offsets.access(qres.contig_id + 1);
             size_t len = end_pos - start_pos;
@@ -100,11 +101,15 @@ public:
 
             bool is_forward = (qres.kmer_orientation == sshash::constants::forward_orientation);
 
+	    // because the query gives us a global 
+            // ID and not a global offset, we have to 
+            // adjust it here.
+            uint64_t global_offset = qres.kmer_id + (contig_id * (k-1));
             return projected_hits{contig_id,
                                   contig_offset,
                                   is_forward,
                                   contig_length,
-                                  qres.kmer_id,
+                                  global_offset,
                                   static_cast<uint32_t>(m_dict.k()),
                                   s};
         } else {
