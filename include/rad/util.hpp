@@ -349,8 +349,8 @@ inline void write_to_rad_stream_atac(bc_kmer_t& bck, mapping::util_bin::MappingT
         uint32_t mate_fw_mask = aln.mate_is_fw ? 0x40000000 : 0x00000000;
         // bottom 30 bits are target id
         // strbuff += std::to_string((0x3FFFFFFF & aln.tid) | fw_mask | mate_fw_mask);
-        // strbuff += ri.ref_name(aln.tid);
-        // strbuff += "\t";
+        strbuff += ri.ref_name(aln.tid);
+        strbuff += "\t";
         int32_t leftmost_pos = 0;
         // placeholder value for no fragment length
         uint16_t frag_len = std::numeric_limits<uint16_t>::max();

@@ -723,15 +723,15 @@ bool hit_searcher::get_raw_hits_sketch_everykmer(std::string &read,
     while(kit != kit_end) {
       if (evs.new_state)  {
         evs.query_kmer(kit, pfi_, raw_hits, ref_contig_it, qc);
-	new_state_cnt++;
+	// new_state_cnt++;
       } else {
           bool matches = evs.check_match(ref_contig_it, kit);
           if (matches) {
             evs.add_next(raw_hits, kit);
-	    matches_cnt++;
+	    // matches_cnt++;
           } else {
             evs.query_kmer(kit, pfi_, raw_hits, ref_contig_it, qc); 
-	    non_matches_cnt++;
+	    // non_matches_cnt++;
           }
       }
      /*
