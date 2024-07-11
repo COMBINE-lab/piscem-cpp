@@ -1,7 +1,4 @@
 
-[submodule "external/pthash"]
-	path = external/pthash
-	url = https://github.com/rob-p/pthash.git
 [submodule "external/doctest"]
 	path = external/doctest
 	url = https://github.com/doctest/doctest.git
