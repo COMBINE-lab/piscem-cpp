@@ -4,7 +4,7 @@
 	url = https://github.com/rob-p/pthash.git
 [submodule "external/doctest"]
 	path = external/doctest
-	url = https://github.com/doctest/doctest
+	url = https://github.com/doctest/doctest.git
 [submodule "external/libradicl"]
 	path = external/libradicl
 	url = https://github.com/jamshed/libradicl.git
