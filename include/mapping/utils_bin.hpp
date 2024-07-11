@@ -563,7 +563,7 @@ inline bool map_atac_read(std::string* read_seq, mapping_cache_info& map_cache,
         uint64_t total_occs{0};
         uint64_t largest_occ{0};
         auto& raw_hits = hs.get_left_hits();
-        // std::cout << "raw hits" << raw_hits.size() << std::endl;
+
         // SANITY
         decltype(raw_hits[0].first) prev_read_pos = -1;
         // the maximum span the supporting k-mers of a
@@ -623,15 +623,15 @@ inline bool map_atac_read(std::string* read_seq, mapping_cache_info& map_cache,
                         }
                         */
 
-                    //     // Why >= here instead of == ?
-                    //     // Because hits can happen on the same target in both the forward
-                    //     // and rc orientations, it is possible that we start the loop with
-                    //     // the target having num_valid_hits hits in a given orientation (o)
-                    //     // we see a new hit for this target in oriention o (now it has
-                    //     // num_valid_hits + 1) then we see a hit for this target in
-                    //     // orientation rc(o).  We still want to add / consider this hit, but
-                    //     // max_hits_for_target() > num_valid_hits. So, we must allow for
-                    //     // that here.
+                        // Why >= here instead of == ?
+                        // Because hits can happen on the same target in both the forward
+                        // and rc orientations, it is possible that we start the loop with
+                        // the target having num_valid_hits hits in a given orientation (o)
+                        // we see a new hit for this target in oriention o (now it has
+                        // num_valid_hits + 1) then we see a hit for this target in
+                        // orientation rc(o).  We still want to add / consider this hit, but
+                        // max_hits_for_target() > num_valid_hits. So, we must allow for
+                        // that here.
                         if (target.max_hits_for_target() >= num_valid_hits) {
                             
                             if (ori) {
@@ -715,18 +715,7 @@ inline bool map_atac_read(std::string* read_seq, mapping_cache_info& map_cache,
                                       << ", " << pos << ", " << (ori ? "fw" : "rc") << "\n";
                         }
                         */
-
-                        // Why >= here instead of == ?
-                        // Because hits can happen on the same target in both the forward
-                        // and rc orientations, it is possible that we start the loop with
-                        // the target having num_valid_hits hits in a given orientation (o)
-                        // we see a new hit for this target in oriention o (now it has
-                        // num_valid_hits + 1) then we see a hit for this target in
-                        // orientation rc(o).  We still want to add / consider this hit, but
-                        // max_hits_for_target() > num_valid_hits. So, we must allow for
-                        // that here.
-                        
-                            
+                   
                         if (ori) {
                             if (psc_off) {
                                 target1.ignore_struct_constraints_fw = true;
