@@ -32,7 +32,9 @@ public:
         sig_info = ref_sig_info_t::from_path(sigfile_name);
          
         std::string dict_name = basename + ".sshash";
+        // spdlog::info("sshash loaded");
         essentials::load(m_dict, dict_name.c_str());
+        // spdlog::info("ctab loaded");
         std::string ctg_name = basename + ".ctab";
         essentials::load(m_bct, ctg_name.c_str());
 

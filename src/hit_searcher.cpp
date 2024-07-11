@@ -1,5 +1,6 @@
 #include "../include/hit_searcher.hpp"
 #include "../include/bit_vector_iterator.hpp"
+#include "../include/util.hpp"
 #include <cmath>
 #include <limits>
 #include <optional>
@@ -729,6 +730,108 @@ inline bool check_direct_match(
 
 // This method performs k-mer / hit collection
 // using a custom implementation of the corresponding
+
+struct EveryKmer {
+  int64_t cStartPos;
+  int64_t cEndPos;
+  int64_t cCurrPos;
+  int32_t direction;
+  int64_t dist_to_contig_end;
+  int32_t k;
+  bool new_state;
+
+  EveryKmer(int32_t k): 
+    cStartPos(std::numeric_limits<int64_t>::max()),
+    cEndPos(std::numeric_limits<int64_t>::max()),
+    cCurrPos(std::numeric_limits<int64_t>::max()),
+    direction(std::numeric_limits<int32_t>::max()),
+    dist_to_contig_end(std::numeric_limits<int64_t>::max()),
+    k(k), new_state(true)
+  {
+
+  }
+  EveryKmer(projected_hits ph, size_t k) :
+    cStartPos(static_cast<int64_t>(ph.globalPos_ - ph.contigPos_)),
+    cEndPos(static_cast<int64_t>(ph.globalPos_ - ph.contigPos_ + ph.contigLen_)),
+    cCurrPos(static_cast<int64_t>(ph.globalPos_))
+    {
+      if (ph.contigOrientation_) {
+        direction = 1;
+        dist_to_contig_end = static_cast<int64_t>(cEndPos) - (static_cast<int64_t>(cCurrPos + k));
+      }
+      else {
+        direction = -1;
+        dist_to_contig_end = static_cast<int64_t>(ph.contigPos_);
+      }
+      k = k;
+      new_state = (dist_to_contig_end <= 0) ? true : false;
+    }
+  
+  inline void set_state(projected_hits &ph) {
+    cStartPos = static_cast<int64_t>(ph.globalPos_ - ph.contigPos_);
+    cEndPos = static_cast<int64_t>(cStartPos + ph.contigLen_);
+    cCurrPos = static_cast<int64_t>(ph.globalPos_);
+    if (ph.contigOrientation_) {
+      direction = 1;
+      dist_to_contig_end = static_cast<int64_t>(cEndPos) - (static_cast<int64_t>(cCurrPos + k));
+    } else {
+      direction = -1;
+      dist_to_contig_end = static_cast<int64_t>(ph.contigPos_);
+    }
+    new_state = (dist_to_contig_end <= 0) ? true : false;
+  }
+
+  inline void query_kmer(pufferfish::CanonicalKmerIterator& kit,
+  mindex::reference_index *pfi, std::vector<std::pair<int, projected_hits>> &raw_hits,
+  sshash::bit_vector_iterator &ref_contig_it,
+  sshash::streaming_query_canonical_parsing& qc) {
+    (void)ref_contig_it;
+    //qc.reset_state();
+    auto ph = pfi->query(kit, qc);
+    
+    if (!ph.empty()) {
+        raw_hits.push_back(std::make_pair(kit->second, ph));
+        set_state(ph);
+    }
+    else {
+      new_state = true;
+    }
+  }
+
+  inline bool check_match(sshash::bit_vector_iterator &ref_contig_it,
+                  pufferfish::CanonicalKmerIterator& kit) {
+    
+    int64_t cpos = cCurrPos + direction;
+    
+    ref_contig_it.at(2*cpos);
+    auto ref_kmer = ref_contig_it.read(2 * k);
+	
+    /*
+    std::cerr << "\t(k = " << k << ") checking hit between " << kit->second << " and " << cpos << "\n";
+    auto k2 = kit->first;
+    k2.fromNum(ref_kmer);
+    std::cerr << "\t\t ref_kmer = " << k2.to_str() << ", kit = " << kit->first.to_str() << "\n";
+    */
+    
+    auto match_type = kit->first.isEquivalent(ref_kmer);
+    bool matches = (match_type != KmerMatchType::NO_MATCH);
+    
+    return matches;
+  }
+
+  inline void add_next(std::vector<std::pair<int, projected_hits>> &raw_hits,
+    pufferfish::CanonicalKmerIterator& kit) {
+    auto ph = raw_hits.back().second;
+    ph.globalPos_ += direction;
+    ph.contigPos_ += direction;
+    raw_hits.push_back(std::make_pair(kit->second, ph));
+    set_state(ph);
+  }
+};
+
+
+// This method performs k-mer / hit collection 
+// using a custom implementation of the corresponding 
 // part of the pseudoalignment algorithm as described in (1).
 // Specifically, it attempts to find a small set of
 // k-mers along the fragment (`read`) that are shared with
@@ -762,7 +865,6 @@ inline bool check_direct_match(
 // [1] Bray NL, Pimentel H, Melsted P, Pachter L.
 // Near-optimal probabilistic RNA-seq quantification.
 // Nat Biotechnol. 2016;34(5):525-527.
-//
 bool hit_searcher::get_raw_hits_sketch(std::string& read,
                                        sshash::streaming_query_canonical_parsing& qc, 
                                        mindex::SkippingStrategy strat,
@@ -770,6 +872,7 @@ bool hit_searcher::get_raw_hits_sketch(std::string& read,
                                        bool verbose) {
   (void)verbose;
   bool strict_mode = (strat == mindex::SkippingStrategy::STRICT);
+
   projected_hits phits;
   auto& raw_hits = isLeft ? left_rawHits : right_rawHits;
 
@@ -1172,6 +1275,62 @@ bool hit_searcher::get_raw_hits_sketch_orig(std::string& read,
         }
     }
 
+    return raw_hits.size() != 0;
+  }
+  // std::cout << "contig" << left_rawHits[0].second.contigIdx_ << "\n";
+  
+  return raw_hits.size() != 0;
+
+}
+
+bool hit_searcher::get_raw_hits_sketch_everykmer(std::string &read,
+                  sshash::streaming_query_canonical_parsing& qc,
+                  bool isLeft,
+                  bool verbose) {
+    clear();
+    (void) verbose;
+    auto& raw_hits = isLeft ? left_rawHits : right_rawHits;
+    pufferfish::CanonicalKmerIterator kit(read), kit_end;
+    CanonicalKmer::k(k);
+    int32_t k = static_cast<int32_t>(CanonicalKmer::k());
+
+    qc.reset_state();
+    EveryKmer evs(k);
+    
+    auto ref_contig_it = sshash::bit_vector_iterator(pfi_->contigs(), 0);
+
+    // Look at every kmer: if new state, do index query
+    // Else: move forward by 1 kmer on reference and see if it matches the contig kmer.
+    //       If it matches the kmer on the contig then update proj hit and add it
+    //       Otherwise do the query on the index
+    // New state is set to true for the following - 
+    //  1) The first kmer of read
+    //  2) The immedidate contig reference kmer does not match the read kmer following the previous hit
+    //  3) The distance to contig end is 0
+    // At each kmer check we are resetting the phit variables, where the new_state is also defined
+    
+    while(kit != kit_end) {
+      if (evs.new_state)  {
+        evs.query_kmer(kit, pfi_, raw_hits, ref_contig_it, qc);
+	// new_state_cnt++;
+      } else {
+          bool matches = evs.check_match(ref_contig_it, kit);
+          if (matches) {
+            evs.add_next(raw_hits, kit);
+	    // matches_cnt++;
+          } else {
+            evs.query_kmer(kit, pfi_, raw_hits, ref_contig_it, qc); 
+	    // non_matches_cnt++;
+          }
+      }
+     /*
+      auto phits = pfi_->query(kit, qc);
+      if (!phits.empty()) {
+        raw_hits.push_back(std::make_pair(kit->second, phits));
+      }
+      */
+      ++kit;
+    }
     return raw_hits.size() != 0;
 }
 

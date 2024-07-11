@@ -5,3 +5,7 @@
 [submodule "external/doctest"]
 	path = external/doctest
 	url = https://github.com/doctest/doctest
+[submodule "external/libradicl"]
+	path = external/libradicl
+	url = https://github.com/jamshed/libradicl.git
+	branch = develop

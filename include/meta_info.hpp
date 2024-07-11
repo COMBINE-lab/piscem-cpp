@@ -51,6 +51,7 @@ inline bool write_map_info(run_stats& rs, ghc::filesystem::path& map_info_file_p
     j["num_poisoned"] = rs.num_poisoned();
     double percent_mapped = (100.0 * static_cast<double>(rs.num_hits())) / rs.num_reads();
     j["percent_mapped"] = percent_mapped;
+    j["ks_matched"] = rs.num_kmatch();
     j["runtime_seconds"] = rs.num_seconds();
     
     if (rs.ref_sig_info()) {
