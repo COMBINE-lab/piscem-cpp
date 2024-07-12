@@ -111,7 +111,6 @@ inline size_t write_rad_header(mindex::reference_index &ri, size_t bc_length,
   return chunk_offset;
 }
 
-<<<<<<< HEAD
 inline size_t write_rad_header_bulk(mindex::reference_index &ri, bool is_paired,
                                     std::ofstream &rad_file) {
   rad_writer bw;
@@ -122,30 +121,6 @@ inline size_t write_rad_header_bulk(mindex::reference_index &ri, bool is_paired,
     rh.add_refname(ri.ref_name(i));
   }
   rh.dump_to_bin(bw);
-=======
-inline void write_rad_header_atac(mindex::reference_index& ri, std::vector<std::string>& refs, RAD::Tag_Defn& tag_defn) {
-    
-    for (size_t i = 0; i < ri.num_refs(); ++i) { refs.emplace_back(ri.ref_name(i)); }
-
-    // tag_defn.add_file_tag<RAD::Type::u32>("ref_lengths");
-    tag_defn.add_file_tag<RAD::Type::u16>("cblen");
-
-    tag_defn.add_read_tag<RAD::Type::u32>("barcode");
-
-    tag_defn.add_aln_tag<RAD::Type::u32>("ref");
-    tag_defn.add_aln_tag<RAD::Type::u8>("type");
-    tag_defn.add_aln_tag<RAD::Type::u32>("start_pos");
-    tag_defn.add_aln_tag<RAD::Type::u16>("frag_len");
-}
-
-inline void write_to_rad_stream(bc_kmer_t& bck, umi_kmer_t& umi,
-                                mapping::util::MappingType map_type,
-                                std::vector<mapping::util::simple_hit>& accepted_hits,
-                                phmap::flat_hash_map<uint64_t, uint32_t>& unmapped_bc_map,
-                                uint32_t& num_reads_in_chunk, rad_writer& bw) {
-    const uint32_t barcode_len = bc_kmer_t::k();
-    const uint32_t umi_len = umi_kmer_t::k();
->>>>>>> atac_dev
 
   // where we will write the number of chunks when we know
   // how many there are
@@ -219,8 +194,22 @@ inline void write_to_rad_stream(bc_kmer_t& bck, umi_kmer_t& umi,
   return chunk_offset;
 }
 
-inline void
-write_to_rad_stream(bc_kmer_t &bck, umi_kmer_t &umi,
+inline void write_rad_header_atac(mindex::reference_index& ri, std::vector<std::string>& refs, RAD::Tag_Defn& tag_defn) {
+    
+    for (size_t i = 0; i < ri.num_refs(); ++i) { refs.emplace_back(ri.ref_name(i)); }
+
+    // tag_defn.add_file_tag<RAD::Type::u32>("ref_lengths");
+    tag_defn.add_file_tag<RAD::Type::u16>("cblen");
+
+    tag_defn.add_read_tag<RAD::Type::u32>("barcode");
+
+    tag_defn.add_aln_tag<RAD::Type::u32>("ref");
+    tag_defn.add_aln_tag<RAD::Type::u8>("type");
+    tag_defn.add_aln_tag<RAD::Type::u32>("start_pos");
+    tag_defn.add_aln_tag<RAD::Type::u16>("frag_len");
+}
+
+inline void write_to_rad_stream(bc_kmer_t &bck, umi_kmer_t &umi,
                     mapping::util::MappingType map_type,
                     std::vector<mapping::util::simple_hit> &accepted_hits,
                     phmap::flat_hash_map<uint64_t, uint32_t> &unmapped_bc_map,
@@ -298,9 +287,7 @@ write_to_rad_stream(bc_kmer_t &bck, umi_kmer_t &umi,
   ++num_reads_in_chunk;
 }
 
-<<<<<<< HEAD
-inline void
-write_to_rad_stream_bulk(mapping::util::MappingType map_type,
+inline void write_to_rad_stream_bulk(mapping::util::MappingType map_type,
                          std::vector<mapping::util::simple_hit> &accepted_hits,
                          uint32_t &num_reads_in_chunk, rad_writer &bw) {
   if (map_type == mapping::util::MappingType::UNMAPPED) {
@@ -366,11 +353,7 @@ write_to_rad_stream_bulk(mapping::util::MappingType map_type,
   ++num_reads_in_chunk;
 }
 
-} // namespace util
-} // namespace rad
 
-#endif //__RAD_UTIL_HPP__
-=======
 
 inline void write_to_rad_stream_atac(bc_kmer_t& bck, mapping::util_bin::MappingType map_type,
                                      std::vector<mapping::util_bin::simple_hit>& accepted_hits,
@@ -477,4 +460,3 @@ inline void write_to_rad_stream_atac(bc_kmer_t& bck, mapping::util_bin::MappingT
 
 
 #endif  //__RAD_UTIL_HPP__
->>>>>>> atac_dev

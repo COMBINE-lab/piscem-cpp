@@ -1277,11 +1277,7 @@ bool hit_searcher::get_raw_hits_sketch_orig(std::string& read,
 
     return raw_hits.size() != 0;
   }
-  // std::cout << "contig" << left_rawHits[0].second.contigIdx_ << "\n";
   
-  return raw_hits.size() != 0;
-
-}
 
 bool hit_searcher::get_raw_hits_sketch_everykmer(std::string &read,
                   sshash::streaming_query_canonical_parsing& qc,

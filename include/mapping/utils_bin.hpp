@@ -543,12 +543,12 @@ inline bool map_atac_read(std::string* read_seq, mapping_cache_info& map_cache,
     const bool perform_ambig_filtering = map_cache.hs.get_index()->has_ec_table();
     auto k = map_cache.k;
 
-    if (ps_skip) {
-        map_cache.has_matching_kmers = hs.get_raw_hits_sketch(*read_seq, q, true, verbose);
-    }
-    else {
+    // if (ps_skip) {
+    //     map_cache.has_matching_kmers = hs.get_raw_hits_sketch(*read_seq, q, true, verbose);
+    // }
+    // else {
         map_cache.has_matching_kmers = hs.get_raw_hits_sketch_everykmer(*read_seq, q, true, verbose);
-    }
+    // }
     
     bool early_stop = false;
 

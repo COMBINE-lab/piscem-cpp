@@ -92,7 +92,7 @@ struct sketch_hit_info {
       if (read_pos > last_read_pos_fw) {
         if (last_read_pos_fw == -1) {
           approx_pos_fw = approx_map_pos;
-
+        }
         last_ref_pos_fw = ref_pos;
         last_read_pos_fw = read_pos;
         fw_score += score_inc;
@@ -617,22 +617,7 @@ struct sketch_hit_info_no_struct_constraint {
   float rc_score{0.0};
 };
 
-<<<<<<< HEAD
 enum class fragment_end : uint8_t { LEFT, RIGHT };
-=======
-inline bool map_read(std::string* read_seq, mapping_cache_info& map_cache, bool& k_match, bool verbose = false) {
-    map_cache.clear();
-    // rebind map_cache variables to
-    // local names
-    auto& q = map_cache.q;
-    auto& hs = map_cache.hs;
-    auto& hit_map = map_cache.hit_map;
-    auto& accepted_hits = map_cache.accepted_hits;
-    auto& map_type = map_cache.map_type;
-    const bool attempt_occ_recover = map_cache.attempt_occ_recover;
-    const bool perform_ambig_filtering = map_cache.hs.get_index()->has_ec_table();
-    auto k = map_cache.k;
->>>>>>> atac_dev
 
 struct poison_state_t {
   inline void clear() {
@@ -649,7 +634,6 @@ struct poison_state_t {
     }
   }
 
-<<<<<<< HEAD
   // Returns true if the mapping was poisoned, false otherwise. This uses the
   // notion of "poison" k-mers (aka "distinguishing flanking k-mers" or DFKs[1])
   // to determine if a mapping should be discarded because it is contaminated by
@@ -667,15 +651,6 @@ struct poison_state_t {
     if (h.empty()) {
       return false;
     }
-=======
-    // if there were hits
-    if (map_cache.has_matching_kmers) {
-        k_match = true;
-        uint32_t num_valid_hits{0};
-        uint64_t total_occs{0};
-        uint64_t largest_occ{0};
-        auto& raw_hits = hs.get_left_hits();
->>>>>>> atac_dev
 
     constexpr bool verbose = false;
     bool strict_mode = (strat == mindex::SkippingStrategy::STRICT);

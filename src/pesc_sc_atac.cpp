@@ -15,11 +15,11 @@
 #include "../include/ghc/filesystem.hpp"
 #include "../include/cli11/CLI11.hpp"
 #include "../include/sc/util.hpp"
-#include "../include/spdlog/spdlog.h"
-#include "../include/spdlog/sinks/stdout_color_sinks.h"
+#include "../include/spdlog_piscem/spdlog.h"
+#include "../include/spdlog_piscem/sinks/stdout_color_sinks.h"
 #include "../include/meta_info.hpp"
 #include "../include/mapping/utils.hpp"
-#include "check_overlap.cpp"
+// #include "check_overlap.cpp"
 //#include "FastxParser.cpp"
 //#include "hit_searcher.cpp"
 #include "zlib.h"
@@ -62,9 +62,10 @@ bool map_fragment(fastx_parser::ReadTrip& record, mapping_cache_info& map_cache_
 
     bool km = false; //kmatch checker
     bool early_exit_left = mapping::util_bin::map_atac_read(&record.first.seq, map_cache_left, false, 
-                                    km, binning, psc_off, ps_skip, thr);  
+                                    km, binning, psc_off, ps_skip, thr);
     bool right_km = false;
-    bool early_exit_right = mapping::util_bin::map_atac_read(&record.second.seq, map_cache_right, false, right_km, binning, psc_off, ps_skip, thr);
+    bool early_exit_right = mapping::util_bin::map_atac_read(&record.second.seq, map_cache_right, false, 
+                                    right_km, binning, psc_off, ps_skip, thr);
   
     if(km | right_km) {
         ++k_match;
@@ -127,29 +128,29 @@ void do_map(mindex::reference_index& ri,
                     RAD::RAD_Writer& rw,
                     RAD::Token token) {
 
-    auto log_level = spdlog::get_level();
+    auto log_level = spdlog_piscem::get_level();
     auto write_mapping_rate = false;
 
     switch (log_level) {
-        case spdlog::level::level_enum::trace:
+        case spdlog_piscem::level::level_enum::trace:
             write_mapping_rate = true;
             break;
-        case spdlog::level::level_enum::debug:
+        case spdlog_piscem::level::level_enum::debug:
             write_mapping_rate = true;
             break;
-        case spdlog::level::level_enum::info:
+        case spdlog_piscem::level::level_enum::info:
             write_mapping_rate = true;
             break;
-        case spdlog::level::level_enum::warn:
+        case spdlog_piscem::level::level_enum::warn:
             write_mapping_rate = false;
             break;
-        case spdlog::level::level_enum::err:
+        case spdlog_piscem::level::level_enum::err:
             write_mapping_rate = false;
             break;
-        case spdlog::level::level_enum::critical:
+        case spdlog_piscem::level::level_enum::critical:
             write_mapping_rate = false;
             break;
-        case spdlog::level::level_enum::off:
+        case spdlog_piscem::level::level_enum::off:
             write_mapping_rate = false;
             break;
         default:
@@ -291,12 +292,12 @@ int run_pesc_sc_atac(int argc, char** argv) {
     
     CLI11_PARSE(app, argc, argv);
     
-    spdlog::drop_all();
-    auto logger = spdlog::create<spdlog::sinks::stdout_color_sink_mt>("");
+    spdlog_piscem::drop_all();
+    auto logger = spdlog_piscem::create<spdlog_piscem::sinks::stdout_color_sink_mt>("");
     logger->set_pattern("%+");
 
-    if (po.quiet) { logger->set_level(spdlog::level::warn); }
-    spdlog::set_default_logger(logger);
+    if (po.quiet) { logger->set_level(spdlog_piscem::level::warn); }
+    spdlog_piscem::set_default_logger(logger);
 
     nthread = po.nthread;
 
@@ -312,13 +313,13 @@ int run_pesc_sc_atac(int argc, char** argv) {
     std::ofstream bed_file(bed_file_path.string());
 
     if (!bed_file.good()) {
-        spdlog::critical("Could not open {} for writing.", bed_file_path.string());
+        spdlog_piscem::critical("Could not open {} for writing.", bed_file_path.string());
         throw std::runtime_error("error creating bed file.");
     }
 
     std::ofstream unmapped_bc_file(unmapped_bc_file_path.string());
     if (!unmapped_bc_file.good()) {
-        spdlog::critical("Could not open {} for writing.", unmapped_bc_file_path.string());
+        spdlog_piscem::critical("Could not open {} for writing.", unmapped_bc_file_path.string());
         throw std::runtime_error("error creating unmapped barcode file.");
     }
 
@@ -383,12 +384,12 @@ int run_pesc_sc_atac(int argc, char** argv) {
    
     for (auto& w : workers) { w.join(); }
     rparser.stop();
-    spdlog::info("finished mapping.");
+    spdlog_piscem::info("finished mapping.");
     rw.close();
     out_info.bed_file.close();
     
     if (!out_info.bed_file) {
-        spdlog::critical(
+        spdlog_piscem::critical(
             "The BED file stream had an invalid status after "
             "close; so some operation(s) may"
             "have failed!\nA common cause for this is lack "
@@ -409,7 +410,7 @@ int run_pesc_sc_atac(int argc, char** argv) {
 
     ghc::filesystem::path map_info_file_path = output_path / "map_info.json";
     bool info_ok = piscem::meta_info::write_map_info(rs, map_info_file_path);
-    if (!info_ok) { spdlog::critical("failed to write map_info.json file"); }
+    if (!info_ok) { spdlog_piscem::critical("failed to write map_info.json file"); }
 
     return 0;
 }

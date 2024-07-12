@@ -179,7 +179,7 @@ target_link_libraries(pesc-bulk pesc_static ${CLOUDFLARE_ZLIB} Threads::Threads 
 
 add_executable(pesc-sc-atac src/pesc_sc_atac_runner.cpp) 
 target_include_directories(pesc-sc-atac PUBLIC ${CMAKE_SOURCE_DIR}/include ${ZLIB_INCLUDE_DIRS} ${LIBRADICL_INCLUDE})
-target_link_libraries(pesc-sc-atac pesc_static ZLIB::ZLIB Threads::Threads sshash_static ${MALLOC_LIB} radicl)
+target_link_libraries(pesc-sc-atac pesc_static ${CLOUDFLARE_ZLIB} Threads::Threads sshash_static ${MALLOC_LIB} radicl)
 #target_link_directories(pesc-sc-atac PUBLIC /fs/cbcb-lab/rob/students/noor/miniforge3/lib)
 add_dependencies(pesc-sc-atac radicl)
 
@@ -224,6 +224,7 @@ add_dependencies(check zlib-cloudflare)
 add_dependencies(evaluator zlib-cloudflare)
 add_dependencies(build zlib-cloudflare)
 add_dependencies(pesc-sc zlib-cloudflare)
+add_dependencies(pesc-sc-atac zlib-cloudflare)
 add_dependencies(pesc-bulk zlib-cloudflare)
 add_dependencies(build-poison-table zlib-cloudflare)
 add_dependencies(poison_filter zlib-cloudflare)
@@ -232,15 +233,15 @@ add_dependencies(poison_filter zlib-cloudflare)
 #add_executable(test_parse src/test_parse_geo.cpp)
 #target_include_directories(evaluator PRIVATE ${CMAKE_SOURCE_DIR}/include)
 
-install(TARGETS build build-poison-table pesc-sc pesc-bulk 
+install(TARGETS build build-poison-table pesc-sc pesc-bulk pesc-sc-atac
         CONFIGURATIONS Debug
         RUNTIME DESTINATION Debug/bin)
 
-install(TARGETS build build-poison-table pesc-sc pesc-bulk
+install(TARGETS build build-poison-table pesc-sc pesc-bulk pesc-sc-atac
   CONFIGURATIONS Release
   RUNTIME DESTINATION Release/bin)
 
-install(TARGETS build build-poison-table pesc-sc pesc-bulk
+install(TARGETS build build-poison-table pesc-sc pesc-bulk pesc-sc-atac
         CONFIGURATIONS Debug
         RUNTIME DESTINATION Debug/bin)
 

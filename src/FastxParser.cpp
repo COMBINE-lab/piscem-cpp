@@ -647,6 +647,78 @@ template <> bool FastxParser<ReadQualPair>::start() {
   }
 }
 
+template <> bool FastxParser<ReadTrip>::start() {
+  if (numParsing_ == 0) {
+    isActive_ = true;
+    // Some basic checking to ensure the read files look "sane".
+    if (inputStreams_.size() != inputStreams2_.size()) {
+      throw std::invalid_argument("There should be the same number "
+                                  "of files for the left and right reads");
+    }
+    for (size_t i = 0; i < inputStreams_.size(); ++i) {
+      auto& s1 = inputStreams_[i];
+      auto& s2 = inputStreams2_[i];
+      auto& s3 = inputStreams3_[i];
+      if (s1 == s2 || s1 == s3 || s3 == s2) {
+        throw std::invalid_argument("You provided the same file " + s1 +
+                                    " as all the three files");
+      }
+    }
+
+    threadResults_.resize(numParsers_);
+    std::fill(threadResults_.begin(), threadResults_.end(), 0);
+
+    for (size_t i = 0; i < numParsers_; ++i) {
+      ++numParsing_;
+      parsingThreads_.emplace_back(new std::thread([this, i]() {
+            this->threadResults_[i] = parse_read_triplets(this->inputStreams_, this->inputStreams2_,
+                      this->inputStreams3_, this->numParsing_, this->consumeContainers_[i].get(),
+                      this->produceReads_[i].get(), this->workQueue_,
+                      this->seqContainerQueue_, this->readQueue_);
+      }));
+    }
+    return true;
+  } else {
+    return false;
+  }
+}
+
+template <> bool FastxParser<ReadQualTrip>::start() {
+  if (numParsing_ == 0) {
+    isActive_ = true;
+    // Some basic checking to ensure the read files look "sane".
+    if (inputStreams_.size() != inputStreams2_.size() || inputStreams_.size() != inputStreams3_.size()) {
+      throw std::invalid_argument("There should be the same number "
+                                  "of files for the three read files");
+    }
+    for (size_t i = 0; i < inputStreams_.size(); ++i) {
+      auto& s1 = inputStreams_[i];
+      auto& s2 = inputStreams2_[i];
+      auto& s3 = inputStreams3_[i];
+      if (s1 == s2 || s1 == s3 || s2 == s3) {
+        throw std::invalid_argument("You provided the same file " + s1 +
+                                    " for all the three files");
+      }
+    }
+
+    threadResults_.resize(numParsers_);
+    std::fill(threadResults_.begin(), threadResults_.end(), 0);
+
+    for (size_t i = 0; i < numParsers_; ++i) {
+      ++numParsing_;
+      parsingThreads_.emplace_back(new std::thread([this, i]() {
+            this->threadResults_[i] = parse_read_triplets(this->inputStreams_, this->inputStreams2_,
+                      this->inputStreams3_, this->numParsing_, this->consumeContainers_[i].get(),
+                      this->produceReads_[i].get(), this->workQueue_,
+                      this->seqContainerQueue_, this->readQueue_);
+      }));
+    }
+    return true;
+  } else {
+    return false;
+  }
+}
+
 template <typename T> bool FastxParser<T>::refill(ReadGroup<T>& seqs) {
   finishedWithGroup(seqs);
   auto curMaxDelay = fastx_parser::thread_utils::MIN_BACKOFF_ITERS;
@@ -669,6 +741,8 @@ template <typename T> void FastxParser<T>::finishedWithGroup(ReadGroup<T>& s) {
 
 template class FastxParser<ReadSeq>;
 template class FastxParser<ReadPair>;
+template class FastxParser<ReadTrip>;
 // template class FastxParser<ReadQual>;
 template class FastxParser<ReadQualPair>;
+template class FastxParser<ReadQualTrip>;
 } // namespace fastx_parser
