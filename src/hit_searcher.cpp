@@ -1298,7 +1298,7 @@ bool hit_searcher::get_raw_hits_sketch_everykmer(std::string &read,
     // Look at every kmer: if new state, do index query
     // Else: move forward by 1 kmer on reference and see if it matches the contig kmer.
     //       If it matches the kmer on the contig then update proj hit and add it
-    //       Otherwise do the query on the index
+    //       Otherwise do the index query
     // New state is set to true for the following - 
     //  1) The first kmer of read
     //  2) The immedidate contig reference kmer does not match the read kmer following the previous hit
@@ -1319,12 +1319,6 @@ bool hit_searcher::get_raw_hits_sketch_everykmer(std::string &read,
 	    // non_matches_cnt++;
           }
       }
-     /*
-      auto phits = pfi_->query(kit, qc);
-      if (!phits.empty()) {
-        raw_hits.push_back(std::make_pair(kit->second, phits));
-      }
-      */
       ++kit;
     }
     return raw_hits.size() != 0;

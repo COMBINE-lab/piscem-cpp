@@ -38,7 +38,9 @@
 using namespace klibpp;
 using BarCodeRecovered = single_cell::util::BarCodeRecovered;
 using bc_kmer_t = rad::util::bc_kmer_t;
-using mapping::util_bin::mapping_cache_info;
+using mapping::util::mapping_cache_info;
+using mapping::util::poison_state_t;
+using mapping::util::bin_pos;
 
 struct pesc_atac_options {
     std::string index_basename;
@@ -46,27 +48,42 @@ struct pesc_atac_options {
     std::vector<std::string> right_read_filenames;
     std::vector<std::string> barcode_filenames;
     std::string output_dirname;
-    bool psc_off{false};
-    bool ps_skip{true};
-    float thr{1.0};
+    bool no_poison{true};
+    bool enable_structural_constraints{false};
+    float thr{0.7};
     bool quiet{false};
     bool check_ambig_hits{false};
     uint32_t max_ec_card{256};
+    uint64_t bin_size{2000};
+    uint64_t overlap{300};
+    mindex::SkippingStrategy skip_strat{mindex::SkippingStrategy::EVERY};
     size_t nthread{16};
 };
 
-bool map_fragment(fastx_parser::ReadTrip& record, mapping_cache_info& map_cache_left,
-                  mapping_cache_info& map_cache_right, mapping_cache_info& map_cache_out, 
-                  std::atomic<uint64_t>& k_match, bool psc_off, bool ps_skip, float thr, 
-                  mapping::util_bin::bin_pos& binning) {
+template <typename mapping_cache_info_t>
+bool map_fragment(fastx_parser::ReadTrip& record, 
+                  poison_state_t& poison_state,
+                  mapping_cache_info_t& map_cache_left,
+                  mapping_cache_info_t& map_cache_right,
+                  mapping_cache_info_t& map_cache_out, 
+                  std::atomic<uint64_t>& k_match, 
+                  mapping::util::bin_pos& binning) {
 
     bool km = false; //kmatch checker
-    bool early_exit_left = mapping::util_bin::map_atac_read(&record.first.seq, map_cache_left, false, 
-                                    km, binning, psc_off, ps_skip, thr);
+    map_cache_out.clear();
+    poison_state.clear();
+    poison_state.set_fragment_end(mapping::util::fragment_end::LEFT);
+    bool early_exit_left = mapping::util::map_read(&record.first.seq, map_cache_left, poison_state, binning);
+    if (poison_state.is_poisoned()) {
+        return false;
+    } 
+
     bool right_km = false;
-    bool early_exit_right = mapping::util_bin::map_atac_read(&record.second.seq, map_cache_right, false, 
-                                    right_km, binning, psc_off, ps_skip, thr);
-  
+    poison_state.set_fragment_end(mapping::util::fragment_end::RIGHT);
+    bool early_exit_right = mapping::util::map_read(&record.second.seq, map_cache_right, poison_state, binning);
+    if (poison_state.is_poisoned()) {
+        return false;
+    }  
     if(km | right_km) {
         ++k_match;
     }
@@ -113,18 +130,18 @@ public:
     // the file where the sequence from first fastq and string mapping will be stored
 };
 
-template <typename FragT>
+template <typename FragT, typename SketchHitT>
 void do_map(mindex::reference_index& ri,
-                    fastx_parser::FastxParser<FragT>& parser, 
-                    std::atomic<uint64_t>& global_nr, 
+                    fastx_parser::FastxParser<FragT>& parser,
+                    mapping::util::bin_pos& binning, 
+                    poison_table &poison_map,  
+                    std::atomic<uint64_t>& global_nr,
                     std::atomic<uint64_t>& global_nhits,
                     std::atomic<uint64_t>& global_nmult,
+                    std::atomic<uint64_t>& k_match,
+                    std::atomic<uint64_t>& global_npoisoned,
                     pesc_output_info& out_info,
                     std::mutex& iomut,
-                    std::atomic<uint64_t>& k_match,
-                    bool psc_off,
-                    bool ps_skip,
-                    float& thr,
                     RAD::RAD_Writer& rw,
                     RAD::Token token) {
 
@@ -157,11 +174,20 @@ void do_map(mindex::reference_index& ri,
             write_mapping_rate = false;
     }
 
-    mapping_cache_info map_cache_left(ri);
-    mapping_cache_info map_cache_right(ri);
-    mapping_cache_info map_cache_out(ri);
+    bool use_poison = !poison_map.empty();
+    poison_state_t poison_state;
+    if (use_poison) {
+        poison_state.ptab = &poison_map;
+    }
+    // the reads are paired
+    if constexpr (std::is_same_v<fastx_parser::ReadTrip, FragT>) {
+        poison_state.paired_for_mapping = true;
+    }
 
-    mapping::util_bin::bin_pos binning(&ri);
+    mapping_cache_info<SketchHitT> map_cache_left(ri);
+    mapping_cache_info<SketchHitT> map_cache_right(ri);
+    mapping_cache_info<SketchHitT> map_cache_out(ri);
+
     size_t max_chunk_reads = 5000;
 
     auto rg = parser.getReadGroup();
@@ -196,10 +222,12 @@ void do_map(mindex::reference_index& ri,
             // if we couldn't correct it with 1 `N`, then skip.
             
             bool had_early_stop = 
-               map_fragment(record, map_cache_left, map_cache_right, map_cache_out, k_match,
-                   psc_off, ps_skip, thr, binning);
+               map_fragment(record, poison_state, map_cache_left, map_cache_right, map_cache_out, k_match,
+                   binning);
             (void)had_early_stop;
-            
+            if (poison_state.is_poisoned()) {
+                global_npoisoned++;
+            }    
             
             global_nhits += map_cache_out.accepted_hits.empty() ? 0 : 1;
             global_nmult += map_cache_out.accepted_hits.size() > 1 ? 1 : 0;
@@ -258,6 +286,8 @@ extern "C" {
 int run_pesc_sc_atac(int argc, char** argv) {
     std::ios_base::sync_with_stdio(false);
     pesc_atac_options po;
+    std::string skipping_rule;
+
     size_t nthread{16};
     bool quiet{false};
     CLI::App app{"Single cell Atac Seq mapper"};
@@ -266,7 +296,6 @@ int run_pesc_sc_atac(int argc, char** argv) {
         ->required()
         ->delimiter(',');
     app.add_option("-2,--read2", po.right_read_filenames, "path to list of read 2 files")
-        ->required()
         ->delimiter(',');
     app.add_option("-b,--barcode", po.barcode_filenames, "path to list of barcodes")
         ->required()
@@ -275,29 +304,54 @@ int run_pesc_sc_atac(int argc, char** argv) {
     app.add_option("-t,--threads", po.nthread,
                    "An integer that specifies the number of threads to use")
         ->default_val(16);
-    app.add_option("--psc_off", po.psc_off,
-                   "whether to switch structural constraints off")
-        ->default_val(false);
-    app.add_option("--ps_skip", po.ps_skip,
-                   "whether to implement pseudoalignment with skipping")
+    app.add_option("--no-poison", po.no_poison,
+                "Do not filter reads for poison k-mers, even if a poison table "
+                "exists for the index")
         ->default_val(true);
+    app.add_flag("-c,--struct-constraints", po.enable_structural_constraints,
+                "Apply structural constraints when performing mapping");
+    app
+        .add_option(
+        "--skipping-strategy", skipping_rule,
+        "Which skipping rule to use for pseudoalignment ({strict, permissive, strict})")
+        ->default_val("permissive");
+    app.add_flag("--quiet", po.quiet,
+                "Try to be quiet in terms of console output");
     app.add_option("--thr", po.thr,
-                   "threshold for psa")
-        ->default_val(1.0);
-    app.add_flag("--quiet", po.quiet, "try to be quiet in terms of console output");
+                "threshold for psa")
+        ->default_val(0.7);
+    app.add_option("--bin_size", po.bin_size,
+                "size for binning")
+        ->default_val(2000);
+    app.add_option("--overlap", po.overlap,
+                "size for overlap")
+        ->default_val(300);
     auto check_ambig =
         app.add_flag("--check-ambig-hits", po.check_ambig_hits,
-                     "check the existence of highly-frequent hits in mapped targets, rather than "
-                     "ignoring them.");
+                    "check the existence of highly-frequent hits in mapped targets, rather than "
+                    "ignoring them.");
     
     CLI11_PARSE(app, argc, argv);
+    bool paired_end = !po.right_read_filenames.empty();
     
     spdlog_piscem::drop_all();
     auto logger = spdlog_piscem::create<spdlog_piscem::sinks::stdout_color_sink_mt>("");
     logger->set_pattern("%+");
 
-    if (po.quiet) { logger->set_level(spdlog_piscem::level::warn); }
+    if (po.quiet) { spdlog_piscem::set_level(spdlog_piscem::level::warn); }
     spdlog_piscem::set_default_logger(logger);
+
+    spdlog_piscem::info("enable structural constraints : {}",
+                      po.enable_structural_constraints);
+
+    std::optional<mindex::SkippingStrategy> skip_strat_opt =
+        mindex::SkippingStrategy::from_string(skipping_rule);
+    if (!skip_strat_opt) {
+        spdlog_piscem::critical("The skipping strategy must be one of \"strict\", "
+                                " \"every\" or \"permissive\", but \"{}\" was passed in",
+                                skipping_rule);
+        return 1;
+    }
 
     nthread = po.nthread;
 
@@ -323,13 +377,26 @@ int run_pesc_sc_atac(int argc, char** argv) {
         throw std::runtime_error("error creating unmapped barcode file.");
     }
 
+    poison_table ptab;
+    if (!po.no_poison and poison_table::exists(po.index_basename)) {
+        /*
+        spdlog_piscem::info("Loading poison k-mer map...");
+        phmap::BinaryInputArchive ar_in(pmap_file.c_str());
+        poison_map.phmap_load(ar_in);
+        spdlog_piscem::info("done");
+        */
+        poison_table ptab_tmp(po.index_basename);
+        ptab = std::move(ptab_tmp);
+    } else {
+        spdlog_piscem::info(
+        "No poison k-mer map exists, or it was requested not to be used");
+    }
 
     pesc_output_info out_info;
     out_info.bed_file = std::move(bed_file);
     out_info.unmapped_bc_file = std::move(unmapped_bc_file);
     
     mindex::reference_index ri(po.index_basename);
-    uint8_t is_paired = 1; // need to include single_end
     std::string rad_file_path = output_path;
     rad_file_path.append("/map.rad");
     RAD::Tag_Defn tag_defn;
@@ -339,7 +406,10 @@ int run_pesc_sc_atac(int argc, char** argv) {
     std::vector<std::string> refs;
     bc_kmer_t::k(16);
     rad::util::write_rad_header_atac(ri, refs, tag_defn);
-    const RAD::Header header(is_paired, refs.size(), refs);
+    mapping::util::bin_pos binning(&ri, po.thr, po.bin_size, po.overlap);
+    
+    std::cout << "paired_end " << paired_end << std::endl;
+    const RAD::Header header(static_cast<uint8_t>(paired_end), refs.size(), refs);
     
     RAD::RAD_Writer rw(header, tag_defn, file_tag_vals, rad_file_path, nthread);
     
@@ -358,32 +428,41 @@ int run_pesc_sc_atac(int argc, char** argv) {
     std::atomic<uint64_t> global_nh{0};
     std::atomic<uint64_t> global_nmult{0}; // number of multimapping
     std::atomic<uint64_t> k_match{0}; //whether the kmer exists in the unitig table
+    std::atomic<uint64_t> global_np{0}; //whether the kmer exists in the unitig table
     std::mutex iomut;
 
-    bool psc_off=po.psc_off;
-    bool ps_skip=po.ps_skip;
-    float thr=po.thr;
-    fastx_parser::FastxParser<fastx_parser::ReadTrip> rparser(
-    po.left_read_filenames, po.right_read_filenames, po.barcode_filenames, nthread, np);
-    rparser.start();
-    if (nthread >= 6) {
-            np += 1;
-            nthread -= 1;
+    if (paired_end) {
+        using FragmentT = fastx_parser::ReadTrip;
+        fastx_parser::FastxParser<fastx_parser::ReadTrip> rparser(
+        po.left_read_filenames, po.right_read_filenames, po.barcode_filenames, nthread, np);
+        rparser.start();
+        if (nthread >= 6) {
+                np += 1;
+                nthread -= 1;
+        }
+        std::vector<std::thread> workers;
+    
+        for (size_t i = 0; i < nthread; ++i) {
+            workers.push_back(std::thread(
+                [&ri, &po, &rparser, &binning, &ptab, &global_nr, &global_nh, &global_nmult, &k_match, &global_np,
+                 &out_info, &iomut, &rw]() {
+                    const auto token = rw.get_token();
+                    if (!po.enable_structural_constraints) {
+                        using SketchHitT = mapping::util::sketch_hit_info_no_struct_constraint;
+                        do_map<FragmentT, SketchHitT>(ri, rparser, binning, ptab, global_nr, global_nh, global_nmult,
+                            k_match, global_np, out_info, iomut, rw, token);
+                    } else {
+                        using SketchHitT = mapping::util::sketch_hit_info;   
+                        do_map<FragmentT, SketchHitT>(ri, rparser, binning, ptab, global_nr, global_nh, global_nmult,
+                            k_match, global_np, out_info, iomut, rw, token);
+                    }
+                }));
+        }
+    
+        for (auto& w : workers) { w.join(); }
+        rparser.stop();
     }
-    std::vector<std::thread> workers;
-   
-    for (size_t i = 0; i < nthread; ++i) {
-        workers.push_back(std::thread(
-            [&ri, &rparser, &global_nr, &global_nh, &global_nmult, &out_info, &iomut, &k_match, 
-            &psc_off, &ps_skip, &thr, &rw]() {
-                const auto token = rw.get_token();
-                do_map(ri, rparser, global_nr, global_nh, global_nmult, out_info, iomut, 
-                    k_match, psc_off, ps_skip, thr, rw, token);
-            }));
-    }
-   
-    for (auto& w : workers) { w.join(); }
-    rparser.stop();
+
     spdlog_piscem::info("finished mapping.");
     rw.close();
     out_info.bed_file.close();
@@ -398,7 +477,7 @@ int run_pesc_sc_atac(int argc, char** argv) {
         return 1;
     }
     out_info.unmapped_bc_file.close();
- 
+
     auto end_t = std::chrono::high_resolution_clock::now();
     auto num_sec = std::chrono::duration_cast<std::chrono::seconds>(end_t - start_t);
     piscem::meta_info::run_stats rs;

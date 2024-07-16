@@ -355,14 +355,14 @@ inline void write_to_rad_stream_bulk(mapping::util::MappingType map_type,
 
 
 
-inline void write_to_rad_stream_atac(bc_kmer_t& bck, mapping::util_bin::MappingType map_type,
-                                     std::vector<mapping::util_bin::simple_hit>& accepted_hits,
+inline void write_to_rad_stream_atac(bc_kmer_t& bck, mapping::util::MappingType map_type,
+                                     std::vector<mapping::util::simple_hit>& accepted_hits,
                                      phmap::flat_hash_map<uint64_t, uint32_t>& unmapped_bc_map,
                                      uint32_t& num_reads_in_chunk, std::string& strbuff, 
                                      std::string& barcode, mindex::reference_index& ri, 
                                      RAD::RAD_Writer& rw, RAD::Token& token) {
                                         
-    if (map_type == mapping::util_bin::MappingType::UNMAPPED) {
+    if (map_type == mapping::util::MappingType::UNMAPPED) {
         unmapped_bc_map[bck.word(0)] += 1;
         // do nothing here
         return;
@@ -397,24 +397,24 @@ inline void write_to_rad_stream_atac(bc_kmer_t& bck, mapping::util_bin::MappingT
         uint16_t frag_len = std::numeric_limits<uint16_t>::max();
 
         switch (map_type) {
-            case mapping::util_bin::MappingType::SINGLE_MAPPED:
+            case mapping::util::MappingType::SINGLE_MAPPED:
                 // then the posittion must be that of the only
                 // mapped read.
                 leftmost_pos = std::max(0, aln.pos);
                 type = 1;
                 break;
-            case mapping::util_bin::MappingType::MAPPED_FIRST_ORPHAN:
+            case mapping::util::MappingType::MAPPED_FIRST_ORPHAN:
                 leftmost_pos = std::max(0, aln.pos);
                 type = 2;
                 break;
-            case mapping::util_bin::MappingType::MAPPED_SECOND_ORPHAN:
+            case mapping::util::MappingType::MAPPED_SECOND_ORPHAN:
                 // it's not mate pos b/c in this case we
                 // simply returned the right accepted hits
                 // as the accepted hits
                 leftmost_pos = std::max(0, aln.pos);
                 type = 3;
                 break;
-            case mapping::util_bin::MappingType::MAPPED_PAIR:
+            case mapping::util::MappingType::MAPPED_PAIR:
                 // if we actually have a paird fragment get the
                 // leftmost position
                 leftmost_pos = std::min(aln.pos, aln.mate_pos);
@@ -429,7 +429,8 @@ inline void write_to_rad_stream_atac(bc_kmer_t& bck, mapping::util_bin::MappingT
                     leftmost_pos = 0;
                 }
                 break;
-            case mapping::util_bin::MappingType::UNMAPPED:
+            case mapping::util::MappingType::UNMAPPED:
+                type = 8;
                 // don't do anything here
                 break;
         }

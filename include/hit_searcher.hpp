@@ -24,7 +24,8 @@ class SkippingStrategy {
 public:
   enum Value : uint8_t {
     STRICT = 0,
-    PERMISSIVE
+    PERMISSIVE,
+    EVERY
   };
 
   SkippingStrategy() = default;
@@ -33,6 +34,8 @@ public:
       return STRICT;
     } else if (s == "permissive") {
       return PERMISSIVE;
+    } else if (s == "every") {
+      return EVERY;
     } else {
       return std::nullopt;
     }
@@ -66,9 +69,9 @@ public:
                   bool verbose=false);
   
   bool get_raw_hits_sketch_everykmer(std::string &read,
-                  sshash::streaming_query_canonical_parsing& qc,
-                  bool isLeft=false,
-                  bool verbose=false);
+                  sshash::streaming_query_canonical_parsing& qc,                  
+                  bool isLeft = false,
+                  bool verbose = false);
 
 void clear();
 
