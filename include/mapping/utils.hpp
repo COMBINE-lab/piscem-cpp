@@ -28,7 +28,7 @@ class bin_pos {
     public:
         explicit bin_pos(mindex::reference_index* pfi,
                         float thr = 0.7,
-                        uint64_t bin_size = 2000,
+                        uint64_t bin_size = 20000,
                         uint64_t overlap = 300
                         ): thr(thr), bin_size(bin_size), overlap(overlap) { 
             pfi_ = pfi,
@@ -60,6 +60,7 @@ class bin_pos {
             uint64_t bin1 = (cum_len + pos + 1)/bin_size; // 1 added since 0 based
             uint64_t bin2 = (cum_len + pos + 1) > (bin1+1)*bin_size-overlap ? (bin1+1) :
                 std::numeric_limits<uint64_t>::max(); // std::numeric_limits<uint32_t>::max() indicates that the kmer does not belong to the overlapping region
+            // std::cout << "tid pos bins " << tid << " " << pos << " " << bin1 << " " << bin2 << std::endl;
             return {bin1, bin2};
         }
         mindex::reference_index* get_ref() { return pfi_;}
@@ -109,6 +110,16 @@ struct simple_hit {
   }
 };
 
+void print_hits(const std::vector<mapping::util::simple_hit> &hits ) {
+    for (const auto& hit : hits) {
+        std::cout << "isFw: " << hit.is_fw << std::endl;
+        std::cout << "pos: " << hit.pos << std::endl;
+        std::cout << "num hits: " << hit.num_hits << std::endl;
+        std::cout << "tid: " << hit.tid << std::endl;
+        std::cout << "bin_id: " << hit.bin_id << std::endl;
+        std::cout << "------------------------" << std::endl;
+    }
+}
 enum class MappingType : uint8_t {
   UNMAPPED = 0,
   SINGLE_MAPPED = 1,
@@ -1183,7 +1194,6 @@ map_read(std::string *read_seq, mapping_cache_info_t &map_cache,
 
     uint32_t best_alt_hits = 0;
     // int32_t signed_read_len = static_cast<int32_t>(record.seq.length());
-
     for (auto &kv : hit_map) {
       auto best_hit_dir = kv.second.best_hit_direction();
 
@@ -1251,6 +1261,7 @@ inline bool
 map_read(std::string *read_seq, mapping_cache_info_t &map_cache,
          poison_state_t &poison_state,
          mapping::util::bin_pos& binning,
+         bool &k_match,
          mindex::SkippingStrategy strat = mindex::SkippingStrategy::STRICT,
          bool verbose = false) {
   map_cache.clear();
@@ -1269,6 +1280,7 @@ map_read(std::string *read_seq, mapping_cache_info_t &map_cache,
 
   map_cache.has_matching_kmers =
     hs.get_raw_hits_sketch_everykmer(*read_seq, q, true, false);
+  
   bool early_stop = false;
 
   // if we are checking ambiguous hits, the maximum EC
@@ -1277,11 +1289,11 @@ map_read(std::string *read_seq, mapping_cache_info_t &map_cache,
 
   // if there were hits
   if (map_cache.has_matching_kmers) {
-    uint32_t num_valid_hits{0};
+    k_match = true;
+    float num_valid_hits{0};
     uint64_t total_occs{0};
     uint64_t largest_occ{0};
     auto &raw_hits = hs.get_left_hits();
-
     // if we are applying a poison filter, do it here.
     if (apply_poison_filter) {
       bool was_poisoned = poison_state.scan_raw_hits(
@@ -1313,7 +1325,7 @@ map_read(std::string *read_seq, mapping_cache_info_t &map_cache,
     auto collect_mappings_from_hits_thr =
       [&max_stretch, &min_occ, &hit_map, &num_valid_hits, &total_occs,
        &largest_occ, &binning, signed_rl, k, perform_ambig_filtering, thr,
-       verbose](auto &raw_hits, auto &prev_read_pos, auto &max_allowed_occ,
+       verbose, &read_seq](auto &raw_hits, auto &prev_read_pos, auto &max_allowed_occ,
                 auto &ambiguous_hit_indices) -> bool {
       (void)verbose;
       int32_t hit_idx{0};
@@ -1323,12 +1335,11 @@ map_read(std::string *read_seq, mapping_cache_info_t &map_cache,
         auto &read_pos = raw_hit.first;
         auto &proj_hits = raw_hit.second;
         auto &refs = proj_hits.refRange;
-
+        // std::cout << "refs len, read_pos " << refs.size() << " " << read_seq->substr(read_pos, 23) << std::endl;
         uint64_t num_occ = static_cast<uint64_t>(refs.size());
         min_occ = std::min(min_occ, num_occ);
 
         prev_read_pos = read_pos;
-
         if (num_occ <= max_allowed_occ) {
           total_occs += num_occ;
           largest_occ = (num_occ > largest_occ) ? num_occ : largest_occ;
@@ -1339,6 +1350,7 @@ map_read(std::string *read_seq, mapping_cache_info_t &map_cache,
             uint32_t tid = sshash::util::transcript_id(v);
             int32_t pos = static_cast<int32_t>(ref_pos_ori.pos);
             std::pair<uint64_t, uint64_t> bins = binning.get_bin_id(tid, pos);
+            
             bool ori = ref_pos_ori.isFW;
 
             auto& target1 = hit_map[bins.first];
@@ -1403,7 +1415,6 @@ map_read(std::string *read_seq, mapping_cache_info_t &map_cache,
         collect_mappings_from_hits_thr(raw_hits, prev_read_pos, max_allowed_occ,
                                    map_cache.ambiguous_hit_indices);
     }
-
     // Further filtering of mappings by ambiguous k-mers
     if (perform_ambig_filtering and !hit_map.empty() and
         !map_cache.ambiguous_hit_indices.empty()) {
@@ -1496,7 +1507,7 @@ map_read(std::string *read_seq, mapping_cache_info_t &map_cache,
     uint32_t best_alt_hits = 0;
     num_valid_hits = num_valid_hits*thr;
     // int32_t signed_read_len = static_cast<int32_t>(record.seq.length());
-
+   
     for (auto &kv : hit_map) {
       auto best_hit_dir = kv.second.best_hit_direction();
 
@@ -1699,13 +1710,7 @@ inline void merge_se_mappings(mapping_cache_info_t& map_cache_left,
     size_t num_accepted_left = accepted_left.size();
     size_t num_accepted_right = accepted_right.size();
     std::unordered_map<int32_t, int8_t> hit_pos; // A kmer can map to two bins for the same position, we only want 1 entry
-    // std::cout << "num hits " << num_accepted_left << " " << num_accepted_right << "\n";
-    // std::cout << "matching kmers " << had_matching_kmers_left << " " << had_matching_kmers_right << "\n";
     if ((num_accepted_left > 0) and (num_accepted_right > 0)) {
-        // std::cout << "entered both\n";
-        // print_hits(accepted_left);
-        // std::cout << "left right\n";
-        // print_hits(accepted_right);
         // look for paired end mappings
         // so we have to sort our accepted hits
         struct {
@@ -1760,11 +1765,7 @@ inline void merge_se_mappings(mapping_cache_info_t& map_cache_left,
                         int32_t pos_fw = first1->is_fw ? first1->pos : first2->pos;
                         int32_t pos_rc = first1->is_fw ? first2->pos : first1->pos;
                         int32_t frag_len = (pos_rc - pos_fw);
-                        // std::cout << frag_len << " fragment length\n";
-                        if (frag_len == 0) {
-                            // std::cout << "0 fragment length";
-                        }
-                        // std::cout << ri.ref_name(first1->bin_id) << " tids " << ri.ref_name(first2->bin_id) << "pos " << pos_fw << " " << pos_rc << " frag len " << frag_len << "\n";
+                        
                         if ((-20 < frag_len) and (frag_len < 1000)) {
                             // if left is fw and right is rc then
                             // fragment length is (right_pos + right_len - left_pos) + 1
@@ -1795,8 +1796,6 @@ inline void merge_se_mappings(mapping_cache_info_t& map_cache_left,
 
         map_cache_out.map_type = (map_cache_out.accepted_hits.size() > 0) ? util::MappingType::MAPPED_PAIR
                                                                           : util::MappingType::UNMAPPED;
-        // std::cout << "map cache sizes" << map_cache_out.accepted_hits.size() << std::endl;
-        // std::cout << "map cache2 " << map_cache_out.accepted_hits[0] << std::endl;
     } else if ((num_accepted_left > 0) and !had_matching_kmers_right) {
         // just return the left mappings
         std::swap(map_cache_left.accepted_hits, map_cache_out.accepted_hits);
@@ -1826,11 +1825,6 @@ inline void merge_se_mappings(mapping_cache_info_t& map_cache_left,
         }
         map_cache_out.accepted_hits = accepted_hits;    
     }
-    
-    // std::cout << "hits right\n";
-    // print_hits(map_cache_right.accepted_hits);
-    // std::cout << "hits left\n";
-    // print_hits(map_cache_left.accepted_hits);
 }
 
 }

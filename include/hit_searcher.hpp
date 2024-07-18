@@ -24,8 +24,7 @@ class SkippingStrategy {
 public:
   enum Value : uint8_t {
     STRICT = 0,
-    PERMISSIVE,
-    EVERY
+    PERMISSIVE
   };
 
   SkippingStrategy() = default;
@@ -34,8 +33,6 @@ public:
       return STRICT;
     } else if (s == "permissive") {
       return PERMISSIVE;
-    } else if (s == "every") {
-      return EVERY;
     } else {
       return std::nullopt;
     }

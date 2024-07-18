@@ -1319,6 +1319,15 @@ bool hit_searcher::get_raw_hits_sketch_everykmer(std::string &read,
 	    // non_matches_cnt++;
           }
       }
+      auto ph = raw_hits.back().second;
+      auto &refs = ph.refRange;
+      // std::cout << "refs len " << refs.size() << std::endl;
+      // for (auto v : refs) {
+      //       const auto &ref_pos_ori = ph.decode_hit(v);
+      //       uint32_t tid = sshash::util::transcript_id(v);
+      //       int32_t pos = static_cast<int32_t>(ref_pos_ori.pos);
+      //       std::cout << "tid " << tid << " pos " << pos << std::endl;
+      // }
       ++kit;
     }
     return raw_hits.size() != 0;

@@ -54,9 +54,8 @@ struct pesc_atac_options {
     bool quiet{false};
     bool check_ambig_hits{false};
     uint32_t max_ec_card{256};
-    uint64_t bin_size{2000};
+    uint64_t bin_size{20000};
     uint64_t overlap{300};
-    mindex::SkippingStrategy skip_strat{mindex::SkippingStrategy::EVERY};
     size_t nthread{16};
 };
 
@@ -73,14 +72,17 @@ bool map_fragment(fastx_parser::ReadTrip& record,
     map_cache_out.clear();
     poison_state.clear();
     poison_state.set_fragment_end(mapping::util::fragment_end::LEFT);
-    bool early_exit_left = mapping::util::map_read(&record.first.seq, map_cache_left, poison_state, binning);
+    // std::cout << "left\n";
+    bool early_exit_left = mapping::util::map_read(&record.first.seq, map_cache_left, poison_state, binning, km);
     if (poison_state.is_poisoned()) {
         return false;
-    } 
+    }
+    
 
     bool right_km = false;
     poison_state.set_fragment_end(mapping::util::fragment_end::RIGHT);
-    bool early_exit_right = mapping::util::map_read(&record.second.seq, map_cache_right, poison_state, binning);
+    // std::cout << "right\n";
+    bool early_exit_right = mapping::util::map_read(&record.second.seq, map_cache_right, poison_state, binning, right_km);
     if (poison_state.is_poisoned()) {
         return false;
     }  
@@ -93,6 +95,7 @@ bool map_fragment(fastx_parser::ReadTrip& record,
 
     mapping::util_bin::merge_se_mappings(map_cache_left, map_cache_right, left_len, right_len,
                                      map_cache_out);
+    // std::cout << "merged size " << map_cache_out.accepted_hits.size() << std::endl;
     return (early_exit_left or early_exit_right);
 }
 
@@ -194,6 +197,10 @@ void do_map(mindex::reference_index& ri,
     uint32_t num_reads_in_chunk{0};
 
     sshash::streaming_query_canonical_parsing q(ri.get_dict());
+    // for(int32_t i = 0; i < ri.num_refs(); i++) {
+    //     std::cout << "i is " <<  i << " ref len is " << ri.ref_len(i) << " name is " << ri.ref_name(i) << std::endl;
+    // }
+
     mindex::hit_searcher hs(&ri);
     uint64_t read_num = 0;
 
@@ -322,7 +329,7 @@ int run_pesc_sc_atac(int argc, char** argv) {
         ->default_val(0.7);
     app.add_option("--bin_size", po.bin_size,
                 "size for binning")
-        ->default_val(2000);
+        ->default_val(20000);
     app.add_option("--overlap", po.overlap,
                 "size for overlap")
         ->default_val(300);
@@ -408,7 +415,6 @@ int run_pesc_sc_atac(int argc, char** argv) {
     rad::util::write_rad_header_atac(ri, refs, tag_defn);
     mapping::util::bin_pos binning(&ri, po.thr, po.bin_size, po.overlap);
     
-    std::cout << "paired_end " << paired_end << std::endl;
     const RAD::Header header(static_cast<uint8_t>(paired_end), refs.size(), refs);
     
     RAD::RAD_Writer rw(header, tag_defn, file_tag_vals, rad_file_path, nthread);
@@ -423,6 +429,7 @@ int run_pesc_sc_atac(int argc, char** argv) {
     CanonicalKmer::k(ri.k());
 
     uint32_t np = 1;
+    
     
     std::atomic<uint64_t> global_nr{0};
     std::atomic<uint64_t> global_nh{0};
