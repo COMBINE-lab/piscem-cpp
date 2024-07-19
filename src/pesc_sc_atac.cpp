@@ -66,6 +66,8 @@ bool map_fragment(fastx_parser::ReadTrip& record,
                   mapping_cache_info_t& map_cache_right,
                   mapping_cache_info_t& map_cache_out, 
                   std::atomic<uint64_t>& k_match, 
+                  std::atomic<uint64_t> &l_match,
+                  std::atomic<uint64_t> &r_match,
                   mapping::util::bin_pos& binning) {
 
     bool km = false; //kmatch checker
@@ -77,7 +79,6 @@ bool map_fragment(fastx_parser::ReadTrip& record,
     if (poison_state.is_poisoned()) {
         return false;
     }
-    
 
     bool right_km = false;
     poison_state.set_fragment_end(mapping::util::fragment_end::RIGHT);
@@ -92,6 +93,9 @@ bool map_fragment(fastx_parser::ReadTrip& record,
 
     int32_t left_len = static_cast<int32_t>(record.first.seq.length());
     int32_t right_len = static_cast<int32_t>(record.second.seq.length());
+
+    l_match += map_cache_left.accepted_hits.empty() ? 0 : 1;
+    r_match += map_cache_right.accepted_hits.empty() ? 0 : 1;
 
     mapping::util_bin::merge_se_mappings(map_cache_left, map_cache_right, left_len, right_len,
                                      map_cache_out);
@@ -142,6 +146,8 @@ void do_map(mindex::reference_index& ri,
                     std::atomic<uint64_t>& global_nhits,
                     std::atomic<uint64_t>& global_nmult,
                     std::atomic<uint64_t>& k_match,
+                    std::atomic<uint64_t>& l_match,
+                    std::atomic<uint64_t>& r_match,
                     std::atomic<uint64_t>& global_npoisoned,
                     pesc_output_info& out_info,
                     std::mutex& iomut,
@@ -230,7 +236,7 @@ void do_map(mindex::reference_index& ri,
             
             bool had_early_stop = 
                map_fragment(record, poison_state, map_cache_left, map_cache_right, map_cache_out, k_match,
-                   binning);
+                   l_match, r_match, binning);
             (void)had_early_stop;
             if (poison_state.is_poisoned()) {
                 global_npoisoned++;
@@ -435,6 +441,8 @@ int run_pesc_sc_atac(int argc, char** argv) {
     std::atomic<uint64_t> global_nh{0};
     std::atomic<uint64_t> global_nmult{0}; // number of multimapping
     std::atomic<uint64_t> k_match{0}; //whether the kmer exists in the unitig table
+    std::atomic<uint64_t> l_match{0};
+    std::atomic<uint64_t> r_match{0};
     std::atomic<uint64_t> global_np{0}; //whether the kmer exists in the unitig table
     std::mutex iomut;
 
@@ -452,16 +460,16 @@ int run_pesc_sc_atac(int argc, char** argv) {
         for (size_t i = 0; i < nthread; ++i) {
             workers.push_back(std::thread(
                 [&ri, &po, &rparser, &binning, &ptab, &global_nr, &global_nh, &global_nmult, &k_match, &global_np,
-                 &out_info, &iomut, &rw]() {
+                 &out_info, &iomut, &rw, &l_match, &r_match]() {
                     const auto token = rw.get_token();
                     if (!po.enable_structural_constraints) {
                         using SketchHitT = mapping::util::sketch_hit_info_no_struct_constraint;
                         do_map<FragmentT, SketchHitT>(ri, rparser, binning, ptab, global_nr, global_nh, global_nmult,
-                            k_match, global_np, out_info, iomut, rw, token);
+                            k_match, l_match, r_match, global_np, out_info, iomut, rw, token);
                     } else {
                         using SketchHitT = mapping::util::sketch_hit_info;   
                         do_map<FragmentT, SketchHitT>(ri, rparser, binning, ptab, global_nr, global_nh, global_nmult,
-                            k_match, global_np, out_info, iomut, rw, token);
+                            k_match, l_match, r_match, global_np, out_info, iomut, rw, token);
                     }
                 }));
         }
@@ -493,6 +501,8 @@ int run_pesc_sc_atac(int argc, char** argv) {
     rs.num_hits(global_nh.load());
     rs.num_seconds(num_sec.count());
     rs.num_kmatch(k_match.load());
+    rs.num_lmatch(l_match.load());
+    rs.num_rmatch(r_match.load());
 
     ghc::filesystem::path map_info_file_path = output_path / "map_info.json";
     bool info_ok = piscem::meta_info::write_map_info(rs, map_info_file_path);

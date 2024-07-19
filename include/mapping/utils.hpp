@@ -58,6 +58,9 @@ class bin_pos {
             uint64_t cum_len = get_cum_len(tid);
             assert(bin_size > overlap);
             uint64_t bin1 = (cum_len + pos + 1)/bin_size; // 1 added since 0 based
+            if (bin1+1 == std::numeric_limits<uint64_t>::max()) {
+              std::cout << "bin 1";
+            }
             uint64_t bin2 = (cum_len + pos + 1) > (bin1+1)*bin_size-overlap ? (bin1+1) :
                 std::numeric_limits<uint64_t>::max(); // std::numeric_limits<uint32_t>::max() indicates that the kmer does not belong to the overlapping region
             // std::cout << "tid pos bins " << tid << " " << pos << " " << bin1 << " " << bin2 << std::endl;
@@ -1325,7 +1328,7 @@ map_read(std::string *read_seq, mapping_cache_info_t &map_cache,
     auto collect_mappings_from_hits_thr =
       [&max_stretch, &min_occ, &hit_map, &num_valid_hits, &total_occs,
        &largest_occ, &binning, signed_rl, k, perform_ambig_filtering, thr,
-       verbose, &read_seq](auto &raw_hits, auto &prev_read_pos, auto &max_allowed_occ,
+       verbose](auto &raw_hits, auto &prev_read_pos, auto &max_allowed_occ,
                 auto &ambiguous_hit_indices) -> bool {
       (void)verbose;
       int32_t hit_idx{0};
@@ -1355,8 +1358,13 @@ map_read(std::string *read_seq, mapping_cache_info_t &map_cache,
 
             auto& target1 = hit_map[bins.first];
             target1.tid = tid;
-            auto& target2 = hit_map[bins.second];
-
+            // sketch_hit_info_t target2;
+            typename std::remove_reference<decltype(hit_map[bins.first])>::type target2;
+            //  target2;
+            if (bins.second!=std::numeric_limits<uint64_t>::max()) {
+              target2 = hit_map[bins.second];
+            }
+            
             /* FOR DEBUG
             *
             if (true or verbose) {
