@@ -87,7 +87,7 @@ bool map_fragment(fastx_parser::ReadTrip& record,
     if (poison_state.is_poisoned()) {
         return false;
     }  
-    if(km | right_km) {
+    if(km or right_km) {
         ++k_match;
     }
 

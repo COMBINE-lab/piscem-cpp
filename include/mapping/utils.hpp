@@ -56,14 +56,18 @@ class bin_pos {
         
         std::pair<uint64_t, uint64_t> get_bin_id(uint64_t tid, uint64_t pos) {
             uint64_t cum_len = get_cum_len(tid);
+            uint64_t cum_len_next = get_cum_len(tid+1);
             assert(bin_size > overlap);
-            uint64_t bin1 = (cum_len + pos + 1)/bin_size; // 1 added since 0 based
+            uint64_t abs_pos = cum_len + pos + 1;
+            uint64_t bin1 = abs_pos / bin_size; // 1 added since 0 based
             if (bin1+1 == std::numeric_limits<uint64_t>::max()) {
               std::cout << "bin 1";
+              std::exit(1);
             }
-            uint64_t bin2 = (cum_len + pos + 1) > (bin1+1)*bin_size-overlap ? (bin1+1) :
+            uint64_t bin2_start_pos = ((bin1+1) * bin_size);
+            bool bin2_on_same_ref = bin2_start_pos < cum_len_next;
+            uint64_t bin2 = (bin2_on_same_ref and (abs_pos > (bin2_start_pos - overlap))) ? (bin1+1) :
                 std::numeric_limits<uint64_t>::max(); // std::numeric_limits<uint32_t>::max() indicates that the kmer does not belong to the overlapping region
-            // std::cout << "tid pos bins " << tid << " " << pos << " " << bin1 << " " << bin2 << std::endl;
             return {bin1, bin2};
         }
         mindex::reference_index* get_ref() { return pfi_;}
@@ -77,9 +81,9 @@ class bin_pos {
         uint64_t overlap;
         void compute_cum_rank() {
             int32_t n_refs = static_cast<int32_t>(pfi_->num_refs());
-            cum_ref_lens.reserve(n_refs);
+            cum_ref_lens.resize(n_refs+1);
             cum_ref_lens[0] = 0;
-            for(int32_t i = 1; i < n_refs; i++) {
+            for(int32_t i = 1; i <= n_refs; i++) {
                 cum_ref_lens[i] = cum_ref_lens[i-1] + pfi_->ref_len(i-1);
             }
         }
@@ -1359,10 +1363,10 @@ map_read(std::string *read_seq, mapping_cache_info_t &map_cache,
             auto& target1 = hit_map[bins.first];
             target1.tid = tid;
             // sketch_hit_info_t target2;
-            typename std::remove_reference<decltype(hit_map[bins.first])>::type target2;
+            typename std::remove_reference<decltype(target1)>::type* target2 = nullptr;
             //  target2;
-            if (bins.second!=std::numeric_limits<uint64_t>::max()) {
-              target2 = hit_map[bins.second];
+            if (bins.second != std::numeric_limits<uint64_t>::max()) {
+              target2 = &hit_map[bins.second];
             }
             
             /* FOR DEBUG
@@ -1377,18 +1381,18 @@ map_read(std::string *read_seq, mapping_cache_info_t &map_cache,
 
               if (ori) {
                 target1.add_fw(pos, static_cast<int32_t>(read_pos), signed_rl, k,
-                              max_stretch, score_inc);
+                             max_stretch, score_inc);
               } else {
                 target1.add_rc(pos, static_cast<int32_t>(read_pos), signed_rl, k,
                               max_stretch, score_inc);
               }
-              if (bins.second!=std::numeric_limits<uint64_t>::max()) {
-                target2.tid = tid;
+              if (target2 != nullptr) {
+                target2->tid = tid;
                 if (ori) {
-                  target2.add_fw(pos, static_cast<int32_t>(read_pos), signed_rl, k,
+                  target2->add_fw(pos, static_cast<int32_t>(read_pos), signed_rl, k,
                           max_stretch, score_inc);
                 } else {
-                    target2.add_rc(pos, static_cast<int32_t>(read_pos), signed_rl, k,
+                    target2->add_rc(pos, static_cast<int32_t>(read_pos), signed_rl, k,
                                 max_stretch, score_inc);
                 }
             }
@@ -1722,11 +1726,13 @@ inline void merge_se_mappings(mapping_cache_info_t& map_cache_left,
         // look for paired end mappings
         // so we have to sort our accepted hits
         struct {
-            // sort first by orientation, then by transcript id, and finally by position
+            // sort first by orientation, then by transcript id, then by bin_id, and finally by position
             bool operator()(const mapping::util::simple_hit& a,
                             const mapping::util::simple_hit& b) {
                 if (a.is_fw != b.is_fw) { return a.is_fw > b.is_fw; }
                 // orientations are the same
+                if (a.tid != b.tid) { return a.tid < b.tid; }
+                // tids are the same
                 if (a.bin_id != b.bin_id) { return a.bin_id < b.bin_id; }
                 return a.pos < b.pos;
             }
