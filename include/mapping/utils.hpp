@@ -56,6 +56,10 @@ class bin_pos {
             return overlap;
         }
         
+        inline bool is_valid(uint64_t bin_id) const {
+          return bin_id != invalid_bin_id;
+        }
+
         std::pair<uint64_t, uint64_t> get_bin_id(uint64_t tid, uint64_t pos) const {
             uint64_t first_bin_id = cum_bin_ids[tid];
             uint64_t first_bin_id_in_next = cum_bin_ids[tid+1];
@@ -68,7 +72,8 @@ class bin_pos {
 
             bool bin2_on_same_ref = (bin1+1) < first_bin_id_in_next;
             uint64_t bin2_start_pos = ((bin1+1) * bin_size);
-            uint64_t bin2 = (bin2_on_same_ref and (rel_pos > (bin2_start_pos - overlap))) ? (bin1+1) : invalid_bin_id; // std::numeric_limits<uint32_t>::max() indicates that the kmer does not belong to the overlapping region
+            // `invalid_bin_id indicates` that the kmer does not belong to the overlapping region
+            uint64_t bin2 = (bin2_on_same_ref and (rel_pos > (bin2_start_pos - overlap))) ? (bin1+1) : invalid_bin_id; 
             return {bin1, bin2};
         }
 
@@ -1730,7 +1735,7 @@ inline void merge_se_mappings(mapping_cache_info_t& map_cache_left,
 
     size_t num_accepted_left = accepted_left.size();
     size_t num_accepted_right = accepted_right.size();
-    std::unordered_map<int32_t, int8_t> hit_pos; // A kmer can map to two bins for the same position, we only want 1 entry
+    phmap::flat_hash_map<std::pair<uint32_t, int32_t>, int8_t> hit_pos; // A kmer can map to two bins for the same position, we only want 1 entry
     if ((num_accepted_left > 0) and (num_accepted_right > 0)) {
         // look for paired end mappings
         // so we have to sort our accepted hits
@@ -1797,8 +1802,8 @@ inline void merge_se_mappings(mapping_cache_info_t& map_cache_left,
                             int32_t tlen = right_is_rc
                                                ? ((first2->pos + right_len - first1->pos) + 1)
                                                : ((first1->pos + left_len - first2->pos) + 1);
-                            if (hit_pos.find(first1->pos)==hit_pos.end()) {
-                               hit_pos[first1->pos] = 1;
+                            if (hit_pos.find({first1->tid, first1->pos})==hit_pos.end()) {
+                               hit_pos[{first1->tid, first1->pos}] = 1;
 
                                 *out++ = {first1->is_fw, first2->is_fw, first1->pos, 0.0, std::min(first1->num_hits, first2->num_hits),
                                       first1->tid, first2->pos, tlen, first1->bin_id};
@@ -1814,6 +1819,7 @@ inline void merge_se_mappings(mapping_cache_info_t& map_cache_left,
 
         // find hits of form 1:fw, 2:rc
         merge_lists(first_fw1, last_fw1, first_rc2, last_rc2, back_inserter);
+        hit_pos.clear();
         // find hits of form 1:rc, 2:fw
         merge_lists(first_rc1, last_rc1, first_fw2, last_fw2, back_inserter);
 
