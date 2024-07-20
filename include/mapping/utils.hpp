@@ -26,6 +26,8 @@ namespace util {
 
 class bin_pos {
     public:
+        static constexpr uint64_t invalid_bin_id{std::numeric_limits<uint64_t>::max()};
+
         explicit bin_pos(mindex::reference_index* pfi,
                         float thr = 0.7,
                         uint64_t bin_size = 20000,
@@ -38,53 +40,60 @@ class bin_pos {
             compute_cum_rank();
         };
 
-        uint64_t get_cum_len(size_t i) {
-            return cum_ref_lens[i];
+        uint64_t get_cum_bin(size_t i) const {
+            return cum_bin_ids[i];
         }
 
-        float get_thr() {
+        float get_thr() const {
             return thr;
         }
 
-        uint64_t get_bin_size() {
+        uint64_t get_bin_size() const {
             return bin_size;
         }
 
-        uint64_t get_overlap() {
+        uint64_t get_overlap() const {
             return overlap;
         }
         
-        std::pair<uint64_t, uint64_t> get_bin_id(uint64_t tid, uint64_t pos) {
-            uint64_t cum_len = get_cum_len(tid);
-            uint64_t cum_len_next = get_cum_len(tid+1);
+        std::pair<uint64_t, uint64_t> get_bin_id(uint64_t tid, uint64_t pos) const {
+            uint64_t first_bin_id = cum_bin_ids[tid];
+            uint64_t first_bin_id_in_next = cum_bin_ids[tid+1];
             assert(bin_size > overlap);
-            uint64_t abs_pos = cum_len + pos + 1;
-            uint64_t bin1 = abs_pos / bin_size; // 1 added since 0 based
-            if (bin1+1 == std::numeric_limits<uint64_t>::max()) {
-              std::cout << "bin 1";
-              std::exit(1);
-            }
+
+            // 1 added since 0 based
+            uint64_t rel_pos = pos;
+            uint64_t rel_bin = rel_pos / bin_size;
+            uint64_t bin1 = first_bin_id + rel_bin;
+
+            bool bin2_on_same_ref = (bin1+1) < first_bin_id_in_next;
             uint64_t bin2_start_pos = ((bin1+1) * bin_size);
-            bool bin2_on_same_ref = bin2_start_pos < cum_len_next;
-            uint64_t bin2 = (bin2_on_same_ref and (abs_pos > (bin2_start_pos - overlap))) ? (bin1+1) :
-                std::numeric_limits<uint64_t>::max(); // std::numeric_limits<uint32_t>::max() indicates that the kmer does not belong to the overlapping region
+            uint64_t bin2 = (bin2_on_same_ref and (rel_pos > (bin2_start_pos - overlap))) ? (bin1+1) : invalid_bin_id; // std::numeric_limits<uint32_t>::max() indicates that the kmer does not belong to the overlapping region
             return {bin1, bin2};
         }
+
         mindex::reference_index* get_ref() { return pfi_;}
 
 
     private:
         mindex::reference_index* pfi_;
-        std::vector<uint64_t> cum_ref_lens;
+        std::vector<uint64_t> cum_bin_ids;
+
         float thr;
         uint64_t bin_size;
         uint64_t overlap;
+
         void compute_cum_rank() {
             int32_t n_refs = static_cast<int32_t>(pfi_->num_refs());
-            cum_ref_lens.resize(n_refs+1);
-            cum_ref_lens[0] = 0;
+            cum_bin_ids.resize(n_refs+1);
+            cum_bin_ids[0] = 0;
             for(int32_t i = 1; i <= n_refs; i++) {
-                cum_ref_lens[i] = cum_ref_lens[i-1] + pfi_->ref_len(i-1);
+                uint64_t rlen = static_cast<uint64_t>(pfi_->ref_len(i-1));
+                uint64_t bins_in_ref = rlen / bin_size;
+                if (rlen % bin_size > 0) {
+                  bins_in_ref += 1;
+                }
+                cum_bin_ids[i] = cum_bin_ids[i-1] + bins_in_ref;
             }
         }
 };
@@ -1267,7 +1276,7 @@ template <typename mapping_cache_info_t>
 inline bool
 map_read(std::string *read_seq, mapping_cache_info_t &map_cache,
          poison_state_t &poison_state,
-         mapping::util::bin_pos& binning,
+         const mapping::util::bin_pos& binning,
          bool &k_match,
          mindex::SkippingStrategy strat = mindex::SkippingStrategy::STRICT,
          bool verbose = false) {

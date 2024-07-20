@@ -409,7 +409,7 @@ int run_pesc_sc_atac(int argc, char** argv) {
     out_info.bed_file = std::move(bed_file);
     out_info.unmapped_bc_file = std::move(unmapped_bc_file);
     
-    mindex::reference_index ri(po.index_basename);
+    mindex::reference_index ri(po.index_basename, po.check_ambig_hits);
     std::string rad_file_path = output_path;
     rad_file_path.append("/map.rad");
     RAD::Tag_Defn tag_defn;
