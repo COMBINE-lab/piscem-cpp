@@ -1516,15 +1516,10 @@ map_read(std::string *read_seq, mapping_cache_info_t &map_cache,
 
     } // if we are processing ambiguous hits
 
+    // we need at least threshold * the maximum number of hits
     uint32_t best_alt_hits = 0;
-    //std::cerr << "num_valid_hits before = " << num_valid_hits << ", thr = " << thr << "\n";
-    //float fnum_valid_hits = num_valid_hits;
-    //fnum_valid_hits = fnum_valid_hits * thr;
     num_valid_hits = std::max(static_cast<uint32_t>(1), static_cast<uint32_t>(std::ceil(num_valid_hits*thr))); 
-    //std::cerr << "num_valid_hits after = " << num_valid_hits << "\n"; 
-    //std::cerr << "float_num_valid_hits after = " << fnum_valid_hits << "\n"; 
-    // int32_t signed_read_len = static_cast<int32_t>(record.seq.length());
-   
+  
     for (auto &kv : hit_map) {
       auto best_hit_dir = kv.second.best_hit_direction();
 
@@ -1534,11 +1529,6 @@ map_read(std::string *read_seq, mapping_cache_info_t &map_cache,
                           ? kv.second.get_fw_hit()
                           : kv.second.get_rc_hit();
 
-      /*
-      std::cerr << "\tsimple_hit.num_hits = " << simple_hit.num_hits << " vs. num_valid_hits = " << num_valid_hits << " vs. fnum_valid_hits = " << fnum_valid_hits << "\n";
-      std::cerr << "\tsimple_hit.num_hits >= num_valid_hits = " << (simple_hit.num_hits >= num_valid_hits) << "\n"; 
-      std::cerr << "\tsimple_hit.num_hits >= fnum_valid_hits = " << (simple_hit.num_hits >= fnum_valid_hits) << "\n"; 
-      */
       if (simple_hit.num_hits >= num_valid_hits) {
         simple_hit.bin_id = kv.first;
         simple_hit.tid = kv.second.tid;
@@ -1560,25 +1550,6 @@ map_read(std::string *read_seq, mapping_cache_info_t &map_cache,
     }
 
     // max_read_occ = had_max_read_occ ? accepted_hits.size() : max_hit_occ;
-
-    /*
-     * This rule; if enabled, allows through mappings missing a single hit, if
-    there
-     * was no mapping with all hits. NOTE: this won't work with the current
-    early-exit
-     * optimization however.
-    if (accepted_hits.empty() and (num_valid_hits > 1) and (best_alt_hits >=
-    num_valid_hits
-    - 1)) { for (auto& kv : hit_map) { auto simple_hit =
-    kv.second.get_best_hit(); if (simple_hit.num_hits >= best_alt_hits) {
-          //if (simple_hit.valid_pos(signed_read_len,
-    transcripts[kv.first].RefLength, 10)) { simple_hit.tid = kv.first;
-    accepted_hits.emplace_back(simple_hit);
-          //}
-        }
-      }
-    }
-    */
   } // DONE : if (rh)
 
   // If the read mapped to > maxReadOccs places, discard it
@@ -1731,26 +1702,16 @@ inline void merge_se_mappings(mapping_cache_info_t& map_cache_left,
 
     size_t num_accepted_left = accepted_left.size();
     size_t num_accepted_right = accepted_right.size();
-    //phmap::flat_hash_map<std::pair<uint32_t, int32_t>, int8_t> hit_pos; // A kmer can map to two bins for the same position, we only want 1 entry
+    // records if a position / tid / orientation triplet has been observed yet in 
+    // the sorted list of hits, so that it can be removed if we see 
+    // duplicates. The lower 32 bits are the original position 
+    // the next 31 bits (high bit masked) is the reference id and 
+    // the highest bit is recorded as 1 if the hit is fw and 0 otherwise.
+    phmap::flat_hash_set<uint64_t> dup_hits; 
     if ((num_accepted_left > 0) and (num_accepted_right > 0)) {
         // look for paired end mappings
         // so we have to sort our accepted hits
-        struct {
-            // sort first by orientation, then by transcript id, then by bin_id, and finally by position
-            bool operator()(const mapping::util::simple_hit& a,
-                            const mapping::util::simple_hit& b) {
-                if (a.is_fw != b.is_fw) { return a.is_fw > b.is_fw; }
-                // orientations are the same
-                if (a.tid != b.tid) { return a.tid < b.tid; }
-                // tids are the same
-                if (a.pos != b.pos) { return a.pos < b.pos; }
-                return a.bin_id < b.bin_id;
-                ////if (a.bin_id != b.bin_id) { return a.bin_id < b.bin_id; }
-                //return a.pos < b.pos;
-            }
-        } simple_hit_less;
-
-        struct {
+       struct {
             // sort first by orientation, then by transcript id, then by bin_id, and finally by position
             bool operator()(const mapping::util::simple_hit& a,
                             const mapping::util::simple_hit& b) {
@@ -1763,25 +1724,31 @@ inline void merge_se_mappings(mapping_cache_info_t& map_cache_left,
             }
         } simple_hit_less_bins;
 
-        // consider hits duplicate if they have the same orientation, tid and position
-        struct {
-            // sort first by orientation, then by transcript id, then by bin_id, and finally by position
-            bool operator()(const mapping::util::simple_hit& a,
-                            const mapping::util::simple_hit& b) {
-                return (a.is_fw == b.is_fw) and (a.tid == b.tid) and (a.pos == b.pos);
-            }
-        } simple_hit_equal;
-        // sort by orientation, tid, position
-        std::sort(accepted_left.begin(), accepted_left.end(), simple_hit_less);
-        std::sort(accepted_right.begin(), accepted_right.end(), simple_hit_less);
-        // remove duplicates
-        auto last_left = std::unique(accepted_left.begin(), accepted_left.end(), simple_hit_equal);
-        accepted_left.erase(last_left, accepted_left.end());
-        auto last_right = std::unique(accepted_right.begin(), accepted_right.end(), simple_hit_equal);
-        accepted_right.erase(last_right, accepted_right.end());
         // sort by orientation, tid, bin_id, position
         std::sort(accepted_left.begin(), accepted_left.end(), simple_hit_less_bins);
         std::sort(accepted_right.begin(), accepted_right.end(), simple_hit_less_bins);
+
+        uint64_t fw_mask = (static_cast<uint64_t>(1) << 63);
+        auto last_left = std::remove_if(accepted_left.begin(), accepted_left.end(),
+                                        [&dup_hits, fw_mask](const mapping::util::simple_hit& elem) -> bool {
+                                          uint64_t k = static_cast<uint64_t>(elem.pos) | 
+                                                       (static_cast<uint64_t>((elem.tid & 0x7FFFFFFF)) << 32) | 
+                                                       (elem.is_fw ? fw_mask : 0);
+                                          auto was_inserted = dup_hits.insert(k);
+                                          return !was_inserted.second;
+                                        });
+
+        auto last_right = std::remove_if(accepted_right.begin(), accepted_right.end(),
+                                        [&dup_hits, fw_mask](const mapping::util::simple_hit& elem) -> bool {
+                                          uint64_t k = static_cast<uint64_t>(elem.pos) | 
+                                                       (static_cast<uint64_t>((elem.tid & 0x7FFFFFFF)) << 32) | 
+                                                       (elem.is_fw ? fw_mask : 0);
+                                          auto was_inserted = dup_hits.insert(k);
+                                          return !was_inserted.second;
+                                        });
+        // remove duplicates
+        accepted_left.erase(last_left, accepted_left.end());
+        accepted_right.erase(last_right, accepted_right.end());
  
         const mapping::util::simple_hit smallest_rc_hit = {false, false, -1, 0.0, 0, 0, 0, 0, 0};
         // start of forward sub-list
@@ -1845,7 +1812,7 @@ inline void merge_se_mappings(mapping_cache_info_t& map_cache_left,
 
         // find hits of form 1:fw, 2:rc
         merge_lists(first_fw1, last_fw1, first_rc2, last_rc2, back_inserter);
-        //hit_pos.clear();
+        dup_hits.clear();
         // find hits of form 1:rc, 2:fw
         merge_lists(first_rc1, last_rc1, first_fw2, last_fw2, back_inserter);
 
