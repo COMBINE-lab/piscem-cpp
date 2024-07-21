@@ -1380,29 +1380,15 @@ map_read(std::string *read_seq, mapping_cache_info_t &map_cache,
 
             auto& target1 = hit_map[bins.first];
             target1.tid = tid;
-            // sketch_hit_info_t target2;
-            typename std::remove_reference<decltype(target1)>::type* target2 = nullptr;
-            //  target2;
-            if (binning.is_valid(bins.second)) {
-              target2 = &hit_map[bins.second];
-            }
-
-            /* FOR DEBUG
-          *
-          if (true or verbose) {
-              auto& tname = map_cache.hs.get_index()->ref_name(tid);
-              std::cerr << "\traw_hit [read_pos: " << read_pos << " ]:" <<
-          tname
-                        << ", " << pos << ", " << (ori ? "fw" : "rc") << "\n";
-          }
-          */
-
             if (ori) {
               target1.add_fw(pos, signed_read_pos, signed_rl, k, max_stretch, score_inc);
             } else {
               target1.add_rc(pos, signed_read_pos, signed_rl, k, max_stretch, score_inc);
             }
-            if (target2 != nullptr) {
+ 
+            typename std::remove_reference<decltype(target1)>::type* target2 = nullptr;
+            if (binning.is_valid(bins.second)) {
+              target2 = &hit_map[bins.second];
               target2->tid = tid;
               if (ori) {
                 target2->add_fw(pos, signed_read_pos, signed_rl, k, max_stretch, score_inc);
@@ -1823,8 +1809,6 @@ inline void merge_se_mappings(mapping_cache_info_t& map_cache_left,
         using out_iter_t = decltype(back_inserter);
         auto merge_lists = [left_len, right_len](iter_t first1, iter_t last1, iter_t first2,
                                                  iter_t last2, out_iter_t out) -> out_iter_t {
-        // auto merge_lists = [left_len, right_len, ri](iter_t first1, iter_t last1, iter_t first2,
-        //                                          iter_t last2, out_iter_t out) -> out_iter_t {
             // https://en.cppreference.com/w/cpp/algorithm/set_intersection
             while (first1 != last1 && first2 != last2) {
                 if (first1->bin_id < first2->bin_id) {
@@ -1847,7 +1831,7 @@ inline void merge_se_mappings(mapping_cache_info_t& map_cache_left,
                             //if (hit_pos.find({first1->tid, first1->pos})==hit_pos.end()) {
                             // hit_pos[{first1->tid, first1->pos}] = 1;
 
-                                *out++ = {first1->is_fw, first2->is_fw, first1->pos, 0.0, std::min(first1->num_hits, first2->num_hits),
+                                *out++ = {first1->is_fw, first2->is_fw, first1->pos, 0.0, (first1->num_hits + first2->num_hits),
                                       first1->tid, first2->pos, tlen, first1->bin_id};
                             //}
                             ++first1;
@@ -1883,6 +1867,7 @@ inline void merge_se_mappings(mapping_cache_info_t& map_cache_left,
         // return nothing
     }
 
+    
     if (map_cache_out.accepted_hits.size() > 0) {
         std::vector<mapping::util::simple_hit> accepted_hits;
         uint32_t max_num_hits = 0;
@@ -1896,6 +1881,7 @@ inline void merge_se_mappings(mapping_cache_info_t& map_cache_left,
         }
         map_cache_out.accepted_hits = accepted_hits;    
     }
+    
 }
 
 }
