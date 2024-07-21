@@ -1737,7 +1737,7 @@ inline void merge_se_mappings(mapping_cache_info_t& map_cache_left,
                                           auto was_inserted = dup_hits.insert(k);
                                           return !was_inserted.second;
                                         });
-
+        dup_hits.clear();
         auto last_right = std::remove_if(accepted_right.begin(), accepted_right.end(),
                                         [&dup_hits, fw_mask](const mapping::util::simple_hit& elem) -> bool {
                                           uint64_t k = static_cast<uint64_t>(elem.pos) | 
