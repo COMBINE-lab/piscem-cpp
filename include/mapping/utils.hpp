@@ -1711,8 +1711,11 @@ inline void merge_se_mappings(mapping_cache_info_t& map_cache_left,
       if (a.is_fw != b.is_fw) { return a.is_fw > b.is_fw; }
       // orientations are the same
       if (a.tid != b.tid) { return a.tid < b.tid; }
+      // orientations & txps are the same
       if (a.pos != b.pos) { return a.pos < b.pos; }
+      // orientations, txps, and positions are the same
       if (a.num_hits != b.num_hits ) { return a.num_hits < b.num_hits ; }
+      // orientations, txps, positions and num_hits are the same 
       return a.bin_id < b.bin_id;
     }
   } simple_hit_less_bins;
