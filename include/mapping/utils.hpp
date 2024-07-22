@@ -1826,39 +1826,38 @@ inline void merge_se_mappings(mapping_cache_info_t& map_cache_left,
                                                                           : util::MappingType::UNMAPPED;
     } else if ((num_accepted_left > 0) and !had_matching_kmers_right) {
         // just return the left mappings
-        /*
         dup_hits.clear();
-        auto last_left = std::remove_if(map_cache_left.accepted_hits.begin(),
-                                        map_cache_left.accepted_hits.end(),
+        auto last_left = std::remove_if(accepted_left.begin(),
+                                        accepted_left.end(),
                                         [&dup_hits, &max_num_hits, fw_mask](const mapping::util::simple_hit& elem) -> bool {
-                                          max_num_hits = std::max(max_num_hits, elem.num_hits);
                                           uint64_t k = static_cast<uint64_t>(elem.pos) | 
                                                        (static_cast<uint64_t>((elem.tid & 0x7FFFFFFF)) << 32) | 
                                                        (elem.is_fw ? fw_mask : 0);
                                           auto was_inserted = dup_hits.insert(k);
+                                          max_num_hits = was_inserted.second ? std::max(max_num_hits, elem.num_hits) : max_num_hits;
                                           return !was_inserted.second;
                                         });
-        map_cache_left.accepted_hits.erase(last_left, map_cache_left.accepted_hits.end());*/
+        accepted_left.erase(last_left, accepted_left.end());
+
         std::swap(map_cache_left.accepted_hits, map_cache_out.accepted_hits);
         map_cache_out.map_type = (map_cache_out.accepted_hits.size() > 0)
                                      ? util::MappingType::MAPPED_FIRST_ORPHAN
                                      : util::MappingType::UNMAPPED;
     } else if ((num_accepted_right > 0) and !had_matching_kmers_left) {
         // just return the right mappings
-        /*
         dup_hits.clear();
-        auto last_right = std::remove_if(map_cache_right.accepted_hits.begin(),
-                                        map_cache_right.accepted_hits.end(),
+        auto last_right = std::remove_if(accepted_right.begin(),
+                                        accepted_right.end(),
                                         [&dup_hits, &max_num_hits, fw_mask](const mapping::util::simple_hit& elem) -> bool {
-                                          max_num_hits = std::max(max_num_hits, elem.num_hits);
                                           uint64_t k = static_cast<uint64_t>(elem.pos) | 
                                                        (static_cast<uint64_t>((elem.tid & 0x7FFFFFFF)) << 32) | 
                                                        (elem.is_fw ? fw_mask : 0);
                                           auto was_inserted = dup_hits.insert(k);
+                                          max_num_hits = was_inserted.second ? std::max(max_num_hits, elem.num_hits) : max_num_hits;
                                           return !was_inserted.second;
                                         });
-        map_cache_right.accepted_hits.erase(last_right, map_cache_right.accepted_hits.end());
-        */
+        accepted_right.erase(last_right, accepted_right.end());
+
         std::swap(map_cache_right.accepted_hits, map_cache_out.accepted_hits);
         map_cache_out.map_type = (map_cache_out.accepted_hits.size() > 0)
                                      ? util::MappingType::MAPPED_SECOND_ORPHAN
