@@ -1702,6 +1702,8 @@ inline void merge_se_mappings(mapping_cache_info_t& map_cache_left,
 
     size_t num_accepted_left = accepted_left.size();
     size_t num_accepted_right = accepted_right.size();
+    
+    uint32_t max_num_hits = 0;
     // records if a position / tid / orientation triplet has been observed yet in 
     // the sorted list of hits, so that it can be removed if we see 
     // duplicates. The lower 32 bits are the original position 
@@ -1774,7 +1776,7 @@ inline void merge_se_mappings(mapping_cache_info_t& map_cache_left,
         auto back_inserter = std::back_inserter(map_cache_out.accepted_hits);
         using iter_t = decltype(first_fw1);
         using out_iter_t = decltype(back_inserter);
-        auto merge_lists = [left_len, right_len](iter_t first1, iter_t last1, iter_t first2,
+        auto merge_lists = [left_len, right_len, &max_num_hits](iter_t first1, iter_t last1, iter_t first2,
                                                  iter_t last2, out_iter_t out) -> out_iter_t {
             // https://en.cppreference.com/w/cpp/algorithm/set_intersection
             while (first1 != last1 && first2 != last2) {
@@ -1798,7 +1800,9 @@ inline void merge_se_mappings(mapping_cache_info_t& map_cache_left,
                             //if (hit_pos.find({first1->tid, first1->pos})==hit_pos.end()) {
                             // hit_pos[{first1->tid, first1->pos}] = 1;
 
-                                *out++ = {first1->is_fw, first2->is_fw, first1->pos, 0.0, (first1->num_hits + first2->num_hits),
+                                uint32_t nhits = std::min(first1->num_hits, first2->num_hits);
+                                max_num_hits = std::max(max_num_hits, nhits);
+                                *out++ = {first1->is_fw, first2->is_fw, first1->pos, 0.0, nhits,
                                       first1->tid, first2->pos, tlen, first1->bin_id};
                             //}
                             ++first1;
@@ -1836,17 +1840,18 @@ inline void merge_se_mappings(mapping_cache_info_t& map_cache_left,
 
     
     if (map_cache_out.accepted_hits.size() > 0) {
-        std::vector<mapping::util::simple_hit> accepted_hits;
-        uint32_t max_num_hits = 0;
+      if (max_num_hits == 0) {
         for (const auto& hit:map_cache_out.accepted_hits)  {
-            max_num_hits = std::max(hit.num_hits, max_num_hits);
+          max_num_hits = std::max(hit.num_hits, max_num_hits);
         }
-        for (const auto& hit:map_cache_out.accepted_hits)  {
-            if (hit.num_hits >= max_num_hits) {
-                accepted_hits.emplace_back(hit);
-            }
-        }
-        map_cache_out.accepted_hits = accepted_hits;    
+      }
+      auto accepted_hits_last = 
+        std::remove_if(map_cache_out.accepted_hits.begin(), 
+                       map_cache_out.accepted_hits.end(),
+                       [max_num_hits](const mapping::util::simple_hit& h) -> bool {
+                       return h.num_hits < max_num_hits;
+                       });
+      map_cache_out.accepted_hits.erase(accepted_hits_last, map_cache_out.accepted_hits.end());
     }
     
 }
