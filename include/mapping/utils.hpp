@@ -1868,16 +1868,12 @@ inline void merge_se_mappings(mapping_cache_info_t& map_cache_left,
   }
 
   if (map_cache_out.accepted_hits.size() > 0) {
-    /*
+    /* since accepted_hits is non-empty, we should always have a `max_num_hits` of at least 1
       if (max_num_hits == 0) {
-        std::cerr << "should not happen!\n";
-        std::cerr << "max num hits = " << max_num_hits << ", but accpeted_hits.size() = " << map_cache_out.accepted_hits.size() << "\n";
-        std::cerr << "strange = " << strange << "\n";
-        std::exit(1);
         for (const auto& hit:map_cache_out.accepted_hits)  {
           max_num_hits = std::max(hit.num_hits, max_num_hits);
         }
-      }*/
+    }*/
     auto accepted_hits_last = 
       std::remove_if(map_cache_out.accepted_hits.begin(), 
                      map_cache_out.accepted_hits.end(),
