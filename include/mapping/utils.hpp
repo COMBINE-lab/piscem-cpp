@@ -60,12 +60,11 @@ class bin_pos {
           return bin_id != invalid_bin_id;
         }
 
-        std::pair<uint64_t, uint64_t> get_bin_id(uint64_t tid, uint64_t pos) const {
+        inline std::pair<uint64_t, uint64_t> get_bin_id(uint64_t tid, uint64_t pos) const {
             uint64_t first_bin_id = cum_bin_ids[tid];
             uint64_t first_bin_id_in_next = cum_bin_ids[tid+1];
             assert(bin_size > overlap);
 
-            // 1 added since 0 based
             uint64_t rel_pos = pos;
             uint64_t rel_bin = rel_pos / bin_size;
             uint64_t bin1 = first_bin_id + rel_bin;
@@ -79,7 +78,6 @@ class bin_pos {
 
         mindex::reference_index* get_ref() { return pfi_;}
 
-
     private:
         mindex::reference_index* pfi_;
         std::vector<uint64_t> cum_bin_ids;
@@ -89,22 +87,23 @@ class bin_pos {
         uint64_t overlap;
 
         void compute_cum_rank() {
-            int32_t n_refs = static_cast<int32_t>(pfi_->num_refs());
+            size_t n_refs = static_cast<size_t>(pfi_->num_refs());
             cum_bin_ids.resize(n_refs+1);
             cum_bin_ids[0] = 0;
-            for(int32_t i = 1; i <= n_refs; i++) {
+            for(size_t i = 1; i <= n_refs; i++) {
                 uint64_t rlen = static_cast<uint64_t>(pfi_->ref_len(i-1));
                 uint64_t bins_in_ref = rlen / bin_size;
                 uint64_t last_bin_end_pos = bins_in_ref * bin_size;
                 // if there is space left after the bin before the 
                 // end of the reference, then add another bin.
-                if (last_bin_end_pos <  rlen) {
+                if (last_bin_end_pos < rlen) {
                   bins_in_ref += 1;
                 }
-                cum_bin_ids[i] = cum_bin_ids[i-1] + bins_in_ref;
+                cum_bin_ids[i] = cum_bin_ids[(i-1)] + bins_in_ref;
             }
         }
 };
+
 constexpr int32_t invalid_frag_len = std::numeric_limits<int32_t>::min();
 constexpr int32_t invalid_mate_pos = std::numeric_limits<int32_t>::min();
 
@@ -1798,11 +1797,16 @@ inline void merge_se_mappings(mapping_cache_info_t& map_cache_left,
                                                             iter_t last2, out_iter_t out) -> out_iter_t {
         // https://en.cppreference.com/w/cpp/algorithm/set_intersection
         while (first1 != last1 && first2 != last2) {
+          // we have to consider mappings that span a bin-bin boundary 
+          // because the left read may reside in the first bin and the 
+          // right read in the second bin
           if ((first1->bin_id + 1) < first2->bin_id) {
             ++first1;
           } else {
-            if (!(first2->bin_id < first1->bin_id)) {
-              // first1->tid == first2->tid have the same transcript.
+            if (!(first2->bin_id < first1->bin_id) and (first2->tid == first1->tid)) {
+              // first1->tid == first2->tid -1 or 
+              // first1->tid == first2->tid have the same reference 
+              // and adjacent bins.
               int32_t pos_fw = first1->is_fw ? first1->pos : first2->pos;
               int32_t pos_rc = first1->is_fw ? first2->pos : first1->pos;
               int32_t frag_len = (pos_rc - pos_fw);
