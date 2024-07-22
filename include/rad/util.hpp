@@ -384,10 +384,10 @@ inline void write_to_rad_stream_atac(bc_kmer_t& bck, mapping::util::MappingType 
     }
     for (auto& aln : accepted_hits) {
         RAD::Aln_Record aln_rec;
-        uint8_t type;
+        uint8_t type{0};
         // top 2 bits are fw,rc ori
-        uint32_t fw_mask = aln.is_fw ? 0x80000000 : 0x00000000;
-        uint32_t mate_fw_mask = aln.mate_is_fw ? 0x40000000 : 0x00000000;
+        // uint32_t fw_mask = aln.is_fw ? 0x80000000 : 0x00000000;
+        // uint32_t mate_fw_mask = aln.mate_is_fw ? 0x40000000 : 0x00000000;
         // bottom 30 bits are target id
         // strbuff += std::to_string((0x3FFFFFFF & aln.tid) | fw_mask | mate_fw_mask);
         strbuff += ri.ref_name(aln.tid);

@@ -302,7 +302,6 @@ int run_pesc_sc_atac(int argc, char** argv) {
     std::string skipping_rule;
 
     size_t nthread{16};
-    bool quiet{false};
     CLI::App app{"Single cell Atac Seq mapper"};
     app.add_option("-i,--index", po.index_basename, "input index prefix")->required();
     app.add_option("-1,--read1", po.left_read_filenames, "path to list of read 1 files")
@@ -343,6 +342,7 @@ int run_pesc_sc_atac(int argc, char** argv) {
         app.add_flag("--check-ambig-hits", po.check_ambig_hits,
                     "check the existence of highly-frequent hits in mapped targets, rather than "
                     "ignoring them.");
+    (void) check_ambig; // currently unused in atacseq mode
     
     CLI11_PARSE(app, argc, argv);
     bool paired_end = !po.right_read_filenames.empty();
