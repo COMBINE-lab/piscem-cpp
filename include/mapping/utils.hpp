@@ -955,6 +955,12 @@ public:
   // holds the indices of k-mers too ambiguous to chain, but which
   // we might later want to check the existence of
   itlib::small_vector<uint32_t, 255> ambiguous_hit_indices;
+  // records if a position / tid / orientation triplet has been observed yet in 
+  // the sorted list of hits, so that it can be removed if we see 
+  // duplicates. The lower 32 bits are the original position 
+  // the next 31 bits (high bit masked) is the reference id and 
+  // the highest bit is recorded as 1 if the hit is fw and 0 otherwise.
+  phmap::flat_hash_set<uint64_t> dup_hits; 
 
   // max ec card
   uint32_t max_ec_card{4096};
@@ -1704,12 +1710,9 @@ inline void merge_se_mappings(mapping_cache_info_t& map_cache_left,
     size_t num_accepted_right = accepted_right.size();
     
     uint32_t max_num_hits = 0;
-    // records if a position / tid / orientation triplet has been observed yet in 
-    // the sorted list of hits, so that it can be removed if we see 
-    // duplicates. The lower 32 bits are the original position 
-    // the next 31 bits (high bit masked) is the reference id and 
-    // the highest bit is recorded as 1 if the hit is fw and 0 otherwise.
-    phmap::flat_hash_set<uint64_t> dup_hits; 
+    auto& dup_hits = map_cache_out.dup_hits;
+    uint64_t fw_mask = (static_cast<uint64_t>(1) << 63);
+
     if ((num_accepted_left > 0) and (num_accepted_right > 0)) {
         // look for paired end mappings
         // so we have to sort our accepted hits
@@ -1730,7 +1733,7 @@ inline void merge_se_mappings(mapping_cache_info_t& map_cache_left,
         std::sort(accepted_left.begin(), accepted_left.end(), simple_hit_less_bins);
         std::sort(accepted_right.begin(), accepted_right.end(), simple_hit_less_bins);
 
-        uint64_t fw_mask = (static_cast<uint64_t>(1) << 63);
+        dup_hits.clear();
         auto last_left = std::remove_if(accepted_left.begin(), accepted_left.end(),
                                         [&dup_hits, fw_mask](const mapping::util::simple_hit& elem) -> bool {
                                           uint64_t k = static_cast<uint64_t>(elem.pos) | 
@@ -1780,7 +1783,7 @@ inline void merge_se_mappings(mapping_cache_info_t& map_cache_left,
                                                  iter_t last2, out_iter_t out) -> out_iter_t {
             // https://en.cppreference.com/w/cpp/algorithm/set_intersection
             while (first1 != last1 && first2 != last2) {
-                if (first1->bin_id < first2->bin_id) {
+                if ((first1->bin_id + 1) < first2->bin_id) {
                     ++first1;
                 } else {
                     if (!(first2->bin_id < first1->bin_id)) {
@@ -1800,7 +1803,7 @@ inline void merge_se_mappings(mapping_cache_info_t& map_cache_left,
                             //if (hit_pos.find({first1->tid, first1->pos})==hit_pos.end()) {
                             // hit_pos[{first1->tid, first1->pos}] = 1;
 
-                                uint32_t nhits = std::min(first1->num_hits, first2->num_hits);
+                                uint32_t nhits = first1->num_hits + first2->num_hits;
                                 max_num_hits = std::max(max_num_hits, nhits);
                                 *out++ = {first1->is_fw, first2->is_fw, first1->pos, 0.0, nhits,
                                       first1->tid, first2->pos, tlen, first1->bin_id};
@@ -1816,7 +1819,6 @@ inline void merge_se_mappings(mapping_cache_info_t& map_cache_left,
 
         // find hits of form 1:fw, 2:rc
         merge_lists(first_fw1, last_fw1, first_rc2, last_rc2, back_inserter);
-        dup_hits.clear();
         // find hits of form 1:rc, 2:fw
         merge_lists(first_rc1, last_rc1, first_fw2, last_fw2, back_inserter);
 
@@ -1824,12 +1826,39 @@ inline void merge_se_mappings(mapping_cache_info_t& map_cache_left,
                                                                           : util::MappingType::UNMAPPED;
     } else if ((num_accepted_left > 0) and !had_matching_kmers_right) {
         // just return the left mappings
+        /*
+        dup_hits.clear();
+        auto last_left = std::remove_if(map_cache_left.accepted_hits.begin(),
+                                        map_cache_left.accepted_hits.end(),
+                                        [&dup_hits, &max_num_hits, fw_mask](const mapping::util::simple_hit& elem) -> bool {
+                                          max_num_hits = std::max(max_num_hits, elem.num_hits);
+                                          uint64_t k = static_cast<uint64_t>(elem.pos) | 
+                                                       (static_cast<uint64_t>((elem.tid & 0x7FFFFFFF)) << 32) | 
+                                                       (elem.is_fw ? fw_mask : 0);
+                                          auto was_inserted = dup_hits.insert(k);
+                                          return !was_inserted.second;
+                                        });
+        map_cache_left.accepted_hits.erase(last_left, map_cache_left.accepted_hits.end());*/
         std::swap(map_cache_left.accepted_hits, map_cache_out.accepted_hits);
         map_cache_out.map_type = (map_cache_out.accepted_hits.size() > 0)
                                      ? util::MappingType::MAPPED_FIRST_ORPHAN
                                      : util::MappingType::UNMAPPED;
     } else if ((num_accepted_right > 0) and !had_matching_kmers_left) {
         // just return the right mappings
+        /*
+        dup_hits.clear();
+        auto last_right = std::remove_if(map_cache_right.accepted_hits.begin(),
+                                        map_cache_right.accepted_hits.end(),
+                                        [&dup_hits, &max_num_hits, fw_mask](const mapping::util::simple_hit& elem) -> bool {
+                                          max_num_hits = std::max(max_num_hits, elem.num_hits);
+                                          uint64_t k = static_cast<uint64_t>(elem.pos) | 
+                                                       (static_cast<uint64_t>((elem.tid & 0x7FFFFFFF)) << 32) | 
+                                                       (elem.is_fw ? fw_mask : 0);
+                                          auto was_inserted = dup_hits.insert(k);
+                                          return !was_inserted.second;
+                                        });
+        map_cache_right.accepted_hits.erase(last_right, map_cache_right.accepted_hits.end());
+        */
         std::swap(map_cache_right.accepted_hits, map_cache_out.accepted_hits);
         map_cache_out.map_type = (map_cache_out.accepted_hits.size() > 0)
                                      ? util::MappingType::MAPPED_SECOND_ORPHAN
