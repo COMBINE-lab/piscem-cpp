@@ -3,6 +3,7 @@
 cmake_minimum_required(VERSION 3.15)
 project(SSHASH)
 
+add_subdirectory(${CMAKE_SOURCE_DIR}/external/libradicl)
 # Set path for modules required to search for existing packages in the system.
 set(CMAKE_MODULE_PATH ${CMAKE_MODULE_PATH} "${CMAKE_SOURCE_DIR}/cmake/Modules/")
 
@@ -55,6 +56,7 @@ if (UNIX AND (CMAKE_HOST_SYSTEM_PROCESSOR STREQUAL "x86_64"))
 endif()
 ## figure out what we might want / need to put here if we have a non x86_64 arch.
 
+set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -DL1_CACHE_LINE_SIZE=64")
 if (UNIX)
 
   set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -std=c++17")
@@ -105,6 +107,7 @@ set(CLOUDFLARE_ZLIB ${CMAKE_BINARY_DIR}/zlib-cloudflare/lib/libz.a)
 set(THREADS_PREFER_PTHREAD_FLAG TRUE)
 find_package(Threads REQUIRED) # for pthreads
 
+#find_package(GPerfTools REQUIRED) ## gperftools
 # Prepare the `jemalloc` library. It provides scalable concurrency support and better avoidance
 # of fragmentation.
 set(MALLOC_LIB "")
@@ -126,18 +129,21 @@ set(SSHASH_SOURCES
   include/info.cpp
 )
 
+set(LIBRADICL_INCLUDE ${CMAKE_CURRENT_SOURCE_DIR}/external/libradicl/include)
+
 # Create a static lib
 add_library(sshash_static STATIC
   ${Z_LIB_SOURCES}
   ${SSHASH_SOURCES}
   include/builder/build.cpp
 )
-target_include_directories(sshash_static PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/include)
+target_include_directories(sshash_static PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/include ${LIBRADICL_INCLUDE})
+
 
 add_library(pesc_static STATIC
-  src/pesc_bulk.cpp src/pesc_sc.cpp src/hit_searcher.cpp src/FastxParser.cpp
+  src/pesc_bulk.cpp src/pesc_sc.cpp src/pesc_sc_atac.cpp src/hit_searcher.cpp src/FastxParser.cpp
 )
-target_include_directories(pesc_static PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/include ${ZLIB_INCLUDE_DIRS})
+target_include_directories(pesc_static PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/include ${ZLIB_INCLUDE_DIRS} ${LIBRADICL_INCLUDE})
 
 add_library(build_static STATIC
   src/build.cpp
@@ -146,41 +152,53 @@ target_include_directories(build_static PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/incl
 
 #add_executable(build src/build.cpp)
 #target_link_libraries(build sshash_static z ${MALLOC_LIB})
-#target_include_directories(build PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/include)
+#target_include_directories(build PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/include ${LIBRADICL_INCLUDE})
 
 #add_executable(bench src/bench.cpp ${SSHASH_SOURCES})
-#target_include_directories(bench PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/include)
+#target_include_directories(bench PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/include ${LIBRADICL_INCLUDE})
 
-add_executable(check src/check.cpp src/FastxParser.cpp) 
+add_executable(check src/check.cpp src/FastxParser.cpp)
 target_link_libraries(check ${CLOUDFLARE_ZLIB} sshash_static Threads::Threads)
-target_include_directories(check PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/include ${ZLIB_INCLUDE_DIRS})
+target_include_directories(check PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/include ${ZLIB_INCLUDE_DIRS} ${LIBRADICL_INCLUDE})
 
 #add_executable(query src/query.cpp ${SSHASH_SOURCES} ${Z_LIB_SOURCES})
 #target_link_libraries(query z Threads::Threads)
-#target_include_directories(query PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/include)
+#target_include_directories(query PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/include ${LIBRADICL_INCLUDE})
 
 #add_executable(test_load src/test_load.cpp)
-#target_include_directories(test_load PUBLIC ${CMAKE_SOURCE_DIR}/include ${ZLIB_INCLUDE_DIRS})
+#target_include_directories(test_load PUBLIC ${CMAKE_SOURCE_DIR}/include ${ZLIB_INCLUDE_DIRS} ${LIBRADICL_INCLUDE})
 #target_link_libraries(test_load ${CLOUDFLARE_ZLIB} sshash_static Threads::Threads)
 
 add_executable(pesc-sc src/pesc_sc_runner.cpp) 
-target_include_directories(pesc-sc PUBLIC ${CMAKE_SOURCE_DIR}/include ${ZLIB_INCLUDE_DIRS})
-target_link_libraries(pesc-sc pesc_static ${CLOUDFLARE_ZLIB} Threads::Threads sshash_static ${MALLOC_LIB}) 
+target_include_directories(pesc-sc PUBLIC ${CMAKE_SOURCE_DIR}/include ${ZLIB_INCLUDE_DIRS} ${LIBRADICL_INCLUDE})
+target_link_libraries(pesc-sc pesc_static ${CLOUDFLARE_ZLIB} Threads::Threads sshash_static ${MALLOC_LIB})
 
 add_executable(pesc-bulk src/pesc_bulk_runner.cpp) 
-target_include_directories(pesc-bulk PUBLIC ${CMAKE_SOURCE_DIR}/include ${ZLIB_INCLUDE_DIRS})
-target_link_libraries(pesc-bulk pesc_static ${CLOUDFLARE_ZLIB} Threads::Threads sshash_static ${MALLOC_LIB}) 
+target_include_directories(pesc-bulk PUBLIC ${CMAKE_SOURCE_DIR}/include ${ZLIB_INCLUDE_DIRS} ${LIBRADICL_INCLUDE})
+target_link_libraries(pesc-bulk pesc_static ${CLOUDFLARE_ZLIB} Threads::Threads sshash_static ${MALLOC_LIB})
+
+add_executable(pesc-sc-atac src/pesc_sc_atac_runner.cpp) 
+target_include_directories(pesc-sc-atac PUBLIC ${CMAKE_SOURCE_DIR}/include ${ZLIB_INCLUDE_DIRS} ${LIBRADICL_INCLUDE})
+target_link_libraries(pesc-sc-atac pesc_static ${CLOUDFLARE_ZLIB} Threads::Threads sshash_static ${MALLOC_LIB} radicl)
+#target_link_directories(pesc-sc-atac PUBLIC /fs/cbcb-lab/rob/students/noor/miniforge3/lib)
+add_dependencies(pesc-sc-atac radicl)
+
+# add_executable(check-overlap src/check_overlap.cpp) 
+# target_include_directories(check-overlap PUBLIC ${CMAKE_SOURCE_DIR}/include ${ZLIB_INCLUDE_DIRS})
+# target_link_libraries(check-overlap pesc_static ZLIB::ZLIB Threads::Threads sshash_static ${MALLOC_LIB})
+
+
 
 #add_executable(mapper src/mapper.cpp src/hit_searcher.cpp) 
 #target_include_directories(mapper PUBLIC ${CMAKE_SOURCE_DIR}/include ${ZLIB_INCLUDE_DIRS})
 #target_link_libraries(mapper ${CLOUDFLARE_ZLIB} Threads::Threads sshash_static ${MALLOC_LIB}) 
 
 add_executable(build src/build_runner.cpp) 
-target_include_directories(build PUBLIC ${CMAKE_SOURCE_DIR}/include ${ZLIB_INCLUDE_DIRS})
+target_include_directories(build PUBLIC ${CMAKE_SOURCE_DIR}/include ${ZLIB_INCLUDE_DIRS} ${LIBRADICL_INCLUDE})
 target_link_libraries(build Threads::Threads build_static sshash_static ${CLOUDFLARE_ZLIB} ${MALLOC_LIB}) 
 
 add_executable(evaluator src/index_evaluator.cpp) 
-target_include_directories(evaluator PUBLIC ${CMAKE_SOURCE_DIR}/include ${ZLIB_INCLUDE_DIRS})
+target_include_directories(evaluator PUBLIC ${CMAKE_SOURCE_DIR}/include ${ZLIB_INCLUDE_DIRS} ${LIBRADICL_INCLUDE})
 target_link_libraries(evaluator ${CLOUDFLARE_ZLIB} Threads::Threads sshash_static) 
 
 add_executable(build-poison-table src/poison_table_build_runner.cpp) 
@@ -206,6 +224,7 @@ add_dependencies(check zlib-cloudflare)
 add_dependencies(evaluator zlib-cloudflare)
 add_dependencies(build zlib-cloudflare)
 add_dependencies(pesc-sc zlib-cloudflare)
+add_dependencies(pesc-sc-atac zlib-cloudflare)
 add_dependencies(pesc-bulk zlib-cloudflare)
 add_dependencies(build-poison-table zlib-cloudflare)
 add_dependencies(poison_filter zlib-cloudflare)
@@ -214,15 +233,15 @@ add_dependencies(poison_filter zlib-cloudflare)
 #add_executable(test_parse src/test_parse_geo.cpp)
 #target_include_directories(evaluator PRIVATE ${CMAKE_SOURCE_DIR}/include)
 
-install(TARGETS build build-poison-table pesc-sc pesc-bulk 
+install(TARGETS build build-poison-table pesc-sc pesc-bulk pesc-sc-atac
         CONFIGURATIONS Debug
         RUNTIME DESTINATION Debug/bin)
 
-install(TARGETS build build-poison-table pesc-sc pesc-bulk
+install(TARGETS build build-poison-table pesc-sc pesc-bulk pesc-sc-atac
   CONFIGURATIONS Release
   RUNTIME DESTINATION Release/bin)
 
-install(TARGETS build build-poison-table pesc-sc pesc-bulk
+install(TARGETS build build-poison-table pesc-sc pesc-bulk pesc-sc-atac
         CONFIGURATIONS Debug
         RUNTIME DESTINATION Debug/bin)
 
