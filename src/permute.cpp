@@ -1,10 +1,10 @@
 #include <iostream>
 
-#include "../include/gz/zip_stream.hpp"
-#include "../external/pthash/external/essentials/include/essentials.hpp"
-#include "../external/pthash/external/cmd_line_parser/include/parser.hpp"
+#include "../external/sshash/include/gz/zip_stream.hpp"
+#include "../external/sshash/external/pthash/external/essentials/include/essentials.hpp"
+#include "../external/sshash/external/pthash/external/cmd_line_parser/include/parser.hpp"
 #include "../include/cover.hpp"
-#include "../include/builder/util.hpp"
+#include "../external/sshash/include/builder/util.hpp"
 
 using namespace sshash;
 

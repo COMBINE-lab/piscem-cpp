@@ -6,7 +6,7 @@
 #include "projected_hits.hpp"
 #include "reference_index.hpp"
 //#include "query/streaming_query_canonical_parsing.cpp"
-#include "query/streaming_query_canonical_parsing.hpp"
+#include "../external/sshash/include/query/streaming_query_canonical_parsing.hpp"
 //#include "Util.hpp"
 //#include "dictionary.hpp"
 

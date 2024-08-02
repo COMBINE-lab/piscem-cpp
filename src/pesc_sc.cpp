@@ -10,7 +10,7 @@
 #include "../include/parallel_hashmap/phmap_dump.h"
 #include "../include/poison_table.hpp"
 #include "../include/projected_hits.hpp"
-#include "../include/query/streaming_query_canonical_parsing.hpp"
+#include "../external/sshash/include/query/streaming_query_canonical_parsing.hpp"
 #include "../include/rad/rad_header.hpp"
 #include "../include/rad/rad_writer.hpp"
 #include "../include/rad/util.hpp"
@@ -18,7 +18,8 @@
 #include "../include/sc/util.hpp"
 #include "../include/spdlog_piscem/sinks/stdout_color_sinks.h"
 #include "../include/spdlog_piscem/spdlog.h"
-#include "../include/util.hpp"
+#include "../external/sshash/include/util.hpp"
+#include "../include/util_piscem.hpp"
 #include "zlib.h"
 
 #include <atomic>

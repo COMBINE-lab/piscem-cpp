@@ -2,19 +2,20 @@
 
 #include <fstream>
 
-#include "../include/ghc/filesystem.hpp"
-#include "../include/itlib/small_vector.hpp"
-#include "../include/json.hpp"
-#include "../include/parallel_hashmap/phmap.h"
-#include "../include/parallel_hashmap/phmap_dump.h"
-#include "../include/util.hpp"
+#include "ghc/filesystem.hpp"
+#include "itlib/small_vector.hpp"
+#include "json.hpp"
+#include "parallel_hashmap/phmap.h"
+#include "parallel_hashmap/phmap_dump.h"
+#include "../external/sshash/include/util.hpp"
+#include "util_piscem.hpp"
 #include "spdlog_piscem/spdlog.h"
 
-#include "../include/bitsery/adapter/stream.h"
-#include "../include/bitsery/bitsery.h"
-#include "../include/bitsery/brief_syntax.h"
-#include "../include/bitsery/brief_syntax/string.h"
-#include "../include/bitsery/brief_syntax/vector.h"
+#include "bitsery/adapter/stream.h"
+#include "bitsery/bitsery.h"
+#include "bitsery/brief_syntax.h"
+#include "bitsery/brief_syntax/string.h"
+#include "bitsery/brief_syntax/vector.h"
 
 using poison_map_t =
   phmap::flat_hash_map<uint64_t, uint64_t, sshash::RobinHoodHash>;

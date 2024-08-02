@@ -1,8 +1,8 @@
 #pragma once
 
 #include <vector>
-#include "util.hpp"
-#include "ef_sequence.hpp"
+#include "util_piscem.hpp"
+#include "../external/sshash/include/ef_sequence.hpp"
 
 namespace sshash {
 

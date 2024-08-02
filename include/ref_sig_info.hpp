@@ -2,8 +2,9 @@
 #define __REF_SIG_INFO__
 
 #include <optional>
-#include "../include/json.hpp"
-#include "../include/ghc/filesystem.hpp"
+#include "json.hpp"
+#include "ghc/filesystem.hpp"
+#include "spdlog_piscem/spdlog.h"
 
 struct ref_sig_info_t {
   std::string sha256_names;

@@ -10,7 +10,8 @@
 #include "../include/reference_index.hpp"
 #include "../include/spdlog_piscem/sinks/stdout_color_sinks.h"
 #include "../include/spdlog_piscem/spdlog.h"
-#include "../include/util.hpp"
+#include "../include/util_piscem.hpp"
+#include "../external/sshash/include/util.hpp"
 
 #include <algorithm>
 #include <cstdio>

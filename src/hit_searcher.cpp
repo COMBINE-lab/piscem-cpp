@@ -1,6 +1,6 @@
 #include "../include/hit_searcher.hpp"
-#include "../include/bit_vector_iterator.hpp"
-#include "../include/util.hpp"
+#include "../external/sshash/include/bit_vector_iterator.hpp"
+#include "../external/sshash/include/util.hpp"
 #include <cmath>
 #include <limits>
 #include <optional>

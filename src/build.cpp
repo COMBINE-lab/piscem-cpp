@@ -2,16 +2,14 @@
 #include <memory>
 #include <thread>
 
-#include "../external/pthash/external/cmd_line_parser/include/parser.hpp"
-#include "../include/dictionary.hpp"
+#include "../external/sshash/external/pthash/external/cmd_line_parser/include/parser.hpp"
+#include "../external/sshash/include/dictionary.hpp"
 #include "../include/spdlog_piscem/spdlog.h"
 #include "../include/spdlog_piscem/sinks/stdout_color_sinks.h"
 #include "../include/cli11/CLI11.hpp"
-#include "bench_utils.hpp"
-#include "check_utils.hpp"
 #include "build_contig_table.cpp"
-#include "bench_utils.hpp"
-#include "check_utils.hpp"
+#include "../external/sshash/src/bench_utils.hpp"
+#include "../external/sshash/src/check_utils.hpp"
 
 using namespace sshash;
 

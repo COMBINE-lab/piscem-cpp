@@ -3,8 +3,8 @@
 
 #include <optional>
 
-#include "../include/ref_sig_info.hpp"
-#include "../include/json.hpp"
+#include "ref_sig_info.hpp"
+#include "json.hpp"
 #include "../include/ghc/filesystem.hpp"
 
 namespace piscem {

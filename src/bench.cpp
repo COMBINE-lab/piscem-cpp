@@ -1,8 +1,8 @@
 #include <iostream>
 
-#include "../external/pthash/external/cmd_line_parser/include/parser.hpp"
-#include "../include/dictionary.hpp"
-#include "bench_utils.hpp"
+#include "../external/sshash/external/pthash/external/cmd_line_parser/include/parser.hpp"
+#include "../external/sshash/include/dictionary.hpp"
+#include "../external/sshash/src/bench_utils.hpp"
 
 using namespace sshash;
 
