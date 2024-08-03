@@ -3,6 +3,7 @@
 #include <thread>
 
 #include "../external/sshash/external/pthash/external/cmd_line_parser/include/parser.hpp"
+#include "../external/sshash/src/common.hpp"
 #include "../external/sshash/include/dictionary.hpp"
 #include "../include/spdlog_piscem/spdlog.h"
 #include "../include/spdlog_piscem/sinks/stdout_color_sinks.h"
@@ -20,6 +21,32 @@ int run_build(int argc, char** argv);
 #ifdef __cplusplus
 }
 #endif
+
+bool check_correctness_iterator(dictionary const& dict) {
+    std::cout << "checking correctness of iterator..." << std::endl;
+    std::string expected_kmer(dict.k(), 0);
+    constexpr uint64_t runs = 3;
+    essentials::uniform_int_rng<uint64_t> distr(0, dict.size() - 1, essentials::get_random_seed());
+    for (uint64_t run = 0; run != runs; ++run) {
+        uint64_t from_kmer_id = distr.gen();
+        auto it = dict.at_kmer_id(from_kmer_id);
+        while (it.has_next()) {
+            auto [kmer_id, kmer] = it.next();
+            dict.access(kmer_id, expected_kmer.data());
+            if (kmer != expected_kmer or kmer_id != from_kmer_id) {
+                std::cout << "got (" << kmer_id << ",'" << kmer << "')";
+                std::cout << " but ";
+                std::cout << "expected (" << from_kmer_id << ",'" << expected_kmer << "')"
+                          << std::endl;
+                return false;
+            }
+            ++from_kmer_id;
+        }
+        assert(from_kmer_id == dict.size());
+    }
+    std::cout << "EVERYTHING OK!" << std::endl;
+    return true;
+}
 
 int run_build(int argc, char** argv) {
     constexpr uint32_t min_threads = 1;
@@ -131,7 +158,7 @@ int run_build(int argc, char** argv) {
         spdlog_piscem::info("DONE");
 
         if (check) {
-            check_correctness_lookup_access(dict, input_seq);
+            check_correctness_lookup_access(dict, input_seq, "cfseg");
             if (build_config.weighted) check_correctness_weights(dict, input_seq);
             check_correctness_iterator(dict);
         }

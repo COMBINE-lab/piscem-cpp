@@ -8,12 +8,23 @@ namespace sshash {
 
 class equivalence_class_map {
 public:
+        template <typename Visitor>
+    void visit(Visitor& visitor) const {
+      visit_impl(visitor, *this);
+    }
+
     template <typename Visitor>
     void visit(Visitor& visitor) {
-        visitor.visit(m_tile_ec_ids);
-        visitor.visit(m_label_list_offsets);
-        visitor.visit(m_label_entries);
+      visit_impl(visitor, *this);
     }
+    template <typename Visitor, typename T>
+    static void visit_impl(Visitor& visitor, T&& t) {
+        visitor.visit(t.m_tile_ec_ids);
+        visitor.visit(t.m_label_list_offsets);
+        visitor.visit(t.m_label_entries);
+    }
+
+    
 
     inline sshash::util::ec_span entries_for_ec(uint64_t ec_id) const {
         auto start_pos = m_label_list_offsets.access(ec_id);

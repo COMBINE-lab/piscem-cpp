@@ -2,7 +2,7 @@
 # a reasonable minimum version worth supporting.
 cmake_minimum_required(VERSION 3.15)
 project(SSHASH)
-
+include_directories(AFTER external/sshash/src external/sshash/include external/sshash external/sshash/external/pthash external/sshash/external/pthash/external/essentials/include)
 add_subdirectory(${CMAKE_SOURCE_DIR}/external/libradicl)
 # Set path for modules required to search for existing packages in the system.
 set(CMAKE_MODULE_PATH ${CMAKE_MODULE_PATH} "${CMAKE_SOURCE_DIR}/cmake/Modules/")
@@ -121,12 +121,12 @@ else()
 endif()
 
 set(Z_LIB_SOURCES
-  include/gz/zip_stream.cpp
+  external/sshash/include/gz/zip_stream.cpp
 )
 
 set(SSHASH_SOURCES
-  include/dictionary.cpp
-  include/info.cpp
+  external/sshash/include/dictionary.cpp
+  external/sshash/include/info.cpp
 )
 
 set(LIBRADICL_INCLUDE ${CMAKE_CURRENT_SOURCE_DIR}/external/libradicl/include)
@@ -135,9 +135,9 @@ set(LIBRADICL_INCLUDE ${CMAKE_CURRENT_SOURCE_DIR}/external/libradicl/include)
 add_library(sshash_static STATIC
   ${Z_LIB_SOURCES}
   ${SSHASH_SOURCES}
-  include/builder/build.cpp
+  external/sshash/include/builder/build.cpp
 )
-target_include_directories(sshash_static PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/include ${LIBRADICL_INCLUDE})
+target_include_directories(sshash_static PRIVATE  ${LIBRADICL_INCLUDE})
 
 
 add_library(pesc_static STATIC
@@ -148,7 +148,7 @@ target_include_directories(pesc_static PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/inclu
 add_library(build_static STATIC
   src/build.cpp
   src/poison_table_builder.cpp)
-target_include_directories(build_static PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/include ${ZLIB_INCLUDE_DIRS})
+target_include_directories(build_static PRIVATE  ${ZLIB_INCLUDE_DIRS} ${CMAKE_CURRENT_SOURCE_DIR}/include)
 
 #add_executable(build src/build.cpp)
 #target_link_libraries(build sshash_static z ${MALLOC_LIB})

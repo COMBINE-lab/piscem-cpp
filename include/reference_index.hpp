@@ -73,7 +73,8 @@ public:
 
     projected_hits query(pufferfish::CanonicalKmerIterator kmit,
                          sshash::streaming_query_canonical_parsing& q) {
-        auto qres = q.get_contig_pos(kmit->first.fwWord(), kmit->first.rcWord(), kmit->second);
+        const char* kmer = kmit->first.to_str().c_str();
+        auto qres = q.lookup_advanced(kmer);
 
         constexpr uint64_t invalid_u64 = std::numeric_limits<uint64_t>::max();
         constexpr uint32_t invalid_u32 = std::numeric_limits<uint32_t>::max();
@@ -135,7 +136,7 @@ public:
 
     uint64_t k() const { return m_dict.k(); }
     const sshash::dictionary* get_dict() const { return &m_dict; }
-    pthash::bit_vector& contigs() { return m_dict.m_buckets.strings; }
+    pthash::bit_vector const& contigs() { return m_dict.strings(); }
     const std::string& ref_name(size_t i) const { return m_ref_names[i]; }
     uint64_t ref_len(size_t i) const { return m_ref_lens[i]; }
     uint64_t num_refs() const { return m_ref_names.size(); }

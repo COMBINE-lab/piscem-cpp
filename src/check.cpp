@@ -3,6 +3,7 @@
 #include "../external/sshash/external/pthash/external/cmd_line_parser/include/parser.hpp"
 #include "../include/reference_index.hpp"
 #include "../external/sshash/include/query/streaming_query_canonical_parsing.hpp"
+#include "../external/sshash/src/common.hpp"
 #include "../external/sshash/src/bench_utils.hpp"
 #include "../external/sshash/src/check_utils.hpp"
 #include "../include/FastxParser.hpp"

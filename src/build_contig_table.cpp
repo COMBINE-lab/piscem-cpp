@@ -355,9 +355,11 @@ bool build_contig_table(const std::string& input_filename, uint64_t k,
         }
         seg_table_builder.build(bct.m_ctg_entries);
     }
+    const basic_contig_table& ctabr = bct;
 
     std::string out_ctab = output_filename + ".ctab";
-    essentials::save(bct, out_ctab.c_str());
+    essentials::save(ctabr, out_ctab.c_str());
+    // essentials::save(bct, out_ctab.c_str());
 
     if (build_eq_table) {
       // map equivalence class content to id
