@@ -136,7 +136,7 @@ int run_build(int argc, char** argv) {
         build_config.num_threads = max_num_threads;
         spdlog_piscem::warn("too many threads specified, defaulting to {}", build_config.num_threads);
     }
-
+    build_config.input_type = sshash::input_build_type::cfseg;
     // if it was passed in
     if (!tmpdir_opt->empty()) {
         build_config.tmp_dirname = tmp_dirname;

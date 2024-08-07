@@ -33,9 +33,10 @@ public:
         sig_info = ref_sig_info_t::from_path(sigfile_name);
          
         std::string dict_name = basename + ".sshash";
-        // spdlog::info("sshash loaded");
+        
+        spdlog_piscem::info("sshash loaded");
         essentials::load(m_dict, dict_name.c_str());
-        // spdlog::info("ctab loaded");
+        spdlog_piscem::info("ctab loaded");
         std::string ctg_name = basename + ".ctab";
         essentials::load(m_bct, ctg_name.c_str());
 
@@ -73,7 +74,8 @@ public:
 
     projected_hits query(pufferfish::CanonicalKmerIterator kmit,
                          sshash::streaming_query_canonical_parsing& q) {
-        const char* kmer = kmit->first.to_str().c_str();
+        std::string km = kmit->first.to_str();
+        const char* kmer = km.c_str();
         auto qres = q.lookup_advanced(kmer);
 
         constexpr uint64_t invalid_u64 = std::numeric_limits<uint64_t>::max();

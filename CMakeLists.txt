@@ -6,6 +6,7 @@ include_directories(AFTER external/sshash/src external/sshash/include external/s
 add_subdirectory(${CMAKE_SOURCE_DIR}/external/libradicl)
 # Set path for modules required to search for existing packages in the system.
 set(CMAKE_MODULE_PATH ${CMAKE_MODULE_PATH} "${CMAKE_SOURCE_DIR}/cmake/Modules/")
+add_definitions(-DSSHASH_USE_TRADITIONAL_NUCLEOTIDE_ENCODING)
 
 set(CMAKE_CXX_STANDARD 17)
 if (NOT CMAKE_BUILD_TYPE)
