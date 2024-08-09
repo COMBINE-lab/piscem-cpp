@@ -790,13 +790,13 @@ struct EveryKmer {
     auto ph = pfi->query(kit, qc);
     
     if (!ph.empty()) {
-        std::cerr << "found hit between " << kit->second << " and " << ph.globalPos_ << "\n";
+        // std::cerr << "found hit between " << kit->second << " and " << ph.globalPos_ << "\n";
         raw_hits.push_back(std::make_pair(kit->second, ph));
         set_state(ph);
-        std::cerr << "direction " << direction << ", dist_to_end" << dist_to_contig_end << ", cCurrPos: " << cCurrPos << "\n";
+        // std::cerr << "direction " << direction << ", dist_to_end" << dist_to_contig_end << ", cCurrPos: " << cCurrPos << "\n";
         ref_contig_it.at(2*ph.globalPos_);
         uint64_t ref_kmer = ref_contig_it.read(2*k);
-        std::cerr << "\t(MATCH IS) ref_kmer = " << sshash::util::uint_kmer_to_string(ref_kmer, k) << ", kit = " << kit->first.to_str() << "\n";
+        // std::cerr << "\t(MATCH IS) ref_kmer = " << sshash::util::uint_kmer_to_string(ref_kmer, k) << ", kit = " << kit->first.to_str() << "\n";
     }
     else {
       new_state = true;
@@ -1312,17 +1312,14 @@ bool hit_searcher::get_raw_hits_sketch_everykmer(std::string &read,
     size_t size_hits = 0;
     while(kit != kit_end) {
       if (evs.new_state)  {
-        std::cerr << "global\n";
         evs.query_kmer(kit, pfi_, raw_hits, ref_contig_it, qc);
 	// new_state_cnt++;
       } else {
           bool matches = evs.check_match(ref_contig_it, kit);
           if (matches) {
-            std::cerr << "check match true\n";
             evs.add_next(raw_hits, kit);
 	    // matches_cnt++;
           } else {
-            std::cerr << "check match false\n";
             evs.query_kmer(kit, pfi_, raw_hits, ref_contig_it, qc); 
 	    // non_matches_cnt++;
           }
@@ -1336,15 +1333,7 @@ bool hit_searcher::get_raw_hits_sketch_everykmer(std::string &read,
       //       int32_t pos = static_cast<int32_t>(ref_pos_ori.pos);
       //       std::cout << "tid " << tid << " pos " << pos << std::endl;
       // }
-      std::cerr << "kmer " << kit->first.to_str() << std::endl;
-      if (raw_hits.size() != size_hits) {
-        std::cerr << "yes " <<  raw_hits.back().second << std::endl;
-        size_hits++;
-      }
-      else {
-        std::cerr << "no hit\n";
-      }
-      // break;
+  
       ++kit;
     }
     return raw_hits.size() != 0;
