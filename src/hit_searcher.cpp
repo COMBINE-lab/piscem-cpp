@@ -1,5 +1,6 @@
 #include "../include/hit_searcher.hpp"
 #include "../external/sshash/include/bit_vector_iterator.hpp"
+#include "../include/streaming_query.hpp"
 #include "../external/sshash/include/util.hpp"
 #include <cmath>
 #include <limits>
@@ -90,12 +91,12 @@ struct SkipContext {
       return kit1->first.isEquivalent(fast_hit.ref_kmer);
     }
 
-    inline bool query_kmer(sshash::streaming_query_canonical_parsing& qc) {
+    inline bool query_kmer(piscem::streaming_query& qc) {
         phits = pfi->query(kit1, qc);
         return !phits.empty();
     }
 
-    inline bool query_kmer_complex(sshash::streaming_query_canonical_parsing& qc,
+    inline bool query_kmer_complex(piscem::streaming_query& qc,
                            bool& obtained_confirmatory_hit) {
         bool found_match = false;
         if (fast_hit.valid()) {
@@ -541,7 +542,7 @@ struct SkipInfoT {
 //
 inline void walk_safely_until(
   SkipContext& skip_ctx,  // the skip context we'll use for searching
-  sshash::streaming_query_canonical_parsing& qc, 
+  piscem::streaming_query& qc, 
   int end_read_pos, // the position that we will shearch until
   std::vector<std::pair<int, projected_hits>>& raw_hits // the structure where we'll aggregate results
 ) {
@@ -784,7 +785,7 @@ struct EveryKmer {
   inline void query_kmer(pufferfish::CanonicalKmerIterator& kit,
   mindex::reference_index *pfi, std::vector<std::pair<int, projected_hits>> &raw_hits,
   sshash::bit_vector_iterator &ref_contig_it,
-  sshash::streaming_query_canonical_parsing& qc) {
+  piscem::streaming_query& qc) {
     (void)ref_contig_it;
     qc.reset_state();
     auto ph = pfi->query(kit, qc);
@@ -871,7 +872,7 @@ struct EveryKmer {
 // Near-optimal probabilistic RNA-seq quantification.
 // Nat Biotechnol. 2016;34(5):525-527.
 bool hit_searcher::get_raw_hits_sketch(std::string& read,
-                                       sshash::streaming_query_canonical_parsing& qc, 
+                                       piscem::streaming_query& qc, 
                                        mindex::SkippingStrategy strat,
                                        bool isLeft,
                                        bool verbose) {
@@ -1163,7 +1164,7 @@ bool hit_searcher::get_raw_hits_sketch(std::string& read,
 // Nat Biotechnol. 2016;34(5):525-527.
 //
 bool hit_searcher::get_raw_hits_sketch_orig(std::string& read,
-                                       sshash::streaming_query_canonical_parsing& qc, 
+                                       piscem::streaming_query& qc,
                                        mindex::SkippingStrategy strat,
                                        bool isLeft,
                                        bool verbose) {
@@ -1285,7 +1286,7 @@ bool hit_searcher::get_raw_hits_sketch_orig(std::string& read,
   
 
 bool hit_searcher::get_raw_hits_sketch_everykmer(std::string &read,
-                  sshash::streaming_query_canonical_parsing& qc,
+                  piscem::streaming_query& qc,
                   bool isLeft,
                   bool verbose) {
     clear();

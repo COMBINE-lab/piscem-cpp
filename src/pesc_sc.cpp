@@ -10,7 +10,6 @@
 #include "../include/parallel_hashmap/phmap_dump.h"
 #include "../include/poison_table.hpp"
 #include "../include/projected_hits.hpp"
-#include "../external/sshash/include/query/streaming_query_canonical_parsing.hpp"
 #include "../include/rad/rad_header.hpp"
 #include "../include/rad/rad_writer.hpp"
 #include "../include/rad/util.hpp"

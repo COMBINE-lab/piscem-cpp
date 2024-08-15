@@ -5,8 +5,7 @@
 #include "CanonicalKmerIterator.hpp"
 #include "projected_hits.hpp"
 #include "reference_index.hpp"
-//#include "query/streaming_query_canonical_parsing.cpp"
-#include "../external/sshash/include/query/streaming_query_canonical_parsing.hpp"
+#include "streaming_query.hpp"
 //#include "Util.hpp"
 //#include "dictionary.hpp"
 
@@ -54,19 +53,19 @@ public:
   }
   
   bool get_raw_hits_sketch(std::string &read,
-                  sshash::streaming_query_canonical_parsing& qc,
+                  piscem::streaming_query& qc,
                   SkippingStrategy strat = SkippingStrategy::STRICT,
                   bool isLeft=false,
                   bool verbose=false);
   
   bool get_raw_hits_sketch_orig(std::string &read,
-                  sshash::streaming_query_canonical_parsing& qc,
+                  piscem::streaming_query& qc,
                   SkippingStrategy strat = SkippingStrategy::STRICT,
                   bool isLeft=false,
                   bool verbose=false);
   
   bool get_raw_hits_sketch_everykmer(std::string &read,
-                  sshash::streaming_query_canonical_parsing& qc,                  
+                  piscem::streaming_query& qc,                  
                   bool isLeft = false,
                   bool verbose = false);
 

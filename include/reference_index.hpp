@@ -14,8 +14,7 @@
 #include "ghc/filesystem.hpp"
 #include "json.hpp"
 #include "ref_sig_info.hpp"
-//#include "query/contig_info_query_canonical_parsing.cpp"
-#include "../external/sshash/include/query/streaming_query_canonical_parsing.hpp"
+#include "../include/streaming_query.hpp"
 #include "bit_vector_iterator.hpp"
 #include "CanonicalKmerIterator.hpp"
 #include "projected_hits.hpp"
@@ -72,11 +71,14 @@ public:
         spdlog_piscem::info("done loading index");
     }
 
-    projected_hits query(pufferfish::CanonicalKmerIterator kmit,
-                         sshash::streaming_query_canonical_parsing& q) {
+    projected_hits query(pufferfish::CanonicalKmerIterator& kmit,
+                         piscem::streaming_query& q) {
+        auto qres = q.query_lookup(kmit);
+        /*
         std::string km = kmit->first.to_str();
         const char* kmer = km.c_str();
         auto qres = q.lookup_advanced(kmer);
+        */
 
         constexpr uint64_t invalid_u64 = std::numeric_limits<uint64_t>::max();
         constexpr uint32_t invalid_u32 = std::numeric_limits<uint32_t>::max();

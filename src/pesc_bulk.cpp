@@ -12,6 +12,7 @@
 #include "../include/spdlog_piscem/spdlog.h"
 #include "../external/sshash/include/util.hpp"
 #include "../include/util_piscem.hpp"
+#include "../include/streaming_query.hpp"
 #include "../include/defaults.hpp"
 #include "zlib.h"
 //#include "FastxParser.cpp"
@@ -479,7 +480,7 @@ void do_map(mindex::reference_index &ri,
   uint64_t processed = 0;
   uint64_t buff_size = 10000;
 
-  sshash::streaming_query_canonical_parsing q(ri.get_dict());
+  piscem::streaming_query q(ri.get_dict());
   mindex::hit_searcher hs(&ri);
   uint64_t read_num = 0;
 

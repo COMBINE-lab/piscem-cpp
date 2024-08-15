@@ -7,7 +7,7 @@
 #include "../include/parallel_hashmap/phmap.h"
 #include "../include/poison_table.hpp"
 #include "../include/projected_hits.hpp"
-#include "../include/query/streaming_query_canonical_parsing.hpp"
+#include "../include/streaming_query.hpp"
 #include "../include/reference_index.hpp"
 
 
@@ -945,7 +945,7 @@ public:
   size_t k{0};
 
   // to perform queries
-  sshash::streaming_query_canonical_parsing q;
+  piscem::streaming_query q;
   // implements the PASC algorithm
   mindex::hit_searcher hs;
   size_t max_chunk_reads = 5000;

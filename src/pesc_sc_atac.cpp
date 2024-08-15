@@ -2,7 +2,7 @@
 #include "../include/reference_index.hpp"
 #include "../include/CanonicalKmerIterator.hpp"
 #include "../include/Kmer.hpp"
-#include "../external/sshash/include/query/streaming_query_canonical_parsing.hpp"
+#include "../include/streaming_query.hpp"
 #include "../include/projected_hits.hpp"
 #include "../include/util_piscem.hpp"
 #include "../external/sshash/include/util.hpp"
@@ -203,7 +203,7 @@ void do_map(mindex::reference_index& ri,
     auto rg = parser.getReadGroup();
     uint32_t num_reads_in_chunk{0};
 
-    sshash::streaming_query_canonical_parsing q(ri.get_dict());
+    piscem::streaming_query q(ri.get_dict());
     // for(int32_t i = 0; i < ri.num_refs(); i++) {
     //     std::cout << "i is " <<  i << " ref len is " << ri.ref_len(i) << " name is " << ri.ref_name(i) << std::endl;
     // }
