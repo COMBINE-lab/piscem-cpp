@@ -4,8 +4,14 @@
 // #include "../external/libradicl/include/Byte_Array.hpp"
 // #include "../external/libradicl/include/Tags.hpp"
 // #include "../include/reference_index.hpp"
+#include "check_overlap.cpp"
+int main() {
+    // std::string seq2 = "ACGATTGCCTGGAC";
+    std::string seq1 = "GTCCAGGCAATCGT";
+    std::string seq2 = "TTGCCTGGACACGA";
 
-// int main() {
+    std::string ov = check_overlap::getOverlap(seq1, seq2, true, 5, 0);
+    std::cout << "ov " << ov << std::endl;
 //   std::string index_basename = "/fs/cbcb-lab/rob/students/noor/Atacseq/piscem_analysis/hg38_ind_k23/hg38_ind_k23";
 //   mindex::reference_index ri(index_basename);
 //   std::vector<std::string> refs;
@@ -27,5 +33,5 @@
 
 //   rw.close();
 
-//   return 0;
-// }
+  return 0;
+}

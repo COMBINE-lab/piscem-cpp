@@ -1,23 +1,9 @@
 #include "../external/sshash/external/pthash/external/cmd_line_parser/include/parser.hpp"
-#include "../include/reference_index.hpp"
-#include "../include/CanonicalKmerIterator.hpp"
-#include "../include/Kmer.hpp"
-#include "../external/sshash/include/query/streaming_query_canonical_parsing.hpp"
-#include "../include/projected_hits.hpp"
-#include "../include/util.hpp"
-#include "../include/mapping/utils.hpp"
-#include "../include/parallel_hashmap/phmap.h"
-#include "../include/FastxParser.hpp"
-#include "../include/rad/rad_writer.hpp"
-#include "../include/rad/rad_header.hpp"
-#include "../include/rad/util.hpp"
 #include "../include/ghc/filesystem.hpp"
-#include "../include/cli11/CLI11.hpp"
 #include "../include/sc/util.hpp"
-#include "../include/spdlog/spdlog.h"
-#include "../include/spdlog/sinks/stdout_color_sinks.h"
+#include "../include/spdlog_piscem/spdlog.h"
+#include "../include/spdlog_piscem/sinks/stdout_color_sinks.h"
 #include "../include/meta_info.hpp"
-#include "../include/mapping/utils.hpp"
 
 #include "zlib.h"
 
@@ -33,7 +19,6 @@
 #include <sstream>
 #include <fstream>
 
-using namespace klibpp;
 using namespace std;
 
 namespace check_overlap {
@@ -76,7 +61,7 @@ std::string reverseComplement(std::string sequence) {
 }
 
 // modified from https://github.com/haowenz/chromap/blob/29bc02d02671ebfb6f71c4b24cafb7548c2ca901/src/chromap.cc#L109
-std::string getOverlap(std::string& seq1, std::string& seq2, bool dovetail, int min_overlap_length) {
+std::string getOverlap(std::string& seq1, std::string& seq2, bool dovetail, const int32_t min_overlap_length, const int32_t error_threshold_for_merging) {
 
     const uint32_t raw_read1_length = seq1.length();
     const uint32_t raw_read2_length = seq2.length();
@@ -88,179 +73,173 @@ std::string getOverlap(std::string& seq1, std::string& seq2, bool dovetail, int 
     std::string negative_read2 = raw_read1_length <= raw_read2_length
                                           ? raw_negative_read2 : raw_negative_read1;
     std::string frag_seq="";
+    bool is_merged = false;
     
-    int overlap_length = 0;
-    const int seed_length = min_overlap_length / 2;
-    const int error_threshold_for_merging = 1;
+    uint32_t overlap_length = 0;
+    const int32_t seed_length = min_overlap_length / 2;
     
     std::string suffix_read = dovetail ? negative_read2 : read1;
     std::string prefix_read = dovetail ? read1 : negative_read2;
-    const uint32_t suff_length = suffix_read.length();
-    const uint32_t pref_length = prefix_read.length();
-    size_t seed_start_position = 0;
-    
+    const int32_t suff_length = suffix_read.length();
+    const int32_t pref_length = prefix_read.length();
+    // std::cout << "suffix " << suffix_read << std::endl;
+    // std::cout << "prefix " << prefix_read << std::endl;  
     for (int si = 0; si < error_threshold_for_merging + 1; ++si) {
-        size_t seed_start_position =
-            suffix_read.find(prefix_read.substr(si*seed_length, si*seed_length + seed_length), 0);
-
-    while (seed_start_position != std::string::npos) {
-      const bool before_seed_is_enough_long =
-          seed_start_position >= (size_t)(si * seed_length);
-      const bool overlap_is_enough_long =
-          (int)(suff_length - seed_start_position + seed_length * si) >=
+      int32_t seed_start_position =
+          suffix_read.find(prefix_read.c_str() + size_t(si*seed_length), 0, size_t(seed_length));
+      // std::cout << "seed_pos " << seed_start_position << std::endl;
+      while (size_t(seed_start_position) != std::string::npos) {
+        const bool before_seed_is_enough_long =
+          seed_start_position >= si * seed_length;
+        const bool overlap_is_enough_long =
+          (suff_length - seed_start_position + seed_length * si) >=
           min_overlap_length;
 
-      if (!before_seed_is_enough_long || !overlap_is_enough_long) {
+        if (!before_seed_is_enough_long || !overlap_is_enough_long) {
+          seed_start_position = suffix_read.find(
+              prefix_read.c_str() + size_t(si * seed_length),size_t(seed_start_position + 1), size_t(seed_length));
+          continue;
+        }
+
+        bool can_merge = true;
+        int num_errors = 0;
+
+        // The bases before the seed.
+        for (int i = 0; i < seed_length * si; ++i) {
+          if (suffix_read[seed_start_position - si * seed_length + i] !=
+              prefix_read[i]) {
+            ++num_errors;
+            return frag_seq;
+          }
+          if (num_errors > error_threshold_for_merging) {
+            can_merge = false;
+            break;
+          }
+        }
+        // std::cout << "num_errors " << num_errors << std::endl;
+        // The bases after the seed.
+        for (int32_t i = seed_length; i + seed_start_position < suff_length &&
+                                      si * seed_length + i < pref_length;
+            ++i) {
+          // std::cout << "suff " << suffix_read[seed_start_position + i] << " pref " << prefix_read[si * seed_length + i] << std::endl;
+          if (suffix_read[seed_start_position + i] !=
+              prefix_read[si * seed_length + i]) {
+            ++num_errors;
+          }
+          if (num_errors > error_threshold_for_merging) {
+            can_merge = false;
+            break;
+          }
+        }
+        // std::cout << "num_errors " << num_errors << std::endl;
+        if (can_merge) {
+          is_merged = true;
+          overlap_length =
+              std::min(suff_length - seed_start_position + si * seed_length, pref_length);
+          break;
+        }
+
         seed_start_position = suffix_read.find(
-            prefix_read.substr(si * seed_length,si * seed_length + seed_length), seed_start_position + 1);
-        continue;
-      }
-
-      bool can_merge = true;
-      int num_errors = 0;
-
-      // The bases before the seed.
-      for (int i = 0; i < seed_length * si; ++i) {
-        if (suffix_read[seed_start_position - si * seed_length + i] !=
-            prefix_read[i]) {
-          ++num_errors;
-          return frag_seq;
-        }
-        if (num_errors > error_threshold_for_merging) {
-          can_merge = false;
-          break;
-        }
-      }
-
-      // The bases after the seed.
-      for (uint32_t i = seed_length; i + seed_start_position < suff_length &&
-                                     si * seed_length + i < pref_length;
-          ++i) {
-        if (suffix_read[seed_start_position + i] !=
-            prefix_read[si * seed_length + i]) {
-          ++num_errors;
-        }
-        if (num_errors > error_threshold_for_merging) {
-          can_merge = false;
-          break;
-        }
-      }
-
-      if (can_merge) {
-        overlap_length =
-            suff_length - seed_start_position + si * seed_length;
-        break;
-      }
-
-      seed_start_position = suffix_read.find(
-          prefix_read.substr(si * seed_length,si * seed_length + seed_length), seed_start_position + 1);
+            prefix_read.c_str() + size_t(si * seed_length), size_t(seed_start_position + 1), size_t(seed_length));
     }
-    // if (is_merged) {
-    //     std::cout<< seed_start_position <<std::endl;
-    //     std::cout<< overlap_length <<std::endl;
-    //     std::cout<< si <<std::endl;
-    //     break;
-    // }
-  }
-  if (overlap_length >= min_overlap_length) {
-      size_t l = suffix_read.length() - seed_start_position;
-      if(dovetail) {
-        frag_seq += suffix_read.substr(seed_start_position, sizeof(suffix_read));
+      if (is_merged) {
+          break;
       }
-      else {
-        frag_seq += suffix_read + prefix_read.substr(l, sizeof(prefix_read));;
-      }
-  }
+    }
+    // std::cout << "overlap length " << overlap_length << std::endl;
+    if (overlap_length != 0) {
+      frag_seq = prefix_read.substr(0, overlap_length);
+    }
   return frag_seq;
 }
 
-void findOverlapBetweenPairedEndReads(std::string& seq1, std::string& seq2, MateOverlap &mate_ov, int min_overlap_length) {
-  std::string type_dov = getOverlap(seq1, seq2, true, min_overlap_length);
-  std::string type_ov = getOverlap(seq1, seq2, false, min_overlap_length);
+void findOverlapBetweenPairedEndReads(std::string &seq1, std::string &seq2, MateOverlap &mate_ov, int32_t min_overlap_length) {
+  std::string type_dov = getOverlap(seq1, seq2, true, min_overlap_length, 0);
+  // std::string type_ov = getOverlap(seq1, seq2, false, min_overlap_length);
 
   if(type_dov != "") {
     mate_ov.ov_type = doveTail;
     mate_ov.frag_length = type_dov.length();
     mate_ov.frag = type_dov;
   }
-  else if(type_ov != "") {
-    mate_ov.ov_type = overlap;
-    mate_ov.frag_length = type_ov.length();
-    mate_ov.frag = type_ov;
-  }
-  else {
-    mate_ov.ov_type = noOverlap;
-  }
-  if(type_dov!="" && type_ov!="") {
-    mate_ov.ov_type = both;
-    mate_ov.frag_length = -1;
-  }
+  // else if(type_ov != "") {
+  //   mate_ov.ov_type = overlap;
+  //   mate_ov.frag_length = type_ov.length();
+  //   mate_ov.frag = type_ov;
+  // }
+  // else {
+  //   mate_ov.ov_type = noOverlap;
+  // }
+  // if(type_dov!="" && type_ov!="") {
+  //   mate_ov.ov_type = both;
+  //   mate_ov.frag_length = -1;
+  // }
 }
 
-void write_mate_match(fastx_parser::FastxParser<fastx_parser::ReadPair>& parser,
-            std::atomic<uint64_t>& global_nr, std::atomic<uint64_t>& global_nhits,
-            std::mutex& iomut, ofstream& myfile) {
-  auto rg = parser.getReadGroup();
-  // uint32_t count = 0;
+// void write_mate_match(fastx_parser::FastxParser<fastx_parser::ReadPair>& parser,
+//             std::atomic<uint64_t>& global_nr, std::atomic<uint64_t>& global_nhits,
+//             std::mutex& iomut, ofstream& myfile) {
+//   auto rg = parser.getReadGroup();
+//   // uint32_t count = 0;
   
-  uint32_t max_chunk_reads = 100000;
-  vector<int32_t> frag_length(max_chunk_reads, -1);
-  vector<int32_t> map_type(max_chunk_reads, -1);
-  vector<int32_t> read1_length(max_chunk_reads, 0);
-  vector<int32_t> read2_length(max_chunk_reads, 0);
-  std::map<MateTypeOverlap, int> map;
-  map[doveTail] = 0;
-  map[overlap] = 1;
-  map[noOverlap] = 2;
-  map[both] = 3;
-  uint64_t read_num = 0;
-    // reserve the space to later write
-    // down the number of reads in the
-    // first chunk.
-  uint32_t num_reads_in_chunk{0};
+//   uint32_t max_chunk_reads = 100000;
+//   vector<int32_t> frag_length(max_chunk_reads, -1);
+//   vector<int32_t> map_type(max_chunk_reads, -1);
+//   vector<int32_t> read1_length(max_chunk_reads, 0);
+//   vector<int32_t> read2_length(max_chunk_reads, 0);
+//   std::map<MateTypeOverlap, int> map;
+//   map[doveTail] = 0;
+//   map[overlap] = 1;
+//   map[noOverlap] = 2;
+//   map[both] = 3;
+//   uint64_t read_num = 0;
+//     // reserve the space to later write
+//     // down the number of reads in the
+//     // first chunk.
+//   uint32_t num_reads_in_chunk{0};
   
-  // std::cout << "yp11" << std::endl;
-  while (parser.refill(rg)) {
-    for (auto& record : rg) {
-      ++global_nr;
-      ++read_num;
-      auto rctr = global_nr.load();
-      auto hctr = global_nhits.load();
-      MateOverlap mov;
+//   // std::cout << "yp11" << std::endl;
+//   while (parser.refill(rg)) {
+//     for (auto& record : rg) {
+//       ++global_nr;
+//       ++read_num;
+//       auto rctr = global_nr.load();
+//       auto hctr = global_nhits.load();
+//       MateOverlap mov;
       
-      findOverlapBetweenPairedEndReads(record.first.seq, record.second.seq, mov, 30);
-      frag_length[num_reads_in_chunk] = mov.frag_length;
-      map_type[num_reads_in_chunk] = map[mov.ov_type];
-      read1_length[num_reads_in_chunk] = static_cast<int32_t>(record.first.seq.length());
-      read2_length[num_reads_in_chunk] = static_cast<int32_t>(record.second.seq.length());
-      ++num_reads_in_chunk;
+//       findOverlapBetweenPairedEndReads(record.first.seq, record.second.seq, mov, 30);
+//       frag_length[num_reads_in_chunk] = mov.frag_length;
+//       map_type[num_reads_in_chunk] = map[mov.ov_type];
+//       read1_length[num_reads_in_chunk] = static_cast<int32_t>(record.first.seq.length());
+//       read2_length[num_reads_in_chunk] = static_cast<int32_t>(record.second.seq.length());
+//       ++num_reads_in_chunk;
       
-      if (num_reads_in_chunk > max_chunk_reads) {
-        iomut.lock();
-        for(int i=0; i < frag_length.size(); i++){
-          myfile << frag_length[i] << "\t" << map_type[i] << "\t" << read1_length[i] << "\t" << read2_length[i]<< std::endl;
-        }
-        iomut.unlock();
-        frag_length.clear();
-        map_type.clear();
-        num_reads_in_chunk = 0;
-                // std::cout<<"so"<<std::endl;
-                // reserve space for headers of next chunk
-      }
+//       if (num_reads_in_chunk > max_chunk_reads) {
+//         iomut.lock();
+//         for(int i=0; i < frag_length.size(); i++){
+//           myfile << frag_length[i] << "\t" << map_type[i] << "\t" << read1_length[i] << "\t" << read2_length[i]<< std::endl;
+//         }
+//         iomut.unlock();
+//         frag_length.clear();
+//         map_type.clear();
+//         num_reads_in_chunk = 0;
+//                 // std::cout<<"so"<<std::endl;
+//                 // reserve space for headers of next chunk
+//       }
     
-    }
-  }
-  if (num_reads_in_chunk > 0) { 
-    iomut.lock();
-    for(uint32_t i=0; i < num_reads_in_chunk; i++){
-      myfile << frag_length[i] << "\t" << map_type[i] << "\t" << read1_length[i] << "\t" << read2_length[i] << std::endl;
-    }
-    iomut.unlock();
-    frag_length.clear();
-    map_type.clear();
-    num_reads_in_chunk = 0;
-  }
-}
+//     }
+//   }
+//   if (num_reads_in_chunk > 0) { 
+//     iomut.lock();
+//     for(uint32_t i=0; i < num_reads_in_chunk; i++){
+//       myfile << frag_length[i] << "\t" << map_type[i] << "\t" << read1_length[i] << "\t" << read2_length[i] << std::endl;
+//     }
+//     iomut.unlock();
+//     frag_length.clear();
+//     map_type.clear();
+//     num_reads_in_chunk = 0;
+//   }
+// }
 }
 // int main() {
 //   // std::string seq1 = "CCTTCTCCTAATTCCGCAAATGTGAAGGGTAGGGGGACGTTAAGGACCTG";

@@ -140,6 +140,7 @@ void print_hits(const std::vector<mapping::util::simple_hit> &hits ) {
         std::cout << "num hits: " << hit.num_hits << std::endl;
         std::cout << "tid: " << hit.tid << std::endl;
         std::cout << "bin_id: " << hit.bin_id << std::endl;
+        std::cout << "frag_len: " << hit.fragment_length << std::endl;
         std::cout << "------------------------" << std::endl;
     }
 }
@@ -1685,6 +1686,44 @@ inline void merge_se_mappings(mapping_cache_info_t &map_cache_left,
 
 namespace util_bin {
 
+template <typename mapping_cache_info_t>
+inline void remove_duplicate_hits(mapping_cache_info_t &map_cache, uint32_t max_num_hits) {
+  auto& accepted_hits = map_cache.accepted_hits;
+  using hit_list_iter_t = decltype(accepted_hits.begin());
+
+  struct {
+    // hits are equivalent if they have the same orientation, reference, and position
+    bool operator()(const mapping::util::simple_hit& a,
+                    const mapping::util::simple_hit& b) {
+      return ((a.is_fw == b.is_fw) and (a.tid == b.tid) and (a.pos == b.pos));
+    }
+  } equiv_hit;
+
+  
+  auto canonicalize_hits = [&equiv_hit](hit_list_iter_t it1, hit_list_iter_t it2, hit_list_iter_t end, uint32_t &max_nh) {
+    while (it2 != end) {
+      if (equiv_hit(*it1, *it2)) { 
+        auto min_bin = std::min(it1->bin_id, it2->bin_id);
+        auto max_num_hits = std::max(it1->num_hits, it2->num_hits);
+        it1->bin_id = it2->bin_id = min_bin;
+        it1->num_hits = it2->num_hits = max_num_hits;
+        max_nh = std::max(max_nh, max_num_hits);
+      }
+      ++it1; ++it2;
+    }
+  };
+  
+  
+  uint32_t m_hits = max_num_hits == 0 ? 0 : accepted_hits.front().num_hits;
+  if (accepted_hits.size() > 0) {
+      canonicalize_hits(accepted_hits.begin(), accepted_hits.begin() + 1, 
+    accepted_hits.end(), m_hits);  
+    auto last = std::unique(accepted_hits.begin(), accepted_hits.end(), equiv_hit);
+    accepted_hits.erase(last, accepted_hits.end());
+  }
+
+    
+}
 
 template <typename mapping_cache_info_t>
 inline void merge_se_mappings(mapping_cache_info_t& map_cache_left,
@@ -1719,24 +1758,24 @@ inline void merge_se_mappings(mapping_cache_info_t& map_cache_left,
     }
   } simple_hit_less_bins;
 
-  struct {
+/*  struct {
     // hits are equivalent if they have the same orientation, reference, and position
     bool operator()(const mapping::util::simple_hit& a,
                     const mapping::util::simple_hit& b) {
       return ((a.is_fw == b.is_fw) and (a.tid == b.tid) and (a.pos == b.pos));
     }
-  } equiv_hit;
+  } equiv_hit;*/
 
   // scan through and "canonicalize" duplicate hits.  In this 
   // process, non-duplcate hits are left untouched, and for duplicates
   // (defined by the captured `equiv_hit`) functor, each duplicate gets 
   // the smaller bin id and the larger score.
-  using hit_list_iter_t = decltype(accepted_left.begin());
+  // using hit_list_iter_t = decltype(accepted_left.begin());
   // arguments are a pair of adjacent iterators to the first and second elements (`it1` and `it2`)
   // and an `end` iterator (following the standard meaning, it is one past the last valid element).
   // The `max_nh` argument will record the max num_hits observed over all mappings and 
   // be updated accordingly.
-  auto canonicalize_hits = [&equiv_hit](hit_list_iter_t it1, hit_list_iter_t it2, hit_list_iter_t end, uint32_t& max_nh) {
+/*  auto canonicalize_hits = [&equiv_hit](hit_list_iter_t it1, hit_list_iter_t it2, hit_list_iter_t end, uint32_t& max_nh) {
     while (it2 != end) {
       if (equiv_hit(*it1, *it2)) { 
         auto min_bin = std::min(it1->bin_id, it2->bin_id);
@@ -1747,8 +1786,9 @@ inline void merge_se_mappings(mapping_cache_info_t& map_cache_left,
       }
       ++it1; ++it2;
     }
-  };
+  };*/
 
+  
   if ((num_accepted_left > 0) and (num_accepted_right > 0)) {
     // sort by orientation, tid, position, num_hits and finally bin_id
     std::sort(accepted_left.begin(), accepted_left.end(), simple_hit_less_bins);
@@ -1760,14 +1800,15 @@ inline void merge_se_mappings(mapping_cache_info_t& map_cache_left,
     uint32_t discard = 0;
     // canonicalize the hits, giving each equivalent hit the smaller 
     // of the possible bin ids and the larger of the possible scores.
-    canonicalize_hits(accepted_left.begin(), accepted_left.begin() + 1, accepted_left.end(), discard);
-    canonicalize_hits(accepted_right.begin(), accepted_right.begin() + 1, accepted_right.end(), discard);
-
+    // canonicalize_hits(accepted_left.begin(), accepted_left.begin() + 1, accepted_left.end(), discard);
+    // canonicalize_hits(accepted_right.begin(), accepted_right.begin() + 1, accepted_right.end(), discard);
+    remove_duplicate_hits(map_cache_left, discard);
+    remove_duplicate_hits(map_cache_right, discard);
     // remove duplicates
-    auto last_left = std::unique(accepted_left.begin(), accepted_left.end(), equiv_hit);
-    auto last_right = std::unique(accepted_right.begin(), accepted_right.end(), equiv_hit);
-    accepted_left.erase(last_left, accepted_left.end());
-    accepted_right.erase(last_right, accepted_right.end());
+    // auto last_left = std::unique(accepted_left.begin(), accepted_left.end(), equiv_hit);
+    // auto last_right = std::unique(accepted_right.begin(), accepted_right.end(), equiv_hit);
+    // accepted_left.erase(last_left, accepted_left.end());
+    // accepted_right.erase(last_right, accepted_right.end());
 
     const mapping::util::simple_hit smallest_rc_hit = {false, false, -1, 0.0, 0, 0, 0, 0, 0};
     // start of forward sub-list
@@ -1845,10 +1886,10 @@ inline void merge_se_mappings(mapping_cache_info_t& map_cache_left,
     // sort by orientation, tid, position, num_hits and finally bin_id
     std::sort(accepted_left.begin(), accepted_left.end(), simple_hit_less_bins);
     max_num_hits = accepted_left.front().num_hits;
-    canonicalize_hits(accepted_left.begin(), accepted_left.begin() + 1, accepted_left.end(), max_num_hits);
-    auto last_left = std::unique(accepted_left.begin(), accepted_left.end(), equiv_hit);
+    remove_duplicate_hits(map_cache_left, max_num_hits);
+    // auto last_left = std::unique(accepted_left.begin(), accepted_left.end(), equiv_hit);
     // remove duplicates
-    accepted_left.erase(last_left, accepted_left.end());
+    // accepted_left.erase(last_left, accepted_left.end());
 
     std::swap(map_cache_left.accepted_hits, map_cache_out.accepted_hits);
     map_cache_out.map_type = (map_cache_out.accepted_hits.size() > 0)
@@ -1857,27 +1898,24 @@ inline void merge_se_mappings(mapping_cache_info_t& map_cache_left,
   } else if ((num_accepted_right > 0) and !had_matching_kmers_left) {
     // sort by orientation, tid, position, num_hits and finally bin_id
     std::sort(accepted_right.begin(), accepted_right.end(), simple_hit_less_bins);
-    max_num_hits = accepted_right.front().num_hits;
-    canonicalize_hits(accepted_right.begin(), accepted_right.begin() + 1, accepted_right.end(), max_num_hits);
-    auto last_right = std::unique(accepted_right.begin(), accepted_right.end(), equiv_hit);
+    // max_num_hits = accepted_right.front().num_hits;
+    // canonicalize_hits(accepted_right.begin(), accepted_right.begin() + 1, accepted_right.end(), max_num_hits);
+    // auto last_right = std::unique(accepted_right.begin(), accepted_right.end(), equiv_hit);
     // remove duplicates
-    accepted_right.erase(last_right, accepted_right.end());
-
+    // accepted_right.erase(last_right, accepted_right.end());
+    max_num_hits = accepted_right.front().num_hits;
+    remove_duplicate_hits(map_cache_right, max_num_hits);
     std::swap(map_cache_right.accepted_hits, map_cache_out.accepted_hits);
     map_cache_out.map_type = (map_cache_out.accepted_hits.size() > 0)
       ? util::MappingType::MAPPED_SECOND_ORPHAN
       : util::MappingType::UNMAPPED;
   } else {
+     
     // return nothing
   }
 
+  // While even if we are thresholding, only top hits should be kept
   if (map_cache_out.accepted_hits.size() > 0) {
-    /* since accepted_hits is non-empty, we should always have a `max_num_hits` of at least 1
-      if (max_num_hits == 0) {
-        for (const auto& hit:map_cache_out.accepted_hits)  {
-          max_num_hits = std::max(hit.num_hits, max_num_hits);
-        }
-    }*/
     auto accepted_hits_last = 
       std::remove_if(map_cache_out.accepted_hits.begin(), 
                      map_cache_out.accepted_hits.end(),
