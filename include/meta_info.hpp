@@ -22,6 +22,9 @@ public:
     inline void num_lmatch(uint64_t num_lmatch_in) { num_l_match_ = num_lmatch_in; }
     inline void num_rmatch(uint64_t num_rmatch_in) { num_r_match_ = num_rmatch_in; }
     inline void num_dovematch(uint64_t num_dovematch_in) { num_dove_match_ = num_dovematch_in; }
+    inline void num_dovenum(uint64_t num_dovenum_in) { num_dove_num_ = num_dovenum_in; }
+    inline void num_ovmatch(uint64_t num_ovmatch_in) { num_ov_match_ = num_ovmatch_in; }
+    inline void num_ovnum(uint64_t num_ovnum_in) { num_ov_num_ = num_ovnum_in; }
     inline void num_seconds(double num_sec) { num_seconds_ = num_sec; }
     inline void important_params(ParamMapT param_map) { important_params_ = param_map; };
     inline void ref_sig_info(std::optional<ref_sig_info_t> ref_sig_info) { ref_sig_info_ = ref_sig_info; };
@@ -35,6 +38,9 @@ public:
     inline uint64_t num_lmatch() const { return num_l_match_; }
     inline uint64_t num_rmatch() const { return num_r_match_; }
     inline uint64_t num_dovematch() const { return num_dove_match_; }
+    inline uint64_t num_dovenum() const { return num_dove_num_; }
+    inline uint64_t num_ovmatch() const { return num_ov_match_; }
+    inline uint64_t num_ovnum() const { return num_ov_num_; }
     inline double num_seconds() const { return num_seconds_; }
     inline const ParamMapT& important_params() const { return important_params_; }
     inline const std::optional<ref_sig_info_t>& ref_sig_info() const { return ref_sig_info_; }
@@ -48,6 +54,9 @@ private:
     uint64_t num_l_match_{0};
     uint64_t num_r_match_{0};
     uint64_t num_dove_match_{0};
+    uint64_t num_dove_num_{0};
+    uint64_t num_ov_match_{0};
+    uint64_t num_ov_num_{0};
 
     double num_seconds_{0};
     ParamMapT important_params_;
@@ -68,6 +77,9 @@ inline bool write_map_info(run_stats& rs, ghc::filesystem::path& map_info_file_p
     j["l_matched"] = rs.num_lmatch();
     j["r_matched"] = rs.num_rmatch();
     j["dove_matched"] = rs.num_dovematch();
+    j["dove_num"] = rs.num_dovenum();
+    j["ov_matched"] = rs.num_ovmatch();
+    j["ov_num"] = rs.num_ovnum();
     j["runtime_seconds"] = rs.num_seconds();
     
     if (rs.ref_sig_info()) {

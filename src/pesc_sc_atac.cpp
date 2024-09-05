@@ -69,7 +69,10 @@ bool map_fragment(fastx_parser::ReadTrip& record,
                   std::atomic<uint64_t>& k_match, 
                   std::atomic<uint64_t> &l_match,
                   std::atomic<uint64_t> &r_match,
+                  std::atomic<uint64_t> &dove_num,
                   std::atomic<uint64_t> &dove_match,
+                  std::atomic<uint64_t> &ov_num,
+                  std::atomic<uint64_t> &ov_match,
                   mapping::util::bin_pos& binning) {
 
     bool km = false; //kmatch checker
@@ -78,24 +81,34 @@ bool map_fragment(fastx_parser::ReadTrip& record,
     poison_state.set_fragment_end(mapping::util::fragment_end::LEFT);
 
     check_overlap::MateOverlap mate_ov;
-    check_overlap::findOverlapBetweenPairedEndReads(record.first.seq, record.second.seq, mate_ov, 30);
+    check_overlap::findOverlapBetweenPairedEndReads(record.first.seq, record.second.seq, mate_ov, 30, 0);
+    std::cout << "seq" << record.first.seq << std::endl;
     if (mate_ov.frag != "") {
-        // std::cout << "mat_ov" << mate_ov.frag << std::endl;
+        
         bool exit = mapping::util::map_read(&mate_ov.frag, map_cache_out, poison_state, binning, km);
         if(km) {
             ++k_match;
         }
-        // map_cache_out.map_type = (map_cache_out.accepted_hits.size() > 0)
-        //                        ? mapping::util::MappingType::MAPPED_PAIR
-        //                        : mapping::util::MappingType::UNMAPPED;
+
         // std::cout << map_cache_out.accepted_hits.size() << std::endl;
-        uint32_t max_num_hits = map_cache_out.accepted_hits.front().num_hits;
-        mapping::util_bin::remove_duplicate_hits(map_cache_out, max_num_hits);
-        // for (auto& hit:map_cache_out.accepted_hits) {
-        //     hit.fragment_length = mate_ov.frag_length; 
-        // }
+        if (!map_cache_out.accepted_hits.empty()) {
+            uint32_t max_num_hits = map_cache_out.accepted_hits.front().num_hits;
+            mapping::util_bin::remove_duplicate_hits(map_cache_out, max_num_hits);
+            map_cache_out.map_type = (map_cache_out.accepted_hits.size() > 0)
+                ? mapping::util::MappingType::MAPPED_PAIR
+                : mapping::util::MappingType::UNMAPPED;
+            for (auto& hit:map_cache_out.accepted_hits) {
+                hit.fragment_length = mate_ov.frag_length; 
+            }
+        }
         // add remove max_hits
-        dove_match += map_cache_out.accepted_hits.empty() ? 0 : 1;
+        if (mate_ov.ov_type == check_overlap::MateTypeOverlap::doveTail) {
+            dove_match += map_cache_out.accepted_hits.empty() ? 0 : 1;
+            dove_num += 1;
+        } else {
+            ov_match += map_cache_out.accepted_hits.empty() ? 0 : 1;
+            ov_num += 1;
+        }
         return exit;
     }
     // std::cout << "left\n";
@@ -171,7 +184,10 @@ void do_map(mindex::reference_index& ri,
                     std::atomic<uint64_t>& k_match,
                     std::atomic<uint64_t>& l_match,
                     std::atomic<uint64_t>& r_match,
+                    std::atomic<uint64_t>& dove_num,
                     std::atomic<uint64_t>& dove_match,
+                    std::atomic<uint64_t>& ov_num,
+                    std::atomic<uint64_t>& ov_match,
                     std::atomic<uint64_t>& global_npoisoned,
                     pesc_output_info& out_info,
                     std::mutex& iomut,
@@ -260,7 +276,7 @@ void do_map(mindex::reference_index& ri,
             
             bool had_early_stop = 
                map_fragment(record, poison_state, map_cache_left, map_cache_right, map_cache_out, k_match,
-                   l_match, r_match, dove_match, binning);
+                   l_match, r_match, dove_num, dove_match, ov_num, ov_match, binning);
             (void)had_early_stop;
             // if (had_early_stop) {
                 
@@ -471,6 +487,9 @@ int run_pesc_sc_atac(int argc, char** argv) {
     std::atomic<uint64_t> l_match{0};
     std::atomic<uint64_t> r_match{0};
     std::atomic<uint64_t> dove_match{0};
+    std::atomic<uint64_t> dove_num{0};
+    std::atomic<uint64_t> ov_num{0};
+    std::atomic<uint64_t> ov_match{0};
     std::atomic<uint64_t> global_np{0}; //whether the kmer exists in the unitig table
     std::mutex iomut;
 
@@ -488,16 +507,16 @@ int run_pesc_sc_atac(int argc, char** argv) {
         for (size_t i = 0; i < nthread; ++i) {
             workers.push_back(std::thread(
                 [&ri, &po, &rparser, &binning, &ptab, &global_nr, &global_nh, &global_nmult, &k_match, &global_np,
-                 &out_info, &iomut, &rw, &l_match, &r_match, &dove_match]() {
+                 &out_info, &iomut, &rw, &l_match, &r_match, &dove_match, &dove_num, &ov_num, &ov_match]() {
                     const auto token = rw.get_token();
                     if (!po.enable_structural_constraints) {
                         using SketchHitT = mapping::util::sketch_hit_info_no_struct_constraint;
                         do_map<FragmentT, SketchHitT>(ri, rparser, binning, ptab, global_nr, global_nh, global_nmult,
-                            k_match, l_match, r_match, dove_match, global_np, out_info, iomut, rw, token);
+                            k_match, l_match, r_match, dove_num, dove_match, ov_num, ov_match, global_np, out_info, iomut, rw, token);
                     } else {
                         using SketchHitT = mapping::util::sketch_hit_info;   
                         do_map<FragmentT, SketchHitT>(ri, rparser, binning, ptab, global_nr, global_nh, global_nmult,
-                            k_match, l_match, r_match, dove_match, global_np, out_info, iomut, rw, token);
+                            k_match, l_match, r_match, dove_num, dove_match, ov_num, ov_match, global_np, out_info, iomut, rw, token);
                     }
                 }));
         }
@@ -531,7 +550,10 @@ int run_pesc_sc_atac(int argc, char** argv) {
     rs.num_kmatch(k_match.load());
     rs.num_lmatch(l_match.load());
     rs.num_rmatch(r_match.load());
+    rs.num_dovenum(dove_num.load());
     rs.num_dovematch(dove_match.load());
+    rs.num_ovnum(ov_num.load());
+    rs.num_ovmatch(ov_match.load());
 
     ghc::filesystem::path map_info_file_path = output_path / "map_info.json";
     bool info_ok = piscem::meta_info::write_map_info(rs, map_info_file_path);

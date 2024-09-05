@@ -61,7 +61,7 @@ std::string reverseComplement(std::string sequence) {
 }
 
 // modified from https://github.com/haowenz/chromap/blob/29bc02d02671ebfb6f71c4b24cafb7548c2ca901/src/chromap.cc#L109
-std::string getOverlap(std::string& seq1, std::string& seq2, bool dovetail, const int32_t min_overlap_length, const int32_t error_threshold_for_merging) {
+inline std::string getOverlap(std::string& seq1, std::string& seq2, bool dovetail, const int32_t min_overlap_length, const int32_t error_threshold_for_merging) {
 
     const uint32_t raw_read1_length = seq1.length();
     const uint32_t raw_read2_length = seq2.length();
@@ -148,32 +148,29 @@ std::string getOverlap(std::string& seq1, std::string& seq2, bool dovetail, cons
     }
     // std::cout << "overlap length " << overlap_length << std::endl;
     if (overlap_length != 0) {
-      frag_seq = prefix_read.substr(0, overlap_length);
+      if (dovetail) {
+        frag_seq = prefix_read.substr(0, overlap_length);
+      } else {
+        frag_seq = suffix_read + prefix_read.substr(overlap_length, overlap_length-pref_length);
+      }
+      
     }
   return frag_seq;
 }
 
-void findOverlapBetweenPairedEndReads(std::string &seq1, std::string &seq2, MateOverlap &mate_ov, int32_t min_overlap_length) {
-  std::string type_dov = getOverlap(seq1, seq2, true, min_overlap_length, 0);
+inline void findOverlapBetweenPairedEndReads(std::string &seq1, std::string &seq2, MateOverlap &mate_ov, int32_t min_overlap_length, const int32_t error_threshold_for_merging) {
+  std::string st_ov = "";
+  st_ov = getOverlap(seq1, seq2, true, min_overlap_length, error_threshold_for_merging); // try with dovetail
   // std::string type_ov = getOverlap(seq1, seq2, false, min_overlap_length);
 
-  if(type_dov != "") {
-    mate_ov.ov_type = doveTail;
-    mate_ov.frag_length = type_dov.length();
-    mate_ov.frag = type_dov;
+  if(st_ov != "") {
+    mate_ov.ov_type = MateTypeOverlap::doveTail;
+  } else {
+    st_ov = getOverlap(seq1, seq2, false, min_overlap_length, error_threshold_for_merging); // try without dovetail
+    mate_ov.ov_type = st_ov != "" ? MateTypeOverlap::overlap : MateTypeOverlap::noOverlap;
   }
-  // else if(type_ov != "") {
-  //   mate_ov.ov_type = overlap;
-  //   mate_ov.frag_length = type_ov.length();
-  //   mate_ov.frag = type_ov;
-  // }
-  // else {
-  //   mate_ov.ov_type = noOverlap;
-  // }
-  // if(type_dov!="" && type_ov!="") {
-  //   mate_ov.ov_type = both;
-  //   mate_ov.frag_length = -1;
-  // }
+  mate_ov.frag_length = st_ov.length();
+  mate_ov.frag = st_ov;
 }
 
 // void write_mate_match(fastx_parser::FastxParser<fastx_parser::ReadPair>& parser,

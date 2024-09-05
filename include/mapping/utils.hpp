@@ -1715,12 +1715,12 @@ inline void remove_duplicate_hits(mapping_cache_info_t &map_cache, uint32_t max_
   
   
   uint32_t m_hits = max_num_hits == 0 ? 0 : accepted_hits.front().num_hits;
-  if (accepted_hits.size() > 0) {
-      canonicalize_hits(accepted_hits.begin(), accepted_hits.begin() + 1, 
-    accepted_hits.end(), m_hits);  
-    auto last = std::unique(accepted_hits.begin(), accepted_hits.end(), equiv_hit);
-    accepted_hits.erase(last, accepted_hits.end());
-  }
+  
+  canonicalize_hits(accepted_hits.begin(), accepted_hits.begin() + 1, 
+  accepted_hits.end(), m_hits);  
+  auto last = std::unique(accepted_hits.begin(), accepted_hits.end(), equiv_hit);
+  accepted_hits.erase(last, accepted_hits.end());
+  
 
     
 }
