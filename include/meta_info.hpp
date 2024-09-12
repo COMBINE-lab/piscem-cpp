@@ -25,6 +25,8 @@ public:
     inline void num_dovenum(uint64_t num_dovenum_in) { num_dove_num_ = num_dovenum_in; }
     inline void num_ovmatch(uint64_t num_ovmatch_in) { num_ov_match_ = num_ovmatch_in; }
     inline void num_ovnum(uint64_t num_ovnum_in) { num_ov_num_ = num_ovnum_in; }
+    inline void num_rorphan(uint64_t num_rorphan_in) { num_r_orphan_ = num_rorphan_in; }
+    inline void num_lorphan(uint64_t num_lorphan_in) { num_l_orphan_ = num_lorphan_in; }
     inline void num_seconds(double num_sec) { num_seconds_ = num_sec; }
     inline void important_params(ParamMapT param_map) { important_params_ = param_map; };
     inline void ref_sig_info(std::optional<ref_sig_info_t> ref_sig_info) { ref_sig_info_ = ref_sig_info; };
@@ -41,6 +43,8 @@ public:
     inline uint64_t num_dovenum() const { return num_dove_num_; }
     inline uint64_t num_ovmatch() const { return num_ov_match_; }
     inline uint64_t num_ovnum() const { return num_ov_num_; }
+    inline uint64_t num_rorphan() const { return num_r_orphan_; }
+    inline uint64_t num_lorphan() const { return num_l_orphan_; }
     inline double num_seconds() const { return num_seconds_; }
     inline const ParamMapT& important_params() const { return important_params_; }
     inline const std::optional<ref_sig_info_t>& ref_sig_info() const { return ref_sig_info_; }
@@ -57,6 +61,8 @@ private:
     uint64_t num_dove_num_{0};
     uint64_t num_ov_match_{0};
     uint64_t num_ov_num_{0};
+    uint64_t num_r_orphan_{0};
+    uint64_t num_l_orphan_{0};
 
     double num_seconds_{0};
     ParamMapT important_params_;
@@ -80,6 +86,8 @@ inline bool write_map_info(run_stats& rs, ghc::filesystem::path& map_info_file_p
     j["dove_num"] = rs.num_dovenum();
     j["ov_matched"] = rs.num_ovmatch();
     j["ov_num"] = rs.num_ovnum();
+    j["l_orphan"] = rs.num_lorphan();
+    j["r_orphan"] = rs.num_rorphan();
     j["runtime_seconds"] = rs.num_seconds();
     
     if (rs.ref_sig_info()) {

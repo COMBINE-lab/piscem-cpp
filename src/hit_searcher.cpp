@@ -1296,7 +1296,7 @@ bool hit_searcher::get_raw_hits_sketch_everykmer(std::string &read,
     CanonicalKmer::k(k);
     int32_t k = static_cast<int32_t>(CanonicalKmer::k());
 
-    qc.reset_state();
+    // qc.reset_state();
     EveryKmer evs(k);
     
     auto ref_contig_it = sshash::bit_vector_iterator(pfi_->contigs(), 0);
@@ -1312,19 +1312,24 @@ bool hit_searcher::get_raw_hits_sketch_everykmer(std::string &read,
     // At each kmer check we are resetting the phit variables, where the new_state is also defined
     size_t size_hits = 0;
     while(kit != kit_end) {
-      if (evs.new_state)  {
-        evs.query_kmer(kit, pfi_, raw_hits, ref_contig_it, qc);
-	// new_state_cnt++;
-      } else {
-          bool matches = evs.check_match(ref_contig_it, kit);
-          if (matches) {
-            evs.add_next(raw_hits, kit);
-	    // matches_cnt++;
-          } else {
-            evs.query_kmer(kit, pfi_, raw_hits, ref_contig_it, qc); 
-	    // non_matches_cnt++;
-          }
+      auto ph = pfi_->query(kit, qc);
+      if (!ph.empty()) {
+        // std::cerr << "found hit between " << kit->second << " and " << ph.globalPos_ << "\n";
+        raw_hits.push_back(std::make_pair(kit->second, ph));
       }
+  //     if (evs.new_state)  {
+  //       evs.query_kmer(kit, pfi_, raw_hits, ref_contig_it, qc);
+	// // new_state_cnt++;
+  //     } else {
+  //         bool matches = evs.check_match(ref_contig_it, kit);
+  //         if (matches) {
+  //           evs.add_next(raw_hits, kit);
+	//     // matches_cnt++;
+  //         } else {
+  //           evs.query_kmer(kit, pfi_, raw_hits, ref_contig_it, qc); 
+	//     // non_matches_cnt++;
+  //         }
+  //     }
       //auto ph = raw_hits.back().second;
       //auto &refs = ph.refRange;
       // std::cout << "refs len " << refs.size() << std::endl;
