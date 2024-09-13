@@ -159,6 +159,8 @@ public:
     // bed_file
     std::mutex bed_mutex;
 
+    std::ofstream sam_file;
+    std::mutex sam_mutex;
     // the output stream where the actual
     // RAD records are written
     std::ofstream rad_file;
@@ -179,11 +181,13 @@ public:
 
 template <typename mapping_cache_info_t>
 inline void write_sam_mappings(mapping_cache_info_t &map_cache_out,
-                               fastx_parser::ReadPair &record,
-                               std::string &workstr_left,
-                               std::string &workstr_right,
-                               std::atomic<uint64_t> &global_nhits,
-                               std::ostringstream &osstream) {
+                        bc_kmer_t& bck,
+                        phmap::flat_hash_map<uint64_t, uint32_t>& unmapped_bc_map,
+                        fastx_parser::ReadTrip &record,
+                        std::string &workstr_left,
+                        std::string &workstr_right,
+                        std::atomic<uint64_t> &global_nhits,
+                        std::ostringstream &osstream) {
   (void)workstr_right;
   constexpr uint16_t is_secondary = 256;
   constexpr uint16_t is_rc = 16;
@@ -193,6 +197,9 @@ inline void write_sam_mappings(mapping_cache_info_t &map_cache_out,
 
   auto map_type = map_cache_out.map_type;
 
+  if (map_type == mapping::util::MappingType::UNMAPPED) {
+    unmapped_bc_map[bck.word(0)] += 1;
+  }
   if (!map_cache_out.accepted_hits.empty()) {
     ++global_nhits;
     bool secondary = false;
@@ -200,20 +207,20 @@ inline void write_sam_mappings(mapping_cache_info_t &map_cache_out,
     uint16_t base_flag_first = 0;
     uint16_t base_flag_second = 0;
     switch (map_type) {
-    case mapping::util::MappingType::MAPPED_FIRST_ORPHAN:
-      base_flag_first = 73;
-      base_flag_second = 133;
-      break;
-    case mapping::util::MappingType::MAPPED_SECOND_ORPHAN:
-      base_flag_first = 69;
-      base_flag_second = 137;
-      break;
-    case mapping::util::MappingType::MAPPED_PAIR:
-      base_flag_first = 67;
-      base_flag_second = 131;
-      break;
-    default:
-      break;
+        case mapping::util::MappingType::MAPPED_FIRST_ORPHAN:
+        base_flag_first = 73;
+        base_flag_second = 133;
+        break;
+        case mapping::util::MappingType::MAPPED_SECOND_ORPHAN:
+        base_flag_first = 69;
+        base_flag_second = 137;
+        break;
+        case mapping::util::MappingType::MAPPED_PAIR:
+        base_flag_first = 67;
+        base_flag_second = 131;
+        break;
+        default:
+        break;
     }
 
     bool have_rc_first = false;
@@ -360,8 +367,9 @@ inline void write_sam_mappings(mapping_cache_info_t &map_cache_out,
              << "*\t0\t0\t*\t*\t0\t0\t" << record.second.seq << "\t*\n";
   }
 }
-
-template <typename FragT, typename SketchHitT>
+struct RadT{};
+struct SamT{};
+template <typename FragT, typename SketchHitT, typename OutputT = RadT>
 void do_map(mindex::reference_index& ri,
                     fastx_parser::FastxParser<FragT>& parser,
                     mapping::util::bin_pos& binning,
@@ -387,7 +395,6 @@ void do_map(mindex::reference_index& ri,
 
     auto log_level = spdlog_piscem::get_level();
     auto write_mapping_rate = false;
-
     switch (log_level) {
         case spdlog_piscem::level::level_enum::trace:
             write_mapping_rate = true;
@@ -423,6 +430,14 @@ void do_map(mindex::reference_index& ri,
     if constexpr (std::is_same_v<fastx_parser::ReadTrip, FragT>) {
         poison_state.paired_for_mapping = true;
     }
+
+    // SAM output
+    uint64_t processed = 0;
+    uint64_t buff_size = 10000;
+      // these don't really belong here
+    std::string workstr_left;
+    std::string workstr_right;
+    std::ostringstream osstream;
 
     mapping_cache_info<SketchHitT> map_cache_left(ri);
     mapping_cache_info<SketchHitT> map_cache_right(ri);
@@ -476,12 +491,31 @@ void do_map(mindex::reference_index& ri,
                 global_npoisoned++;
             }    
             
-            global_nhits += map_cache_out.accepted_hits.empty() ? 0 : 1;
             global_nmult += map_cache_out.accepted_hits.size() > 1 ? 1 : 0;
-            rad::util::write_to_rad_stream_atac(bc_kmer, map_cache_out.map_type, map_cache_out.accepted_hits,
-                                                map_cache_out.unmapped_bc_map, num_reads_in_chunk, 
-                                                temp_buff, *bc, ri, rw, token);
+            if constexpr (std::is_same_v<OutputT, RadT>) {
+                global_nhits += map_cache_out.accepted_hits.empty() ? 0 : 1;
+                rad::util::write_to_rad_stream_atac(bc_kmer, map_cache_out.map_type, map_cache_out.accepted_hits,
+                                                    map_cache_out.unmapped_bc_map, num_reads_in_chunk, 
+                                                    temp_buff, *bc, ri, rw, token);
+            }
             
+             if constexpr (std::is_same_v<OutputT, SamT>) {
+                ++processed;
+                write_sam_mappings(map_cache_out, 
+                                bc_kmer, map_cache_out.unmapped_bc_map,
+                                record, workstr_left, workstr_right,
+                                global_nhits, osstream);
+                if (processed >= buff_size) {
+                    
+                    std::string o = osstream.str();
+                    out_info.sam_mutex.lock();
+                    out_info.sam_file << o;
+                    out_info.sam_mutex.unlock();
+                    osstream.clear();
+                    osstream.str("");
+                    processed = 0;
+                }
+             }
             // dump buffer
             if (write_bed) {
                 if (num_reads_in_chunk > max_chunk_reads) {
@@ -508,6 +542,15 @@ void do_map(mindex::reference_index& ri,
         }
     }
 
+    if (processed > 0) {
+        std::string o = osstream.str();
+        out_info.sam_mutex.lock();
+        out_info.sam_file << o;
+        out_info.sam_mutex.unlock();
+        osstream.clear();
+        osstream.str("");
+        processed = 0;
+    }
 
     // // unmapped barcode writer
     {  // make a scope and dump the unmapped barcode counts
@@ -534,6 +577,16 @@ extern "C" {
 #ifdef __cplusplus
 }
 #endif
+
+void print_header(mindex::reference_index &ri, std::ostringstream &osstream) {
+//   cmdline << "@HD\tVN:1.0\tSO:unsorted\n";
+  for (uint64_t i = 0; i < ri.num_refs(); ++i) {
+    osstream << "@SQ\tSN:" << ri.ref_name(i) << "\tLN:" << ri.ref_len(i)
+              << "\n";
+  }
+//   cmdline << "@PG\tID:mindex_map\tPN:mapper\tVN:0.0.1\t"
+//             << "CL:" << "\n";
+}
 
 int run_pesc_sc_atac(int argc, char** argv) {
     std::ios_base::sync_with_stdio(false);
@@ -620,6 +673,7 @@ int run_pesc_sc_atac(int argc, char** argv) {
     ghc::filesystem::create_directories(output_path);
 
     ghc::filesystem::path bed_file_path = output_path / "map.bed";
+    ghc::filesystem::path sam_file_path = output_path / "map.sam";
     ghc::filesystem::path unmapped_bc_file_path = output_path / "unmapped_bc_count.bin";
     ghc::filesystem::path mapped_bc_file_path = output_path / "mapped_bc.txt";
     
@@ -630,6 +684,15 @@ int run_pesc_sc_atac(int argc, char** argv) {
             throw std::runtime_error("error creating bed file.");
         }
         out_info.bed_file = std::move(bed_file);
+    }
+
+    if (po.use_sam_format) {
+        std::ofstream sam_file(sam_file_path.string());
+        if (!sam_file.good()) {
+            spdlog_piscem::critical("Could not open {} for writing.", bed_file_path.string());
+            throw std::runtime_error("error creating sam file.");
+        }
+        out_info.sam_file = std::move(sam_file);
     }
 
     std::ofstream unmapped_bc_file(unmapped_bc_file_path.string());
@@ -679,6 +742,11 @@ int run_pesc_sc_atac(int argc, char** argv) {
     }
     cmdline.pop_back();
     CanonicalKmer::k(ri.k());
+    std::ostringstream val;
+    if (po.use_sam_format) {
+        print_header(ri, val);
+        out_info.sam_file << val.str();
+    }
 
     uint32_t np = 1;
     
@@ -716,14 +784,27 @@ int run_pesc_sc_atac(int argc, char** argv) {
                     const auto token = rw.get_token();
                     if (!po.enable_structural_constraints) {
                         using SketchHitT = mapping::util::sketch_hit_info_no_struct_constraint;
-                        do_map<FragmentT, SketchHitT>(ri, rparser, binning, ptab, global_nr, global_nh, global_nmult,
-                            k_match, l_match, r_match, dove_num, dove_match, ov_num, ov_match, r_orphan, l_orphan,
-                            global_np, out_info, iomut, po.use_bed_format, rw, token);
+                        if (po.use_sam_format) {
+                            do_map<FragmentT, SketchHitT, SamT>(ri, rparser, binning, ptab, global_nr, global_nh, global_nmult,
+                                k_match, l_match, r_match, dove_num, dove_match, ov_num, ov_match, r_orphan, l_orphan,
+                                global_np, out_info, iomut, po.use_bed_format, rw, token);
+                        } else {
+                            do_map<FragmentT, SketchHitT, RadT>(ri, rparser, binning, ptab, global_nr, global_nh, global_nmult,
+                                k_match, l_match, r_match, dove_num, dove_match, ov_num, ov_match, r_orphan, l_orphan,
+                                global_np, out_info, iomut, po.use_bed_format, rw, token);
+                        }
                     } else {
                         using SketchHitT = mapping::util::sketch_hit_info;
-                        do_map<FragmentT, SketchHitT>(ri, rparser, binning, ptab, global_nr, global_nh, global_nmult,
-                            k_match, l_match, r_match, dove_num, dove_match, ov_num, ov_match, r_orphan, l_orphan,
-                            global_np, out_info, iomut, po.use_bed_format, rw, token);
+                        if (po.use_sam_format) {
+                            do_map<FragmentT, SketchHitT, SamT>(ri, rparser, binning, ptab, global_nr, global_nh, global_nmult,
+                                k_match, l_match, r_match, dove_num, dove_match, ov_num, ov_match, r_orphan, l_orphan,
+                                global_np, out_info, iomut, po.use_bed_format, rw, token);
+                        } else {
+                            do_map<FragmentT, SketchHitT, RadT>(ri, rparser, binning, ptab, global_nr, global_nh, global_nmult,
+                                k_match, l_match, r_match, dove_num, dove_match, ov_num, ov_match, r_orphan, l_orphan,
+                                global_np, out_info, iomut, po.use_bed_format, rw, token);
+                        }
+
                     }
                 }));
         }
@@ -734,6 +815,21 @@ int run_pesc_sc_atac(int argc, char** argv) {
 
     spdlog_piscem::info("finished mapping.");
     rw.close();
+
+    if (po.use_sam_format) {
+        out_info.sam_file.close();
+    
+        if (!out_info.sam_file) {
+            spdlog_piscem::critical(
+                "The SAM file stream had an invalid status after "
+                "close; so some operation(s) may"
+                "have failed!\nA common cause for this is lack "
+                "of output disk space.\n"
+                "Consequently, the output may be corrupted.\n\n");
+            return 1;
+        }
+    }
+
     if (po.use_bed_format) {
         out_info.bed_file.close();
     
