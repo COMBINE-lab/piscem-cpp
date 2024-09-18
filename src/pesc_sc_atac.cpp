@@ -98,7 +98,7 @@ bool map_fragment(fastx_parser::ReadTrip& record,
             uint32_t max_num_hits = map_cache_out.accepted_hits.front().num_hits;
             mapping::util_bin::remove_duplicate_hits(map_cache_out, max_num_hits);
             map_cache_out.map_type = (map_cache_out.accepted_hits.size() > 0)
-                ? mapping::util::MappingType::MAPPED_PAIR
+                ? mapping::util::MappingType::SINGLE_MAPPED
                 : mapping::util::MappingType::UNMAPPED;
             for (auto& hit:map_cache_out.accepted_hits) {
                 hit.fragment_length = mate_ov.frag_length; 
@@ -140,6 +140,13 @@ bool map_fragment(fastx_parser::ReadTrip& record,
                                      map_cache_out);
     l_orphan += map_cache_out.map_type == mapping::util::MappingType::MAPPED_FIRST_ORPHAN ? 1 : 0;
     r_orphan += map_cache_out.map_type == mapping::util::MappingType::MAPPED_SECOND_ORPHAN ? 1 : 0;
+    if (map_cache_out.map_type == mapping::util::MappingType::MAPPED_FIRST_ORPHAN ||
+        map_cache_out.map_type == mapping::util::MappingType::MAPPED_SECOND_ORPHAN) {
+        for (auto& hit:map_cache_out.accepted_hits) {
+            hit.fragment_length = map_cache_out.map_type == mapping::util::MappingType::MAPPED_FIRST_ORPHAN ?
+                record.first.seq.length() : record.second.seq.length();
+        }
+    }
     return (early_exit_left or early_exit_right);
 }
 
@@ -188,6 +195,7 @@ inline void write_sam_mappings(mapping_cache_info_t &map_cache_out,
                         std::string &workstr_right,
                         std::atomic<uint64_t> &global_nhits,
                         std::ostringstream &osstream) {
+  
   (void)workstr_right;
   constexpr uint16_t is_secondary = 256;
   constexpr uint16_t is_rc = 16;
@@ -196,9 +204,39 @@ inline void write_sam_mappings(mapping_cache_info_t &map_cache_out,
   constexpr uint16_t mate_unmapped = 8;
 
   auto map_type = map_cache_out.map_type;
-
+  
   if (map_type == mapping::util::MappingType::UNMAPPED) {
     unmapped_bc_map[bck.word(0)] += 1;
+  }
+  
+  if (map_type == mapping::util::MappingType::SINGLE_MAPPED) {
+      if (!map_cache_out.accepted_hits.empty()) {
+        ++global_nhits;
+        bool secondary = false;
+        for (auto &ah : map_cache_out.accepted_hits) {
+            uint16_t flag = secondary ? is_secondary : 0;
+            // flag += 2;
+            flag += ah.is_fw ? 0 : is_rc;
+            // flag += first_seg;
+
+            std::string *sptr = nullptr;
+            if (is_rc) {
+                combinelib::kmers::reverseComplement(record.first.seq, workstr_left);
+                sptr = &workstr_left;
+            } else {
+                sptr = &record.first.seq;
+            }
+            osstream << record.first.name << "\t" << flag << "\t"
+                    << map_cache_out.hs.get_index()->ref_name(ah.tid) << "\t"
+                    << ah.pos + 1 << "\t255\t*\t*\t0\t" << record.first.seq.length()
+                    << "\t" << *sptr << "\t*\n";
+            secondary = true;
+        }
+    } else {
+        osstream << record.first.name << "\t" << 4 << "\t"
+            << "*\t0\t0\t*\t*\t0\t0\t" << record.first.seq << "\t*\n";
+    }
+    return;
   }
   if (!map_cache_out.accepted_hits.empty()) {
     ++global_nhits;
@@ -240,7 +278,7 @@ inline void write_sam_mappings(mapping_cache_info_t &map_cache_out,
       if (map_type == mapping::util::MappingType::MAPPED_PAIR) {
         pos_first = ah.pos + 1;
         pos_second = ah.mate_pos + 1;
-
+        std::cout << "pair\n";
         if (ah.is_fw) {
           flag_first += mate_rc;
           sptr_first = &record.first.seq;
@@ -267,7 +305,7 @@ inline void write_sam_mappings(mapping_cache_info_t &map_cache_out,
       } else if (map_type == mapping::util::MappingType::MAPPED_FIRST_ORPHAN) {
         pos_first = ah.pos;
         pos_second = 0;
-
+        std::cout << "orphan first\n";
         sptr_first = &record.first.seq;
         sptr_second = &record.second.seq;
 
@@ -286,7 +324,7 @@ inline void write_sam_mappings(mapping_cache_info_t &map_cache_out,
       } else if (map_type == mapping::util::MappingType::MAPPED_SECOND_ORPHAN) {
         pos_first = 0;
         pos_second = ah.pos + 1;
-
+        std::cout << "second\n";
         sptr_first = &record.first.seq;
         sptr_second = &record.second.seq;
         if (!ah.is_fw) {
@@ -303,6 +341,7 @@ inline void write_sam_mappings(mapping_cache_info_t &map_cache_out,
 
       auto print_pos_mapq_cigar = [](bool mapped, int32_t pos, int32_t read_len,
                                      int32_t ref_len, std::ostream &os) {
+        std::cout << " mapped " << mapped << " pos " << pos << " read_len " << read_len << "ref_len\n";
         if (!mapped) {
           os << "0\t255\t*\t";
           return;
@@ -366,6 +405,7 @@ inline void write_sam_mappings(mapping_cache_info_t &map_cache_out,
     osstream << record.second.name << "\t" << 141 << "\t"
              << "*\t0\t0\t*\t*\t0\t0\t" << record.second.seq << "\t*\n";
   }
+
 }
 struct RadT{};
 struct SamT{};
@@ -501,6 +541,10 @@ void do_map(mindex::reference_index& ri,
             
              if constexpr (std::is_same_v<OutputT, SamT>) {
                 ++processed;
+                mapping::util::print_hits(map_cache_out.accepted_hits);
+                if (map_cache_out.map_type == mapping::util::MappingType::SINGLE_MAPPED) {
+                    std::cout << "single mapped";
+                }
                 write_sam_mappings(map_cache_out, 
                                 bc_kmer, map_cache_out.unmapped_bc_map,
                                 record, workstr_left, workstr_right,

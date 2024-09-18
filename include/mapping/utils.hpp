@@ -137,6 +137,7 @@ void print_hits(const std::vector<mapping::util::simple_hit> &hits ) {
     for (const auto& hit : hits) {
         std::cout << "isFw: " << hit.is_fw << std::endl;
         std::cout << "pos: " << hit.pos << std::endl;
+        std::cout << "mate pos: " << hit.mate_pos << std::endl;
         std::cout << "num hits: " << hit.num_hits << std::endl;
         std::cout << "tid: " << hit.tid << std::endl;
         std::cout << "bin_id: " << hit.bin_id << std::endl;
