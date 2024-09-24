@@ -70,9 +70,10 @@ class bin_pos {
             uint64_t bin1 = first_bin_id + rel_bin;
 
             bool bin2_on_same_ref = (bin1+1) < first_bin_id_in_next;
-            uint64_t bin2_start_pos = ((bin1+1) * bin_size);
+            uint64_t bin2_rel_start_pos = ((rel_bin+1) * bin_size);
+            // std::cout << "bin2 start pos " << bin2_rel_start_pos << " bin1 " << bin1 << std::endl;
             // `invalid_bin_id indicates` that the kmer does not belong to the overlapping region
-            uint64_t bin2 = (bin2_on_same_ref and (rel_pos > (bin2_start_pos - overlap))) ? (bin1+1) : invalid_bin_id; 
+            uint64_t bin2 = (bin2_on_same_ref and (rel_pos > (bin2_rel_start_pos - overlap))) ? (bin1+1) : invalid_bin_id; 
             return {bin1, bin2};
         }
 
@@ -1356,6 +1357,7 @@ map_read(std::string *read_seq, mapping_cache_info_t &map_cache,
       hit_map.clear();
 
       for (auto &raw_hit : raw_hits) {
+        // std::cout << "hit\n";
         auto &read_pos = raw_hit.first;
         auto &proj_hits = raw_hit.second;
         auto &refs = proj_hits.refRange;
@@ -1371,11 +1373,12 @@ map_read(std::string *read_seq, mapping_cache_info_t &map_cache,
 
           for (auto v : refs) {
             const auto &ref_pos_ori = proj_hits.decode_hit(v);
+            // std::cout << "ref pos " << ref_pos_ori.pos << std::endl;
             uint32_t tid = sshash::util::transcript_id(v);
             int32_t pos = static_cast<int32_t>(ref_pos_ori.pos);
             int32_t signed_read_pos = static_cast<int32_t>(read_pos);
             std::pair<uint64_t, uint64_t> bins = binning.get_bin_id(tid, pos);
-
+            // std::cout << "tid bins " << tid << " " << bins.first << " " << bins.second << std::endl;
             bool ori = ref_pos_ori.isFW;
 
             auto& target1 = hit_map[bins.first];
@@ -1411,6 +1414,7 @@ map_read(std::string *read_seq, mapping_cache_info_t &map_cache,
     auto map_first_pass = map_cache.max_hit_occ - 1;
     early_stop = collect_mappings_from_hits_thr(
       raw_hits, prev_read_pos, map_first_pass, map_cache.ambiguous_hit_indices);
+    // std::cout << "es " << early_stop << std::endl;
 
     // If our default threshold was too stringent, then fallback to a more
     // liberal threshold and look up the k-mers that occur the least frequently.
@@ -1519,7 +1523,8 @@ map_read(std::string *read_seq, mapping_cache_info_t &map_cache,
     // we need at least threshold * the maximum number of hits
     uint32_t best_alt_hits = 0;
     num_valid_hits = std::max(static_cast<uint32_t>(1), static_cast<uint32_t>(std::ceil(num_valid_hits*thr))); 
-  
+    // std::cout << "hm size " << hit_map.size() << std::endl;  
+    // std::cout << "n valid " << num_valid_hits << std::endl; 
     for (auto &kv : hit_map) {
       auto best_hit_dir = kv.second.best_hit_direction();
 
@@ -1528,8 +1533,9 @@ map_read(std::string *read_seq, mapping_cache_info_t &map_cache,
       auto simple_hit = (best_hit_dir != mapping::util::HitDirection::RC)
                           ? kv.second.get_fw_hit()
                           : kv.second.get_rc_hit();
-
+      // std::cout << simple_hit.num_hits << std::endl;
       if (simple_hit.num_hits >= num_valid_hits) {
+        // std::cout << "yes\n";
         simple_hit.bin_id = kv.first;
         simple_hit.tid = kv.second.tid;
         accepted_hits.emplace_back(simple_hit);
@@ -1845,7 +1851,7 @@ inline void merge_se_mappings(mapping_cache_info_t& map_cache_left,
           if ((first1->bin_id + 1) < first2->bin_id) {
             ++first1;
           } else {
-            if (!(first2->bin_id < first1->bin_id) and (first2->tid == first1->tid)) {
+            if (!(first2->bin_id + 1 < first1->bin_id) and (first2->tid == first1->tid)) {
               // first1->tid == first2->tid -1 or 
               // first1->tid == first2->tid have the same reference 
               // and adjacent bins.
