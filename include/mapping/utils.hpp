@@ -1839,7 +1839,7 @@ inline void merge_se_mappings(mapping_cache_info_t& map_cache_left,
     // accepted_left.erase(last_left, accepted_left.end());
     // accepted_right.erase(last_right, accepted_right.end());
   
-  //  std::cout << "left\n";
+    // std::cout << "left\n";
     // mapping::util::print_hits(accepted_left);
     // std::cout << "right\n";
     // mapping::util::print_hits(accepted_right);
@@ -1890,13 +1890,14 @@ inline void merge_se_mappings(mapping_cache_info_t& map_cache_left,
             //   ++first1;
             //   break;
             // }
+            // std::cout << f2->is_fw << " " << f2->bin_id << std::endl;
             if ((f2->tid == first1->tid) && (f2->is_fw != first1->is_fw)) {
               // std::cout << "dd\n";
               if ((f2->bin_id + 1 == first1->bin_id) || (f2->bin_id == first1->bin_id + 1) ||
                 (f2->bin_id == first1->bin_id)) {
             
                 int32_t pos_fw = first1->is_fw ? first1->pos : f2->pos;
-                int32_t pos_rc = first1->is_fw ? first2->pos : first1->pos;
+                int32_t pos_rc = first1->is_fw ? f2->pos : first1->pos;
                 int32_t frag_len = (pos_rc - pos_fw);
                 // std::cout << "frag len " << frag_len << std::endl;
                 if ((-20 < frag_len) and (frag_len < 1000)) {
@@ -1906,13 +1907,13 @@ inline void merge_se_mappings(mapping_cache_info_t& map_cache_left,
                   // otherwise it is (left_pos + left_len - right_pos) + 1
                   bool right_is_rc = !first2->is_fw;
                   int32_t tlen = right_is_rc
-                    ? ((first2->pos + right_len - first1->pos) + 1)
-                    : ((first1->pos + left_len - first2->pos) + 1);
+                    ? ((f2->pos + right_len - first1->pos) + 1)
+                    : ((first1->pos + left_len - f2->pos) + 1);
 
-                  uint32_t nhits = first1->num_hits + first2->num_hits;
+                  uint32_t nhits = first1->num_hits + f2->num_hits;
                   max_num_hits = std::max(max_num_hits, nhits);
-                  *out++ = {first1->is_fw, first2->is_fw, first1->pos, 0.0, nhits,
-                    first1->tid, first2->pos, tlen, first1->bin_id};
+                  *out++ = {first1->is_fw, f2->is_fw, first1->pos, 0.0, nhits,
+                    first1->tid, f2->pos, tlen, first1->bin_id};
                 }
               }
             }
