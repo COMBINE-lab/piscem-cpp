@@ -114,16 +114,34 @@ bool map_fragment(fastx_parser::ReadTrip& record,
         }
         return exit;
     }
-    // std::cout << "left\n";
+    
     bool early_exit_left = mapping::util::map_read(&record.first.seq, map_cache_left, poison_state, binning, km);
+    bool l_map=false,r_map=false;
+    if (map_cache_left.accepted_hits.size() > 0 && map_cache_left.accepted_hits.size() < 5) {
+        l_map=true;
+    }
+    // std::cout << " left\n";
+    // mapping::util::print_hits(map_cache_left.accepted_hits);
+    // if (!map_cache_left.accepted_hits.empty()){
+        // std::cout << record.first.name << std::endl;
+    // }
     if (poison_state.is_poisoned()) {
         return false;
     }
 
     bool right_km = false;
     poison_state.set_fragment_end(mapping::util::fragment_end::RIGHT);
-    // std::cout << "right\n";
     bool early_exit_right = mapping::util::map_read(&record.second.seq, map_cache_right, poison_state, binning, right_km);
+    if (map_cache_right.accepted_hits.size() > 0 && map_cache_right.accepted_hits.size() < 5) {
+        r_map=true;
+    }
+    // if(l_map && r_map) {
+    //     std::cout << " left\n";
+    //     mapping::util::print_hits(map_cache_left.accepted_hits);
+    //     std::cout << " right\n";
+    //     mapping::util::print_hits(map_cache_right.accepted_hits);
+    // }
+    // mapping::util::print_hits(map_cache_right.accepted_hits);
     if (poison_state.is_poisoned()) {
         return false;
     }  
@@ -138,6 +156,13 @@ bool map_fragment(fastx_parser::ReadTrip& record,
     r_match += map_cache_right.accepted_hits.empty() ? 0 : 1;
     mapping::util_bin::merge_se_mappings(map_cache_left, map_cache_right, left_len, right_len,
                                      map_cache_out);
+    // if (l_map && r_map && map_cache_out.accepted_hits.empty()) {
+    //     std::cout << record.first.name << std::endl;
+    //     std::cout << "merge not mapping\n";
+    // }
+    
+    // std::cout << "merged\n";
+    // mapping::util::print_hits(map_cache_out.accepted_hits);
     l_orphan += map_cache_out.map_type == mapping::util::MappingType::MAPPED_FIRST_ORPHAN ? 1 : 0;
     r_orphan += map_cache_out.map_type == mapping::util::MappingType::MAPPED_SECOND_ORPHAN ? 1 : 0;
     if (map_cache_out.map_type == mapping::util::MappingType::MAPPED_FIRST_ORPHAN ||
@@ -278,7 +303,7 @@ inline void write_sam_mappings(mapping_cache_info_t &map_cache_out,
       if (map_type == mapping::util::MappingType::MAPPED_PAIR) {
         pos_first = ah.pos + 1;
         pos_second = ah.mate_pos + 1;
-        std::cout << "pair\n";
+
         if (ah.is_fw) {
           flag_first += mate_rc;
           sptr_first = &record.first.seq;
@@ -305,7 +330,7 @@ inline void write_sam_mappings(mapping_cache_info_t &map_cache_out,
       } else if (map_type == mapping::util::MappingType::MAPPED_FIRST_ORPHAN) {
         pos_first = ah.pos;
         pos_second = 0;
-        std::cout << "orphan first\n";
+
         sptr_first = &record.first.seq;
         sptr_second = &record.second.seq;
 
@@ -324,7 +349,7 @@ inline void write_sam_mappings(mapping_cache_info_t &map_cache_out,
       } else if (map_type == mapping::util::MappingType::MAPPED_SECOND_ORPHAN) {
         pos_first = 0;
         pos_second = ah.pos + 1;
-        std::cout << "second\n";
+
         sptr_first = &record.first.seq;
         sptr_second = &record.second.seq;
         if (!ah.is_fw) {
@@ -341,7 +366,7 @@ inline void write_sam_mappings(mapping_cache_info_t &map_cache_out,
 
       auto print_pos_mapq_cigar = [](bool mapped, int32_t pos, int32_t read_len,
                                      int32_t ref_len, std::ostream &os) {
-        std::cout << " mapped " << mapped << " pos " << pos << " read_len " << read_len << "ref_len\n";
+
         if (!mapped) {
           os << "0\t255\t*\t";
           return;
@@ -541,10 +566,7 @@ void do_map(mindex::reference_index& ri,
             
              if constexpr (std::is_same_v<OutputT, SamT>) {
                 ++processed;
-                mapping::util::print_hits(map_cache_out.accepted_hits);
-                if (map_cache_out.map_type == mapping::util::MappingType::SINGLE_MAPPED) {
-                    std::cout << "single mapped";
-                }
+                // mapping::util::print_hits(map_cache_out.accepted_hits);
                 write_sam_mappings(map_cache_out, 
                                 bc_kmer, map_cache_out.unmapped_bc_map,
                                 record, workstr_left, workstr_right,

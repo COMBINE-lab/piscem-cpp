@@ -122,6 +122,19 @@ struct simple_hit {
   int32_t fragment_length{std::numeric_limits<int32_t>::max()};
   uint64_t bin_id{std::numeric_limits<uint64_t>::max()};
 
+    // bool operator<(const mapping::util::simple_hit& a
+    //                 ) {
+    //   if (a.is_fw != is_fw) { return is_fw > a.is_fw; }
+    //   // orientations are the same
+    //   if (a.tid != tid) { return tid < a.tid; }
+    //   // orientations & txps are the same
+    //   if (a.pos != pos) { return pos < a.pos; }
+    //   // orientations, txps, and positions are the same
+    //   if (a.num_hits != num_hits ) { return num_hits < a.num_hits ; }
+    //   // orientations, txps, positions and num_hits are the same 
+    //   return bin_id < a.bin_id;
+    // }
+
   inline bool valid_pos(int32_t read_len, uint32_t txp_len, int32_t max_over) {
     int32_t signed_txp_len = static_cast<int32_t>(txp_len);
     return (pos > -max_over) and
@@ -1414,7 +1427,7 @@ map_read(std::string *read_seq, mapping_cache_info_t &map_cache,
     auto map_first_pass = map_cache.max_hit_occ - 1;
     early_stop = collect_mappings_from_hits_thr(
       raw_hits, prev_read_pos, map_first_pass, map_cache.ambiguous_hit_indices);
-    // std::cout << "es " << early_stop << std::endl;
+    
 
     // If our default threshold was too stringent, then fallback to a more
     // liberal threshold and look up the k-mers that occur the least frequently.
@@ -1526,6 +1539,9 @@ map_read(std::string *read_seq, mapping_cache_info_t &map_cache,
     // std::cout << "hm size " << hit_map.size() << std::endl;  
     // std::cout << "n valid " << num_valid_hits << std::endl; 
     for (auto &kv : hit_map) {
+      // if (hit_map.size() <= 10) {
+      //   std::cout << "tid " << kv.first
+      // }
       auto best_hit_dir = kv.second.best_hit_direction();
 
       // if the best direction is FW or BOTH, add the fw hit
@@ -1533,7 +1549,6 @@ map_read(std::string *read_seq, mapping_cache_info_t &map_cache,
       auto simple_hit = (best_hit_dir != mapping::util::HitDirection::RC)
                           ? kv.second.get_fw_hit()
                           : kv.second.get_rc_hit();
-      // std::cout << simple_hit.num_hits << std::endl;
       if (simple_hit.num_hits >= num_valid_hits) {
         // std::cout << "yes\n";
         simple_hit.bin_id = kv.first;
@@ -1557,15 +1572,21 @@ map_read(std::string *read_seq, mapping_cache_info_t &map_cache,
 
     // max_read_occ = had_max_read_occ ? accepted_hits.size() : max_hit_occ;
   } // DONE : if (rh)
-
   // If the read mapped to > maxReadOccs places, discard it
   if (accepted_hits.size() > map_cache.max_read_occ) {
+    // std::cout << "multi\n";
     accepted_hits.clear();
     map_type = mapping::util::MappingType::UNMAPPED;
   } else if (!accepted_hits.empty()) {
     map_type = mapping::util::MappingType::SINGLE_MAPPED;
+    // std::cout << "yp\n";
   }
-
+  // std::cout << "es " << early_stop << std::endl;
+  // std::cout << "accepted_hits " << accepted_hits.size() << std::endl;
+  // if (accepted_hits.size() < 10) {
+  //   print_hits(accepted_hits);
+  // }
+  // std::cout << "checking\n";
   return early_stop;
 }
 
@@ -1738,9 +1759,10 @@ inline void merge_se_mappings(mapping_cache_info_t& map_cache_left,
                               int32_t right_len, mapping_cache_info_t& map_cache_out 
                               ) {
   map_cache_out.clear();
+  
   auto& accepted_left = map_cache_left.accepted_hits;
   auto& accepted_right = map_cache_right.accepted_hits;
-
+  
   size_t had_matching_kmers_left = map_cache_left.has_matching_kmers;
   size_t had_matching_kmers_right = map_cache_right.has_matching_kmers;
 
@@ -1816,18 +1838,30 @@ inline void merge_se_mappings(mapping_cache_info_t& map_cache_left,
     // auto last_right = std::unique(accepted_right.begin(), accepted_right.end(), equiv_hit);
     // accepted_left.erase(last_left, accepted_left.end());
     // accepted_right.erase(last_right, accepted_right.end());
+  
+  //  std::cout << "left\n";
+    // mapping::util::print_hits(accepted_left);
+    // std::cout << "right\n";
+    // mapping::util::print_hits(accepted_right);
 
     const mapping::util::simple_hit smallest_rc_hit = {false, false, -1, 0.0, 0, 0, 0, 0, 0};
     // start of forward sub-list
+
+  
     auto first_fw1 = accepted_left.begin();
+    // std::cout << "first " << first_fw1->bin_id << std::endl;
     // end of forward sub-list is first non-forward hit
     auto last_fw1 = std::lower_bound(accepted_left.begin(), accepted_left.end(),
                                      smallest_rc_hit, simple_hit_less_bins);
+    // bool a = first_fw1 == last_fw1;
+    // std::cout << a << std::endl;
+    // std::cout << "last fw " << last_fw1->bin_id << std::endl;
     // start of rc list
     auto first_rc1 = last_fw1;
+    // std::cout << "first rc " << first_rc1->bin_id << std::endl;
     // end of rc list
     auto last_rc1 = accepted_left.end();
-
+    // std::cout << "last rc " << last_rc1->bin_id << std::endl;
     // start of forward sub-list
     auto first_fw2 = accepted_right.begin();
     // end of forward sub-list is first non-forward hit
@@ -1844,40 +1878,47 @@ inline void merge_se_mappings(mapping_cache_info_t& map_cache_left,
     auto merge_lists = [left_len, right_len, &max_num_hits](iter_t first1, iter_t last1, iter_t first2,
                                                             iter_t last2, out_iter_t out) -> out_iter_t {
         // https://en.cppreference.com/w/cpp/algorithm/set_intersection
-        while (first1 != last1 && first2 != last2) {
+        while (first1 != last1) {
           // we have to consider mappings that span a bin-bin boundary 
           // because the left read may reside in the first bin and the 
           // right read in the second bin
-          if ((first1->bin_id + 1) < first2->bin_id) {
-            ++first1;
-          } else {
-            if (!(first2->bin_id + 1 < first1->bin_id) and (first2->tid == first1->tid)) {
-              // first1->tid == first2->tid -1 or 
-              // first1->tid == first2->tid have the same reference 
-              // and adjacent bins.
-              int32_t pos_fw = first1->is_fw ? first1->pos : first2->pos;
-              int32_t pos_rc = first1->is_fw ? first2->pos : first1->pos;
-              int32_t frag_len = (pos_rc - pos_fw);
+          // std::cout << "first1 " << first1->bin_id << std::endl;
+          auto f2 = first2;
+          while (f2 != last2) {
+            // std::cout << "f2 " << f2->bin_id << " " << f2->pos << std::endl;
+            // if (f2->bin_id - first1->bin_id > 1) {
+            //   ++first1;
+            //   break;
+            // }
+            if ((f2->tid == first1->tid) && (f2->is_fw != first1->is_fw)) {
+              // std::cout << "dd\n";
+              if ((f2->bin_id + 1 == first1->bin_id) || (f2->bin_id == first1->bin_id + 1) ||
+                (f2->bin_id == first1->bin_id)) {
+            
+                int32_t pos_fw = first1->is_fw ? first1->pos : f2->pos;
+                int32_t pos_rc = first1->is_fw ? first2->pos : first1->pos;
+                int32_t frag_len = (pos_rc - pos_fw);
+                // std::cout << "frag len " << frag_len << std::endl;
+                if ((-20 < frag_len) and (frag_len < 1000)) {
+                  // std::cout << "yes\n";
+                  // if left is fw and right is rc then
+                  // fragment length is (right_pos + right_len - left_pos) + 1
+                  // otherwise it is (left_pos + left_len - right_pos) + 1
+                  bool right_is_rc = !first2->is_fw;
+                  int32_t tlen = right_is_rc
+                    ? ((first2->pos + right_len - first1->pos) + 1)
+                    : ((first1->pos + left_len - first2->pos) + 1);
 
-              if ((-20 < frag_len) and (frag_len < 1000)) {
-                // if left is fw and right is rc then
-                // fragment length is (right_pos + right_len - left_pos) + 1
-                // otherwise it is (left_pos + left_len - right_pos) + 1
-                bool right_is_rc = !first2->is_fw;
-                int32_t tlen = right_is_rc
-                  ? ((first2->pos + right_len - first1->pos) + 1)
-                  : ((first1->pos + left_len - first2->pos) + 1);
-
-                uint32_t nhits = first1->num_hits + first2->num_hits;
-                max_num_hits = std::max(max_num_hits, nhits);
-                *out++ = {first1->is_fw, first2->is_fw, first1->pos, 0.0, nhits,
-                  first1->tid, first2->pos, tlen, first1->bin_id};
-
-                ++first1;
+                  uint32_t nhits = first1->num_hits + first2->num_hits;
+                  max_num_hits = std::max(max_num_hits, nhits);
+                  *out++ = {first1->is_fw, first2->is_fw, first1->pos, 0.0, nhits,
+                    first1->tid, first2->pos, tlen, first1->bin_id};
+                }
               }
             }
-            ++first2;
+            ++f2;
           }
+          ++first1;
         }
         return out;
       };
