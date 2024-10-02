@@ -147,7 +147,7 @@ struct simple_hit {
   }
 };
 
-void print_hits(const std::vector<mapping::util::simple_hit> &hits ) {
+inline void print_hits(const std::vector<mapping::util::simple_hit> &hits ) {
     for (const auto& hit : hits) {
         std::cout << "isFw: " << hit.is_fw << std::endl;
         std::cout << "pos: " << hit.pos << std::endl;
