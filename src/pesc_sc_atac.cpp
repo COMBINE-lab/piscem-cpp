@@ -626,10 +626,12 @@ void do_map(mindex::reference_index& ri,
                     out_info.bed_mutex.lock();
                     out_info.bed_file << temp_buff;
                     out_info.bed_mutex.unlock();
-                    temp_buff = "";
                     num_reads_in_chunk = 0;
                 }
             }
+	    if (num_reads_in_chunk > max_chunk_reads) {
+		temp_buff = "";
+	    }
         }
     }
     
@@ -644,6 +646,9 @@ void do_map(mindex::reference_index& ri,
             num_reads_in_chunk = 0;
         }
     }
+	if (num_reads_in_chunk > max_chunk_reads) {
+		temp_buff = "";
+	}
 
     if (processed > 0) {
         std::string o = osstream.str();
