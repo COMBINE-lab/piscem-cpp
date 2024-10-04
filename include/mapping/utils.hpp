@@ -941,6 +941,8 @@ public:
     accepted_hits.clear();
     has_matching_kmers = false;
     ambiguous_hit_indices.clear();
+    frag_seq = "";
+    read1 = true;
   }
 
   // will store how the read mapped
@@ -972,6 +974,9 @@ public:
   itlib::small_vector<uint32_t, 255> ambiguous_hit_indices;
   // max ec card
   uint32_t max_ec_card{4096};
+  // Paired end reads when trying to concatenate before mapping
+  std::string frag_seq = "";
+  bool read1 = true;
 };
 
 template <typename mapping_cache_info_t>
@@ -1931,7 +1936,8 @@ inline void merge_se_mappings(mapping_cache_info_t& map_cache_left,
 
     map_cache_out.map_type = (map_cache_out.accepted_hits.size() > 0) ? util::MappingType::MAPPED_PAIR
       : util::MappingType::UNMAPPED;
-  } else if ((num_accepted_left > 0) and !had_matching_kmers_right) {
+  // } else if ((num_accepted_left > 0) and !had_matching_kmers_right) {
+  } else if (num_accepted_left > 0) {
     // sort by orientation, tid, position, num_hits and finally bin_id
     std::sort(accepted_left.begin(), accepted_left.end(), simple_hit_less_bins);
     max_num_hits = accepted_left.front().num_hits;
@@ -1944,7 +1950,8 @@ inline void merge_se_mappings(mapping_cache_info_t& map_cache_left,
     map_cache_out.map_type = (map_cache_out.accepted_hits.size() > 0)
       ? util::MappingType::MAPPED_FIRST_ORPHAN
       : util::MappingType::UNMAPPED;
-  } else if ((num_accepted_right > 0) and !had_matching_kmers_left) {
+  // } else if ((num_accepted_right > 0) and !had_matching_kmers_left) {
+   } else if ((num_accepted_right > 0)) {
     // sort by orientation, tid, position, num_hits and finally bin_id
     std::sort(accepted_right.begin(), accepted_right.end(), simple_hit_less_bins);
     // max_num_hits = accepted_right.front().num_hits;
@@ -1959,7 +1966,10 @@ inline void merge_se_mappings(mapping_cache_info_t& map_cache_left,
       ? util::MappingType::MAPPED_SECOND_ORPHAN
       : util::MappingType::UNMAPPED;
   } else {
-     
+    //  if (((num_accepted_right > 0) and had_matching_kmers_left) || 
+    //     (((num_accepted_left > 0) and had_matching_kmers_right))) {
+    //     std::cout << "weird case\n";
+    //     }
     // return nothing
   }
 
