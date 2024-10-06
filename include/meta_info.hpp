@@ -17,6 +17,7 @@ public:
     inline void cmd_line(std::string& cmd_line_in) { cmd_line_ = cmd_line_in; }
     inline void num_reads(uint64_t num_reads_in) { num_reads_ = num_reads_in; }
     inline void num_hits(uint64_t num_hits_in) { num_hits_ = num_hits_in; }
+    inline void num_multihits(uint64_t num_multi_hits_in) { num_multi_ = num_multi_hits_in; }
     inline void num_poisoned(uint64_t num_poisoned_in) { num_poisoned_ = num_poisoned_in; }
     inline void num_kmatch(uint64_t num_kmatch_in) { num_k_match_ = num_kmatch_in; }
     inline void num_lmatch(uint64_t num_lmatch_in) { num_l_match_ = num_lmatch_in; }
@@ -35,6 +36,7 @@ public:
     inline std::string cmd_line() const { return cmd_line_; }
     inline uint64_t num_reads() const { return num_reads_; }
     inline uint64_t num_hits() const { return num_hits_; }
+    inline uint64_t num_multihits() const { return num_multi_; }
     inline uint64_t num_poisoned() const { return num_poisoned_; }
     inline uint64_t num_kmatch() const { return num_k_match_; }
     inline uint64_t num_lmatch() const { return num_l_match_; }
@@ -53,6 +55,7 @@ private:
     std::string cmd_line_{""};
     uint64_t num_reads_{0};
     uint64_t num_hits_{0};
+    uint64_t num_multi_{0};
     uint64_t num_poisoned_{0};
     uint64_t num_k_match_{0};
     uint64_t num_l_match_{0};
@@ -76,6 +79,7 @@ inline bool write_map_info(run_stats& rs, ghc::filesystem::path& map_info_file_p
     j["cmdline"] = rs.cmd_line();
     j["num_reads"] = rs.num_reads();
     j["num_mapped"] = rs.num_hits();
+    j["num_multihits"] = rs.num_multihits();
     j["num_poisoned"] = rs.num_poisoned();
     double percent_mapped = (100.0 * static_cast<double>(rs.num_hits())) / rs.num_reads();
     j["percent_mapped"] = percent_mapped;

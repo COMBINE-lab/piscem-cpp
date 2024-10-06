@@ -57,7 +57,7 @@ struct pesc_atac_options {
     bool quiet{false};
     bool check_ambig_hits{false};
     uint32_t max_ec_card{256};
-    uint64_t bin_size{20000};
+    uint64_t bin_size{1000};
     uint64_t overlap{300};
     size_t nthread{16};
 };
@@ -733,7 +733,7 @@ int run_pesc_sc_atac(int argc, char** argv) {
     app.add_option("--thr", po.thr,
                 "threshold for psa")
         ->default_val(0.7);
-    app.add_option("--bin_size", po.bin_size,
+    app.add_option("--bin-size", po.bin_size,
                 "size for binning")
         ->default_val(20000);
     app.add_option("--overlap", po.overlap,
@@ -954,6 +954,7 @@ int run_pesc_sc_atac(int argc, char** argv) {
     rs.cmd_line(cmdline);
     rs.num_reads(global_nr.load());
     rs.num_hits(global_nh.load());
+    rs.num_multihits(global_nmult.load());
     rs.num_seconds(num_sec.count());
     rs.num_kmatch(k_match.load());
     rs.num_lmatch(l_match.load());
