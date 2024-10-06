@@ -53,6 +53,7 @@ struct pesc_atac_options {
     bool use_sam_format{false};
     bool use_bed_format{false};
     bool check_kmers_orphans{false};
+    bool tn5_shift{true};
     bool enable_structural_constraints{false};
     float thr{0.7};
     bool quiet{false};
@@ -230,7 +231,8 @@ inline void write_sam_mappings(mapping_cache_info_t &map_cache_out,
                         std::string &workstr_left,
                         std::string &workstr_right,
                         std::atomic<uint64_t> &global_nhits,
-                        std::ostringstream &osstream) {
+                        std::ostringstream &osstream,
+                        bool tn5_shift) {
   
   (void)workstr_right;
   constexpr uint16_t is_secondary = 256;
@@ -438,30 +440,38 @@ inline void write_sam_mappings(mapping_cache_info_t &map_cache_out,
       int32_t r1len = mated_before_mapping ? map_cache_out.frag_seq.length() : record.first.seq.length();
     //   std::string r2name = (mated_before_mapping && map_cache_out.read1) ? record.second.name : record.first.name;
       int32_t r2len = mated_before_mapping ? map_cache_out.frag_seq.length() : record.second.seq.length();
+    // if (tn5_shift) {
+    //     if (pos_first <= pos_second) {
+    //         pos_first += 4;
+    //     } else {
+    //         pos_second += 4;
+    //     }
+    // }
+    // auto frag_len = tn5_shift ? ah.frag_len()-9 : ah.frag_len();
+    auto frag_len = ah.frag_len();
+    osstream << r1name << "\t" << flag_first << "\t"
+    << ((flag_first & unmapped) ? "*" : ref_name)
+    << '\t'; // if mapped RNAME, else *
 
-        osstream << r1name << "\t" << flag_first << "\t"
-        << ((flag_first & unmapped) ? "*" : ref_name)
-        << '\t'; // if mapped RNAME, else *
+    print_pos_mapq_cigar(!(flag_first & unmapped), pos_first,
+                static_cast<int32_t>(r1len),
+                ref_len, osstream);
 
-        print_pos_mapq_cigar(!(flag_first & unmapped), pos_first,
-                    static_cast<int32_t>(r1len),
-                    ref_len, osstream);
-
-        osstream << ((flag_first & mate_unmapped) ? '*' : '=') << '\t' // RNEXT
-                << ((flag_first & mate_unmapped) ? 0 : std::max(1, pos_second))
-                << '\t' // PNEXT
-                << ah.frag_len() * (ah.pos < ah.mate_pos ? 1 : -1) << '\t' << *sptr_first << "\t*\n";
-        osstream << r2name << "\t" << flag_second << "\t"
-                << ((flag_second & unmapped) ? "*" : ref_name)
-                << '\t'; // if mapped RNAME, else *
-        print_pos_mapq_cigar(!(flag_second & unmapped), pos_second,
-                            static_cast<int32_t>(r2len),
-                            ref_len, osstream);
-        osstream << ((flag_second & mate_unmapped) ? '*' : '=') << '\t' // RNEXT
-                << ((flag_second & mate_unmapped) ? 0 : std::max(1, pos_first))
-                << '\t' // PNEXT
-                << -ah.frag_len() * (ah.pos < ah.mate_pos ? 1 : -1) << '\t' << *sptr_second << "\t*\n";
-        secondary = true;
+    osstream << ((flag_first & mate_unmapped) ? '*' : '=') << '\t' // RNEXT
+            << ((flag_first & mate_unmapped) ? 0 : std::max(1, pos_second))
+            << '\t' // PNEXT
+            << frag_len * (ah.pos < ah.mate_pos ? 1 : -1) << '\t' << *sptr_first << "\t*\n";
+    osstream << r2name << "\t" << flag_second << "\t"
+            << ((flag_second & unmapped) ? "*" : ref_name)
+            << '\t'; // if mapped RNAME, else *
+    print_pos_mapq_cigar(!(flag_second & unmapped), pos_second,
+                        static_cast<int32_t>(r2len),
+                        ref_len, osstream);
+    osstream << ((flag_second & mate_unmapped) ? '*' : '=') << '\t' // RNEXT
+            << ((flag_second & mate_unmapped) ? 0 : std::max(1, pos_first))
+            << '\t' // PNEXT
+            << -frag_len * (ah.pos < ah.mate_pos ? 1 : -1) << '\t' << *sptr_second << "\t*\n";
+    secondary = true;
     }
   } else {
     osstream << record.first.name << "\t" << 77 << "\t"
@@ -495,6 +505,7 @@ void do_map(mindex::reference_index& ri,
                     std::mutex& iomut,
                     bool write_bed,
                     bool check_kmers_orphans,
+                    bool tn5_shift,
                     RAD::RAD_Writer& rw,
                     RAD::Token token) {
 
@@ -597,11 +608,12 @@ void do_map(mindex::reference_index& ri,
             }    
             
             global_nmult += map_cache_out.accepted_hits.size() > 1 ? 1 : 0;
+            
             if constexpr (std::is_same_v<OutputT, RadT>) {
                 global_nhits += map_cache_out.accepted_hits.empty() ? 0 : 1;
                 rad::util::write_to_rad_stream_atac(bc_kmer, map_cache_out.map_type, map_cache_out.accepted_hits,
                                                     map_cache_out.unmapped_bc_map, num_reads_in_chunk, 
-                                                    temp_buff, *bc, ri, rw, token);
+                                                    temp_buff, *bc, ri, rw, token, tn5_shift);
             }
             
              if constexpr (std::is_same_v<OutputT, SamT>) {
@@ -610,7 +622,7 @@ void do_map(mindex::reference_index& ri,
                 write_sam_mappings(map_cache_out, 
                                 bc_kmer, map_cache_out.unmapped_bc_map,
                                 record, workstr_left, workstr_right,
-                                global_nhits, osstream);
+                                global_nhits, osstream, tn5_shift);
                 if (processed >= buff_size) {
                     
                     std::string o = osstream.str();
@@ -723,6 +735,9 @@ int run_pesc_sc_atac(int argc, char** argv) {
     app.add_flag(
         "--bed-format", po.use_bed_format,
         "Dump output to bed.");
+    app.add_option(
+        "--tn5-shift", po.tn5_shift,
+        "Tn5 shift");
     app.add_option("--no-poison", po.no_poison,
                 "Do not filter reads for poison k-mers, even if a poison table "
                 "exists for the index")
@@ -895,22 +910,22 @@ int run_pesc_sc_atac(int argc, char** argv) {
                         if (po.use_sam_format) {
                             do_map<FragmentT, SketchHitT, SamT>(ri, rparser, binning, ptab, global_nr, global_nh, global_nmult,
                                 k_match, l_match, r_match, dove_num, dove_match, ov_num, ov_match, r_orphan, l_orphan,
-                                global_np, out_info, iomut, po.use_bed_format, po.check_kmers_orphans, rw, token);
+                                global_np, out_info, iomut, po.use_bed_format, po.check_kmers_orphans, po.tn5_shift, rw, token);
                         } else {
                             do_map<FragmentT, SketchHitT, RadT>(ri, rparser, binning, ptab, global_nr, global_nh, global_nmult,
                                 k_match, l_match, r_match, dove_num, dove_match, ov_num, ov_match, r_orphan, l_orphan,
-                                global_np, out_info, iomut, po.use_bed_format, po.check_kmers_orphans, rw, token);
+                                global_np, out_info, iomut, po.use_bed_format, po.check_kmers_orphans, po.tn5_shift, rw, token);
                         }
                     } else {
                         using SketchHitT = mapping::util::sketch_hit_info;
                         if (po.use_sam_format) {
                             do_map<FragmentT, SketchHitT, SamT>(ri, rparser, binning, ptab, global_nr, global_nh, global_nmult,
                                 k_match, l_match, r_match, dove_num, dove_match, ov_num, ov_match, r_orphan, l_orphan,
-                                global_np, out_info, iomut, po.use_bed_format, po.check_kmers_orphans, rw, token);
+                                global_np, out_info, iomut, po.use_bed_format, po.check_kmers_orphans, po.tn5_shift, rw, token);
                         } else {
                             do_map<FragmentT, SketchHitT, RadT>(ri, rparser, binning, ptab, global_nr, global_nh, global_nmult,
                                 k_match, l_match, r_match, dove_num, dove_match, ov_num, ov_match, r_orphan, l_orphan,
-                                global_np, out_info, iomut, po.use_bed_format, po.check_kmers_orphans, rw, token);
+                                global_np, out_info, iomut, po.use_bed_format, po.check_kmers_orphans, po.tn5_shift, rw, token);
                         }
 
                     }

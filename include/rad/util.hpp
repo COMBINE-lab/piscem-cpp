@@ -360,7 +360,7 @@ inline void write_to_rad_stream_atac(bc_kmer_t& bck, mapping::util::MappingType 
                                      phmap::flat_hash_map<uint64_t, uint32_t>& unmapped_bc_map,
                                      uint32_t& num_reads_in_chunk, std::string& strbuff, 
                                      std::string& barcode, mindex::reference_index& ri, 
-                                     RAD::RAD_Writer& rw, RAD::Token& token) {
+                                     RAD::RAD_Writer& rw, RAD::Token& token, bool tn5_shift) {
                                         
     if (map_type == mapping::util::MappingType::UNMAPPED) {
         unmapped_bc_map[bck.word(0)] += 1;
@@ -433,6 +433,10 @@ inline void write_to_rad_stream_atac(bc_kmer_t& bck, mapping::util::MappingType 
                 type = 8;
                 // don't do anything here
                 break;
+        }
+        if (tn5_shift) {
+          leftmost_pos += 4;
+          frag_len -= 9;
         }
         aln_rec.clear();
         aln_rec.add_tag(RAD::Type::u32(aln.tid));
