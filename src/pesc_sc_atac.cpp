@@ -629,7 +629,7 @@ void do_map(mindex::reference_index& ri,
                     out_info.num_chunks++;
                     temp_buff = "";
                     num_reads_in_chunk = 0;
-	    }
+            }
         }
     }
     
