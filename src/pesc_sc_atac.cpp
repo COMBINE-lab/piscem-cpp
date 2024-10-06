@@ -620,29 +620,28 @@ void do_map(mindex::reference_index& ri,
                 }
              }
             // dump buffer
-            if (write_bed) {
-                if (num_reads_in_chunk > max_chunk_reads) {
-                    out_info.num_chunks++;
+	    if (num_reads_in_chunk > max_chunk_reads) {
+		if (write_bed) {
                     out_info.bed_mutex.lock();
                     out_info.bed_file << temp_buff;
                     out_info.bed_mutex.unlock();
+		}
+                    out_info.num_chunks++;
                     temp_buff = "";
                     num_reads_in_chunk = 0;
-                }
-            }
+	    }
         }
     }
     
-    if (write_bed) {
-        if (num_reads_in_chunk > 0) {
-            out_info.num_chunks++;
-            
+    if (num_reads_in_chunk > 0) {
+    	if (write_bed) {
             out_info.bed_mutex.lock();
             out_info.bed_file << temp_buff;
             out_info.bed_mutex.unlock();
+        }
+            out_info.num_chunks++;
             temp_buff = "";
             num_reads_in_chunk = 0;
-        }
     }
 
     if (processed > 0) {
