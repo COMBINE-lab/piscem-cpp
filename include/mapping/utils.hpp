@@ -1761,7 +1761,8 @@ inline void remove_duplicate_hits(mapping_cache_info_t &map_cache, uint32_t max_
 template <typename mapping_cache_info_t>
 inline void merge_se_mappings(mapping_cache_info_t& map_cache_left,
                               mapping_cache_info_t& map_cache_right, int32_t left_len,
-                              int32_t right_len, mapping_cache_info_t& map_cache_out 
+                              int32_t right_len, bool check_kmers_orphans,
+                              mapping_cache_info_t& map_cache_out 
                               ) {
   map_cache_out.clear();
   
@@ -1939,32 +1940,42 @@ inline void merge_se_mappings(mapping_cache_info_t& map_cache_left,
   // } else if ((num_accepted_left > 0) and !had_matching_kmers_right) {
   } else if (num_accepted_left > 0) {
     // sort by orientation, tid, position, num_hits and finally bin_id
-    std::sort(accepted_left.begin(), accepted_left.end(), simple_hit_less_bins);
-    max_num_hits = accepted_left.front().num_hits;
-    remove_duplicate_hits(map_cache_left, max_num_hits);
-    // auto last_left = std::unique(accepted_left.begin(), accepted_left.end(), equiv_hit);
-    // remove duplicates
-    // accepted_left.erase(last_left, accepted_left.end());
+    if (!check_kmers_orphans) {
+      had_matching_kmers_right = false;
+    }
+    if (!had_matching_kmers_right) {
+      std::sort(accepted_left.begin(), accepted_left.end(), simple_hit_less_bins);
+      max_num_hits = accepted_left.front().num_hits;
+      remove_duplicate_hits(map_cache_left, max_num_hits);
+      // auto last_left = std::unique(accepted_left.begin(), accepted_left.end(), equiv_hit);
+      // remove duplicates
+      // accepted_left.erase(last_left, accepted_left.end());
 
-    std::swap(map_cache_left.accepted_hits, map_cache_out.accepted_hits);
-    map_cache_out.map_type = (map_cache_out.accepted_hits.size() > 0)
-      ? util::MappingType::MAPPED_FIRST_ORPHAN
-      : util::MappingType::UNMAPPED;
+      std::swap(map_cache_left.accepted_hits, map_cache_out.accepted_hits);
+      map_cache_out.map_type = (map_cache_out.accepted_hits.size() > 0)
+        ? util::MappingType::MAPPED_FIRST_ORPHAN
+        : util::MappingType::UNMAPPED;
+    }
   // } else if ((num_accepted_right > 0) and !had_matching_kmers_left) {
    } else if ((num_accepted_right > 0)) {
+      if (!check_kmers_orphans) {
+        had_matching_kmers_left = false;
+      }
+    if (!had_matching_kmers_left) {
     // sort by orientation, tid, position, num_hits and finally bin_id
-    std::sort(accepted_right.begin(), accepted_right.end(), simple_hit_less_bins);
-    // max_num_hits = accepted_right.front().num_hits;
-    // canonicalize_hits(accepted_right.begin(), accepted_right.begin() + 1, accepted_right.end(), max_num_hits);
-    // auto last_right = std::unique(accepted_right.begin(), accepted_right.end(), equiv_hit);
-    // remove duplicates
-    // accepted_right.erase(last_right, accepted_right.end());
-    max_num_hits = accepted_right.front().num_hits;
-    remove_duplicate_hits(map_cache_right, max_num_hits);
-    std::swap(map_cache_right.accepted_hits, map_cache_out.accepted_hits);
-    map_cache_out.map_type = (map_cache_out.accepted_hits.size() > 0)
-      ? util::MappingType::MAPPED_SECOND_ORPHAN
-      : util::MappingType::UNMAPPED;
+      std::sort(accepted_right.begin(), accepted_right.end(), simple_hit_less_bins);
+      // max_num_hits = accepted_right.front().num_hits;
+      // canonicalize_hits(accepted_right.begin(), accepted_right.begin() + 1, accepted_right.end(), max_num_hits);
+      // auto last_right = std::unique(accepted_right.begin(), accepted_right.end(), equiv_hit);
+      // remove duplicates
+      // accepted_right.erase(last_right, accepted_right.end());
+      max_num_hits = accepted_right.front().num_hits;
+      remove_duplicate_hits(map_cache_right, max_num_hits);
+      std::swap(map_cache_right.accepted_hits, map_cache_out.accepted_hits);
+      map_cache_out.map_type = (map_cache_out.accepted_hits.size() > 0)
+        ? util::MappingType::MAPPED_SECOND_ORPHAN
+        : util::MappingType::UNMAPPED;
+    }
   } else {
     //  if (((num_accepted_right > 0) and had_matching_kmers_left) || 
     //     (((num_accepted_left > 0) and had_matching_kmers_right))) {

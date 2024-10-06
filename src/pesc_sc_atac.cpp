@@ -52,6 +52,7 @@ struct pesc_atac_options {
     bool no_poison{true};
     bool use_sam_format{false};
     bool use_bed_format{false};
+    bool check_kmers_orphans{false};
     bool enable_structural_constraints{false};
     float thr{0.7};
     bool quiet{false};
@@ -77,6 +78,7 @@ bool map_fragment(fastx_parser::ReadTrip& record,
                   std::atomic<uint64_t> &ov_match,
                   std::atomic<uint64_t> &r_orphan,
                   std::atomic<uint64_t> &l_orphan,
+                  bool check_kmers_orphans,
                   mapping::util::bin_pos& binning) {
 
     bool km = false; //kmatch checker
@@ -164,7 +166,7 @@ bool map_fragment(fastx_parser::ReadTrip& record,
     l_match += map_cache_left.accepted_hits.empty() ? 0 : 1;
     r_match += map_cache_right.accepted_hits.empty() ? 0 : 1;
     mapping::util_bin::merge_se_mappings(map_cache_left, map_cache_right, left_len, right_len,
-                                     map_cache_out);
+                                     check_kmers_orphans, map_cache_out);
     // if (l_map && r_map && map_cache_out.accepted_hits.empty()) {
     //     std::cout << record.first.name << std::endl;
     //     std::cout << "merge not mapping\n";
@@ -492,6 +494,7 @@ void do_map(mindex::reference_index& ri,
                     pesc_output_info& out_info,
                     std::mutex& iomut,
                     bool write_bed,
+                    bool check_kmers_orphans,
                     RAD::RAD_Writer& rw,
                     RAD::Token token) {
 
@@ -584,7 +587,7 @@ void do_map(mindex::reference_index& ri,
             
             bool had_early_stop = 
                map_fragment(record, poison_state, map_cache_left, map_cache_right, map_cache_out, k_match,
-                   l_match, r_match, dove_num, dove_match, ov_num, ov_match, r_orphan, l_orphan, binning);
+                   l_match, r_match, dove_num, dove_match, ov_num, ov_match, r_orphan, l_orphan, check_kmers_orphans, binning);
             (void)had_early_stop;
             // if (had_early_stop) {
                 
@@ -714,6 +717,9 @@ int run_pesc_sc_atac(int argc, char** argv) {
     app.add_flag(
         "--sam-format", po.use_sam_format,
         "Write SAM format output rather than bulk RAD.");
+    app.add_flag(
+        "--kmers-orphans", po.check_kmers_orphans,
+        "Check if any mapping kmer exist for a mate, if there exists mapping for the other read (default false)");
     app.add_flag(
         "--bed-format", po.use_bed_format,
         "Dump output to bed.");
@@ -889,22 +895,22 @@ int run_pesc_sc_atac(int argc, char** argv) {
                         if (po.use_sam_format) {
                             do_map<FragmentT, SketchHitT, SamT>(ri, rparser, binning, ptab, global_nr, global_nh, global_nmult,
                                 k_match, l_match, r_match, dove_num, dove_match, ov_num, ov_match, r_orphan, l_orphan,
-                                global_np, out_info, iomut, po.use_bed_format, rw, token);
+                                global_np, out_info, iomut, po.use_bed_format, po.check_kmers_orphans, rw, token);
                         } else {
                             do_map<FragmentT, SketchHitT, RadT>(ri, rparser, binning, ptab, global_nr, global_nh, global_nmult,
                                 k_match, l_match, r_match, dove_num, dove_match, ov_num, ov_match, r_orphan, l_orphan,
-                                global_np, out_info, iomut, po.use_bed_format, rw, token);
+                                global_np, out_info, iomut, po.use_bed_format, po.check_kmers_orphans, rw, token);
                         }
                     } else {
                         using SketchHitT = mapping::util::sketch_hit_info;
                         if (po.use_sam_format) {
                             do_map<FragmentT, SketchHitT, SamT>(ri, rparser, binning, ptab, global_nr, global_nh, global_nmult,
                                 k_match, l_match, r_match, dove_num, dove_match, ov_num, ov_match, r_orphan, l_orphan,
-                                global_np, out_info, iomut, po.use_bed_format, rw, token);
+                                global_np, out_info, iomut, po.use_bed_format, po.check_kmers_orphans, rw, token);
                         } else {
                             do_map<FragmentT, SketchHitT, RadT>(ri, rparser, binning, ptab, global_nr, global_nh, global_nmult,
                                 k_match, l_match, r_match, dove_num, dove_match, ov_num, ov_match, r_orphan, l_orphan,
-                                global_np, out_info, iomut, po.use_bed_format, rw, token);
+                                global_np, out_info, iomut, po.use_bed_format, po.check_kmers_orphans, rw, token);
                         }
 
                     }
