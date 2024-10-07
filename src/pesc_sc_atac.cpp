@@ -60,7 +60,7 @@ struct pesc_atac_options {
     bool check_ambig_hits{false};
     uint32_t max_ec_card{256};
     uint64_t bin_size{1000};
-    uint64_t overlap{300};
+    uint64_t bin_overlap{300};
     size_t nthread{16};
 };
 
@@ -546,7 +546,6 @@ void do_map(mindex::reference_index& ri,
     if constexpr (std::is_same_v<fastx_parser::ReadTrip, FragT>) {
         poison_state.paired_for_mapping = true;
     }
-
     // SAM output
     uint64_t processed = 0;
     uint64_t buff_size = 10000;
@@ -595,7 +594,6 @@ void do_map(mindex::reference_index& ri,
             if (!bc_ok) { continue; }
             
             // if we couldn't correct it with 1 `N`, then skip.
-            
             bool had_early_stop = 
                map_fragment(record, poison_state, map_cache_left, map_cache_right, map_cache_out, k_match,
                    l_match, r_match, dove_num, dove_match, ov_num, ov_match, r_orphan, l_orphan, check_kmers_orphans, binning);
@@ -756,9 +754,9 @@ int run_pesc_sc_atac(int argc, char** argv) {
         ->default_val(0.7);
     app.add_option("--bin-size", po.bin_size,
                 "size for binning")
-        ->default_val(20000);
-    app.add_option("--overlap", po.overlap,
-                "size for overlap")
+        ->default_val(1000);
+    app.add_option("--bin-overlap", po.bin_overlap,
+                "size for bin overlap")
         ->default_val(300);
     auto check_ambig =
         app.add_flag("--check-ambig-hits", po.check_ambig_hits,
@@ -851,7 +849,7 @@ int run_pesc_sc_atac(int argc, char** argv) {
     std::vector<std::string> refs;
     bc_kmer_t::k(16);
     rad::util::write_rad_header_atac(ri, refs, tag_defn);
-    mapping::util::bin_pos binning(&ri, po.thr, po.bin_size, po.overlap);
+    mapping::util::bin_pos binning(&ri, po.thr, po.bin_size, po.bin_overlap);
     
     const RAD::Header header(static_cast<uint8_t>(paired_end), refs.size(), refs);
     
@@ -891,15 +889,16 @@ int run_pesc_sc_atac(int argc, char** argv) {
 
     if (paired_end) {
         using FragmentT = fastx_parser::ReadTrip;
+
         fastx_parser::FastxParser<fastx_parser::ReadTrip> rparser(
         po.left_read_filenames, po.right_read_filenames, po.barcode_filenames, nthread, np);
+
         rparser.start();
         if (nthread >= 6) {
                 np += 1;
                 nthread -= 1;
         }
         std::vector<std::thread> workers;
-    
         for (size_t i = 0; i < nthread; ++i) {
             workers.push_back(std::thread(
                 [&ri, &po, &rparser, &binning, &ptab, &global_nr, &global_nh, &global_nmult, &k_match, &global_np,
