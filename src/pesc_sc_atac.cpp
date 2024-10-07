@@ -690,7 +690,7 @@ void do_map(mindex::reference_index& ri,
 #ifdef __cplusplus
 extern "C" {
 #endif
-  int run_pesc_sc_atac(int argc, char** argv);
+int run_pesc_sc_atac(int argc, char** argv);
 #ifdef __cplusplus
 }
 #endif

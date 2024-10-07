@@ -179,8 +179,8 @@ target_include_directories(pesc-bulk PUBLIC ${CMAKE_SOURCE_DIR}/include ${ZLIB_I
 target_link_libraries(pesc-bulk pesc_static ${CLOUDFLARE_ZLIB} Threads::Threads sshash_static ${MALLOC_LIB})
 
 add_executable(pesc-sc-atac src/pesc_sc_atac_runner.cpp) 
-target_include_directories(pesc-sc-atac PUBLIC ${CMAKE_SOURCE_DIR}/include ${ZLIB_INCLUDE_DIRS} ${LIBRADICL_INCLUDE})
-target_link_libraries(pesc-sc-atac pesc_static ${CLOUDFLARE_ZLIB} Threads::Threads sshash_static ${MALLOC_LIB} radicl)
+target_include_directories(pesc-sc-atac PUBLIC ${LIBRADICL_INCLUDE} ${CMAKE_SOURCE_DIR}/include ${ZLIB_INCLUDE_DIRS})
+target_link_libraries(pesc-sc-atac pesc_static radicl ${CLOUDFLARE_ZLIB} Threads::Threads sshash_static ${MALLOC_LIB})
 #target_link_directories(pesc-sc-atac PUBLIC /fs/cbcb-lab/rob/students/noor/miniforge3/lib)
 add_dependencies(pesc-sc-atac radicl)
 
