@@ -106,8 +106,13 @@ bool map_fragment(fastx_parser::ReadTrip& record,
                 hit.fragment_length = mate_ov.frag_length;
                 int32_t r2_len = record.first.seq.length() <= record.second.seq.length() ? record.second.seq.length() : record.first.seq.length();
                 int32_t r1_len = record.first.seq.length() <= record.second.seq.length() ? record.first.seq.length() : record.second.seq.length();
+                const int32_t ref_len =
+                    static_cast<int32_t>(map_cache_out.hs.get_index()->ref_len(hit.tid));
                 hit.mate_pos = hit.is_fw ? hit.pos + hit.fragment_length - r2_len -1: 
                     hit.pos + r1_len - hit.fragment_length -1;
+                if (hit.mate_pos > ref_len) {
+                    hit.mate_pos = hit.pos;
+                }
                 if (mate_ov.ov_type == check_overlap::MateTypeOverlap::doveTail) {
                     hit.mate_pos = hit.pos;
                 }
@@ -395,7 +400,7 @@ inline void write_sam_mappings(mapping_cache_info_t &map_cache_out,
 
       auto print_pos_mapq_cigar = [](bool mapped, int32_t pos, int32_t read_len,
                                      int32_t ref_len, std::ostream &os) {
-
+        
         if (!mapped) {
           os << "0\t255\t*\t";
           return;
@@ -432,6 +437,7 @@ inline void write_sam_mappings(mapping_cache_info_t &map_cache_out,
         static_cast<int32_t>(map_cache_out.hs.get_index()->ref_len(ah.tid));
       std::string r1name = record.first.name;
       std::string r2name = record.second.name;
+
       if (mated_before_mapping && !map_cache_out.read1) {
         r1name = record.second.name;
         r2name = record.first.name;
