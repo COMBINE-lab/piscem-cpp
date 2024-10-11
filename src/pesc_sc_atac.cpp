@@ -53,6 +53,7 @@ struct pesc_atac_options {
     bool use_sam_format{false};
     bool use_bed_format{false};
     bool check_kmers_orphans{false};
+    bool use_chr{false};
     bool tn5_shift{true};
     bool enable_structural_constraints{false};
     float thr{0.7};
@@ -80,7 +81,8 @@ bool map_fragment(fastx_parser::ReadTrip& record,
                   std::atomic<uint64_t> &r_orphan,
                   std::atomic<uint64_t> &l_orphan,
                   bool check_kmers_orphans,
-                  mapping::util::bin_pos& binning) {
+                  mapping::util::bin_pos& binning,
+                  bool use_chr) {
 
     bool km = false; //kmatch checker
     map_cache_out.clear();
@@ -90,7 +92,7 @@ bool map_fragment(fastx_parser::ReadTrip& record,
     check_overlap::MateOverlap mate_ov;
     check_overlap::findOverlapBetweenPairedEndReads(record.first.seq, record.second.seq, mate_ov, 30, 0);
     if (mate_ov.frag != "") {
-        bool exit = mapping::util::map_read(&mate_ov.frag, map_cache_out, poison_state, binning, km);
+        bool exit = mapping::util::map_read(&mate_ov.frag, map_cache_out, poison_state, binning, km, use_chr);
         if(km) {
             ++k_match;
         }
@@ -131,7 +133,7 @@ bool map_fragment(fastx_parser::ReadTrip& record,
         return exit;
     }
     
-    bool early_exit_left = mapping::util::map_read(&record.first.seq, map_cache_left, poison_state, binning, km);
+    bool early_exit_left = mapping::util::map_read(&record.first.seq, map_cache_left, poison_state, binning, km, use_chr);
     // bool l_map=false,r_map=false;
     // if (map_cache_left.accepted_hits.size() > 0 && map_cache_left.accepted_hits.size() < 5) {
     //     l_map=true;
@@ -145,7 +147,7 @@ bool map_fragment(fastx_parser::ReadTrip& record,
     }
     bool right_km = false;
     poison_state.set_fragment_end(mapping::util::fragment_end::RIGHT);
-    bool early_exit_right = mapping::util::map_read(&record.second.seq, map_cache_right, poison_state, binning, right_km);
+    bool early_exit_right = mapping::util::map_read(&record.second.seq, map_cache_right, poison_state, binning, right_km, use_chr);
     // if (map_cache_right.accepted_hits.size() > 0 && map_cache_right.accepted_hits.size() < 5) {
     //     r_map=true;
     // }
@@ -512,6 +514,7 @@ void do_map(mindex::reference_index& ri,
                     bool write_bed,
                     bool check_kmers_orphans,
                     bool tn5_shift,
+                    bool use_chr,
                     RAD::RAD_Writer& rw,
                     RAD::Token token) {
 
@@ -602,7 +605,8 @@ void do_map(mindex::reference_index& ri,
             // if we couldn't correct it with 1 `N`, then skip.
             bool had_early_stop = 
                map_fragment(record, poison_state, map_cache_left, map_cache_right, map_cache_out, k_match,
-                   l_match, r_match, dove_num, dove_match, ov_num, ov_match, r_orphan, l_orphan, check_kmers_orphans, binning);
+                   l_match, r_match, dove_num, dove_match, ov_num, ov_match, r_orphan, l_orphan, check_kmers_orphans, 
+                   binning, use_chr);
             (void)had_early_stop;
             // if (had_early_stop) {
                 
@@ -739,6 +743,9 @@ int run_pesc_sc_atac(int argc, char** argv) {
     app.add_flag(
         "--bed-format", po.use_bed_format,
         "Dump output to bed.");
+    app.add_flag(
+        "--use-chr", po.use_chr,
+        "use chromosomes as virtual color.");
     app.add_option(
         "--tn5-shift", po.tn5_shift,
         "Tn5 shift");
@@ -915,22 +922,22 @@ int run_pesc_sc_atac(int argc, char** argv) {
                         if (po.use_sam_format) {
                             do_map<FragmentT, SketchHitT, SamT>(ri, rparser, binning, ptab, global_nr, global_nh, global_nmult,
                                 k_match, l_match, r_match, dove_num, dove_match, ov_num, ov_match, r_orphan, l_orphan,
-                                global_np, out_info, iomut, po.use_bed_format, po.check_kmers_orphans, po.tn5_shift, rw, token);
+                                global_np, out_info, iomut, po.use_bed_format, po.check_kmers_orphans, po.tn5_shift, po.use_chr, rw, token);
                         } else {
                             do_map<FragmentT, SketchHitT, RadT>(ri, rparser, binning, ptab, global_nr, global_nh, global_nmult,
                                 k_match, l_match, r_match, dove_num, dove_match, ov_num, ov_match, r_orphan, l_orphan,
-                                global_np, out_info, iomut, po.use_bed_format, po.check_kmers_orphans, po.tn5_shift, rw, token);
+                                global_np, out_info, iomut, po.use_bed_format, po.check_kmers_orphans, po.tn5_shift, po.use_chr, rw, token);
                         }
                     } else {
                         using SketchHitT = mapping::util::sketch_hit_info;
                         if (po.use_sam_format) {
                             do_map<FragmentT, SketchHitT, SamT>(ri, rparser, binning, ptab, global_nr, global_nh, global_nmult,
                                 k_match, l_match, r_match, dove_num, dove_match, ov_num, ov_match, r_orphan, l_orphan,
-                                global_np, out_info, iomut, po.use_bed_format, po.check_kmers_orphans, po.tn5_shift, rw, token);
+                                global_np, out_info, iomut, po.use_bed_format, po.check_kmers_orphans, po.tn5_shift, po.use_chr, rw, token);
                         } else {
                             do_map<FragmentT, SketchHitT, RadT>(ri, rparser, binning, ptab, global_nr, global_nh, global_nmult,
                                 k_match, l_match, r_match, dove_num, dove_match, ov_num, ov_match, r_orphan, l_orphan,
-                                global_np, out_info, iomut, po.use_bed_format, po.check_kmers_orphans, po.tn5_shift, rw, token);
+                                global_np, out_info, iomut, po.use_bed_format, po.check_kmers_orphans, po.tn5_shift, po.use_chr, rw, token);
                         }
 
                     }

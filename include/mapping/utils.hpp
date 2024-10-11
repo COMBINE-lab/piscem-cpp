@@ -60,7 +60,10 @@ class bin_pos {
           return bin_id != invalid_bin_id;
         }
 
-        inline std::pair<uint64_t, uint64_t> get_bin_id(uint64_t tid, uint64_t pos) const {
+        inline std::pair<uint64_t, uint64_t> get_bin_id(uint64_t tid, uint64_t pos, bool use_chr) const {
+            if (use_chr) {
+              return {tid, invalid_bin_id};
+            }
             uint64_t first_bin_id = cum_bin_ids[tid];
             uint64_t first_bin_id_in_next = cum_bin_ids[tid+1];
             assert(bin_size > overlap);
@@ -73,7 +76,7 @@ class bin_pos {
             uint64_t bin2_rel_start_pos = ((rel_bin+1) * bin_size);
             // std::cout << "bin2 start pos " << bin2_rel_start_pos << " bin1 " << bin1 << std::endl;
             // `invalid_bin_id indicates` that the kmer does not belong to the overlapping region
-            uint64_t bin2 = (bin2_on_same_ref and (rel_pos > (bin2_rel_start_pos - overlap))) ? (bin1+1) : invalid_bin_id; 
+            uint64_t bin2 = (bin2_on_same_ref and (rel_pos > (bin2_rel_start_pos - overlap))) ? (bin1+1) : invalid_bin_id;
             return {bin1, bin2};
         }
 
@@ -1305,6 +1308,7 @@ map_read(std::string *read_seq, mapping_cache_info_t &map_cache,
          poison_state_t &poison_state,
          const mapping::util::bin_pos& binning,
          bool &k_match,
+         bool use_chr,
          mindex::SkippingStrategy strat = mindex::SkippingStrategy::STRICT,
          bool verbose = false) {
   map_cache.clear();
@@ -1367,8 +1371,8 @@ map_read(std::string *read_seq, mapping_cache_info_t &map_cache,
     int32_t signed_rl = static_cast<int32_t>(read_seq->length());
     auto collect_mappings_from_hits_thr =
       [&max_stretch, &min_occ, &hit_map, &num_valid_hits, &total_occs,
-       &largest_occ, &binning, signed_rl, k, perform_ambig_filtering, thr,
-       verbose](auto &raw_hits, auto &prev_read_pos, auto &max_allowed_occ,
+       &largest_occ, &binning, signed_rl, k, perform_ambig_filtering, thr, 
+       use_chr, verbose](auto &raw_hits, auto &prev_read_pos, auto &max_allowed_occ,
                 auto &ambiguous_hit_indices) -> bool {
       (void)verbose;
       int32_t hit_idx{0};
@@ -1395,7 +1399,7 @@ map_read(std::string *read_seq, mapping_cache_info_t &map_cache,
             uint32_t tid = sshash::util::transcript_id(v);
             int32_t pos = static_cast<int32_t>(ref_pos_ori.pos);
             int32_t signed_read_pos = static_cast<int32_t>(read_pos);
-            std::pair<uint64_t, uint64_t> bins = binning.get_bin_id(tid, pos);
+            std::pair<uint64_t, uint64_t> bins = binning.get_bin_id(tid, pos, use_chr);
             // std::cout << "tid bins " << tid << " " << bins.first << " " << bins.second << std::endl;
             bool ori = ref_pos_ori.isFW;
 
