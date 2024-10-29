@@ -86,6 +86,13 @@ ExternalProject_Add(zlib-cloudflare
   SOURCE_DIR ${CMAKE_SOURCE_DIR}/external/zlib-cloudflare
 )
 
+ExternalProject_Add_Step(zlib-cloudflare
+  rename_lib
+  COMMAND cp ${CMAKE_BINARY_DIR}/zlib-cloudflare/lib/libz.a ${CMAKE_BINARY_DIR}/zlib-cloudflare/lib/libzcf.a
+  COMMENT "copying cloudflare libz.a to libzcf.a"
+  DEPENDEES install
+)
+
 ## can't reply on find_package because the ExternalProject_Add
 # steps won't complete by compile time, when the find_package 
 # looks for the ZLIB
@@ -99,7 +106,7 @@ include_directories(${CMAKE_BINARY_DIR}/zlib-cloudflare/include)
 link_directories(${CMAKE_BINARY_DIR}/zlib-cloudflare/lib)
 
 # direct path to the cloudflare libz
-set(CLOUDFLARE_ZLIB ${CMAKE_BINARY_DIR}/zlib-cloudflare/lib/libz.a)
+set(CLOUDFLARE_ZLIB ${CMAKE_BINARY_DIR}/zlib-cloudflare/lib/libzcf.a)
 
 
 set(THREADS_PREFER_PTHREAD_FLAG TRUE)
@@ -230,6 +237,14 @@ install(TARGETS pesc_static build_static sshash_static
   CONFIGURATIONS Debug 
   RUNTIME DESTINATION Debug/lib)
 
+install(FILES ${CLOUDFLARE_ZLIB}
+  CONFIGURATIONS Debug
+  RUNTIME DESTINATION Debug/lib)
+
 install(TARGETS pesc_static build_static sshash_static
+  CONFIGURATIONS Release
+  RUNTIME DESTINATION Release/lib)
+
+install(FILES ${CLOUDFLARE_ZLIB}
   CONFIGURATIONS Release
   RUNTIME DESTINATION Release/lib)

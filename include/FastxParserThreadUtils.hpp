@@ -36,10 +36,10 @@ ALWAYS_INLINE static void cpuRelax() {
 #elif defined(__i386__) || defined(__x86_64__)
   asm volatile("pause");
 #elif defined(__aarch64__)
-  asm volatile("wfe");
+  asm volatile("isb");
 #elif defined(__armel__) || defined(__ARMEL__)
   asm volatile ("nop" ::: "memory");
-#elif defined(__arm__) || defined(__aarch64__)
+#elif defined(__arm__) 
   __asm__ __volatile__ ("yield" ::: "memory");
 #elif defined(__ia64__)  // IA64
   __asm__ __volatile__ ("hint @pause");
