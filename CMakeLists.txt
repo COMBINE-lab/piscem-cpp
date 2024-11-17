@@ -246,10 +246,6 @@ add_dependencies(poison_filter zlib-cloudflare)
 #target_include_directories(evaluator PRIVATE ${CMAKE_SOURCE_DIR}/include)
 
 install(TARGETS build build-poison-table pesc-sc pesc-bulk pesc-sc-atac
-        CONFIGURATIONS Debug
-        RUNTIME DESTINATION Debug/bin)
-
-install(TARGETS build build-poison-table pesc-sc pesc-bulk pesc-sc-atac
   CONFIGURATIONS Release
   RUNTIME DESTINATION Release/bin)
 
@@ -263,14 +259,12 @@ install(TARGETS pesc_static build_static sshash_static
 
 install(FILES ${CLOUDFLARE_ZLIB}
   CONFIGURATIONS Debug
-  RUNTIME DESTINATION Debug/lib
-)
+  RUNTIME DESTINATION Debug/lib)
 
-install(TARGETS pesc_static build_static sshash_static 
+install(TARGETS pesc_static build_static sshash_static
   CONFIGURATIONS Release
   RUNTIME DESTINATION Release/lib)
 
 install(FILES ${CLOUDFLARE_ZLIB}
   CONFIGURATIONS Release
-  RUNTIME DESTINATION Release/lib
-)
+  RUNTIME DESTINATION Release/lib)
