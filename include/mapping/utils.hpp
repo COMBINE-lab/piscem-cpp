@@ -1723,6 +1723,23 @@ inline void merge_se_mappings(mapping_cache_info_t &map_cache_left,
 
 namespace util_bin {
 
+  struct {
+    // sort first by orientation, then by transcript id, position, num_hits and, 
+    // finaly bin_id.
+    bool operator()(const mapping::util::simple_hit& a,
+                    const mapping::util::simple_hit& b) {
+      if (a.is_fw != b.is_fw) { return a.is_fw > b.is_fw; }
+      // orientations are the same
+      if (a.tid != b.tid) { return a.tid < b.tid; }
+      // orientations & txps are the same
+      if (a.pos != b.pos) { return a.pos < b.pos; }
+      // orientations, txps, and positions are the same
+      if (a.num_hits != b.num_hits ) { return a.num_hits < b.num_hits ; }
+      // orientations, txps, positions and num_hits are the same 
+      return a.bin_id < b.bin_id;
+    }
+  } simple_hit_less_bins;
+  
 template <typename mapping_cache_info_t>
 inline void remove_duplicate_hits(mapping_cache_info_t &map_cache, uint32_t max_num_hits) {
   auto& accepted_hits = map_cache.accepted_hits;
@@ -1780,22 +1797,6 @@ inline void merge_se_mappings(mapping_cache_info_t& map_cache_left,
   size_t num_accepted_right = accepted_right.size();
 
   uint32_t max_num_hits = 0;
-  struct {
-    // sort first by orientation, then by transcript id, position, num_hits and, 
-    // finaly bin_id.
-    bool operator()(const mapping::util::simple_hit& a,
-                    const mapping::util::simple_hit& b) {
-      if (a.is_fw != b.is_fw) { return a.is_fw > b.is_fw; }
-      // orientations are the same
-      if (a.tid != b.tid) { return a.tid < b.tid; }
-      // orientations & txps are the same
-      if (a.pos != b.pos) { return a.pos < b.pos; }
-      // orientations, txps, and positions are the same
-      if (a.num_hits != b.num_hits ) { return a.num_hits < b.num_hits ; }
-      // orientations, txps, positions and num_hits are the same 
-      return a.bin_id < b.bin_id;
-    }
-  } simple_hit_less_bins;
 
 /*  struct {
     // hits are equivalent if they have the same orientation, reference, and position
