@@ -101,8 +101,7 @@ bool map_fragment(fastx_parser::ReadTrip& record,
         // std::cout << map_cache_out.accepted_hits.size() << std::endl;
         if (!map_cache_out.accepted_hits.empty()) {
             uint32_t max_num_hits = map_cache_out.accepted_hits.front().num_hits;
-            auto &accepted = map_cache_out.accepted_hits;
-            std::sort(accepted.begin(), accepted.end(), mapping::util_bin::simple_hit_less_bins);
+            std::sort(map_cache_out.accepted_hits.begin(), map_cache_out.accepted_hits.end(), mapping::util_bin::simple_hit_less_bins);
             mapping::util_bin::remove_duplicate_hits(map_cache_out, max_num_hits);
             map_cache_out.map_type = (map_cache_out.accepted_hits.size() > 0)
                 ? mapping::util::MappingType::MAPPED_PAIR
