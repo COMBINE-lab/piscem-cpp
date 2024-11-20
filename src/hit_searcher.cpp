@@ -797,6 +797,7 @@ struct EveryKmer {
         // std::cerr << "direction " << direction << ", dist_to_end" << dist_to_contig_end << ", cCurrPos: " << cCurrPos << "\n";
         ref_contig_it.at(2*ph.globalPos_);
         uint64_t ref_kmer = ref_contig_it.read(2*k);
+        (void)ref_kmer;
         // std::cerr << "\t(MATCH IS) ref_kmer = " << sshash::util::uint_kmer_to_string(ref_kmer, k) << ", kit = " << kit->first.to_str() << "\n";
     }
     else {
@@ -1299,7 +1300,7 @@ bool hit_searcher::get_raw_hits_sketch_everykmer(std::string &read,
     // qc.reset_state();
     EveryKmer evs(k);
     
-    auto ref_contig_it = sshash::bit_vector_iterator(pfi_->contigs(), 0);
+    // auto ref_contig_it = sshash::bit_vector_iterator(pfi_->contigs(), 0);
 
     // Look at every kmer: if new state, do index query
     // Else: move forward by 1 kmer on reference and see if it matches the contig kmer.
@@ -1310,7 +1311,7 @@ bool hit_searcher::get_raw_hits_sketch_everykmer(std::string &read,
     //  2) The immedidate contig reference kmer does not match the read kmer following the previous hit
     //  3) The distance to contig end is 0
     // At each kmer check we are resetting the phit variables, where the new_state is also defined
-    size_t size_hits = 0;
+    // size_t size_hits = 0;
     while(kit != kit_end) {
       auto ph = pfi_->query(kit, qc);
       if (!ph.empty()) {

@@ -11,7 +11,7 @@ void write_ref_len(mindex::reference_index& ri,
 	ghc::filesystem::path o_path(output_path);
 	std::ofstream ref_file = o_path / "ref.tsv";
 	// ghc::filesystem::path 
-	for(auto i = 0; i < ri.num_refs(); i++) {
+	for(decltype(ri.num_refs()) i = 0; i < ri.num_refs(); i++) {
         temp += ri.ref_name(i) +  "\t" + std::to_string(ri.ref_len(i)) + "\n";
     }
 	ref_file << temp;
