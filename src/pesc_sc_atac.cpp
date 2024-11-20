@@ -60,6 +60,7 @@ struct pesc_atac_options {
     float thr{0.7};
     bool quiet{false};
     bool check_ambig_hits{false};
+    uint16_t blen{16};
     uint32_t max_ec_card{256};
     uint64_t bin_size{1000};
     uint64_t bin_overlap{300};
@@ -904,6 +905,9 @@ int run_pesc_sc_atac(int argc, char** argv) {
     app.add_option("--thr", po.thr,
                 "threshold for psa")
         ->default_val(0.7);
+    app.add_option("--bclen", po.blen,
+                "length for barcode")
+        ->default_val(16);
     app.add_option("--bin-size", po.bin_size,
                 "size for binning")
         ->default_val(1000);
@@ -997,9 +1001,16 @@ int run_pesc_sc_atac(int argc, char** argv) {
     rad_file_path.append("/map.rad");
     RAD::Tag_Defn tag_defn;
     RAD::Tag_List file_tag_vals;
-    file_tag_vals.add(RAD::Type::u16(16));
+    file_tag_vals.add(RAD::Type::u16(po.blen));
+    std::vector<uint64_t> len;
+    len.reserve(ri.num_refs());
+    for(auto i = 0; i < ri.num_refs(); i++) {
+        len.push_back(ri.ref_len(i));
+    }
+    file_tag_vals.add(RAD::Type::v_u64(len));
 
     std::vector<std::string> refs;
+
     bc_kmer_t::k(16);
     rad::util::write_rad_header_atac(ri, refs, tag_defn);
     mapping::util::bin_pos binning(&ri, po.thr, po.bin_size, po.bin_overlap);

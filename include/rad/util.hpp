@@ -198,8 +198,8 @@ inline void write_rad_header_atac(mindex::reference_index& ri, std::vector<std::
     
     for (size_t i = 0; i < ri.num_refs(); ++i) { refs.emplace_back(ri.ref_name(i)); }
 
-    // tag_defn.add_file_tag<RAD::Type::u32>("ref_lengths");
     tag_defn.add_file_tag<RAD::Type::u16>("cblen");
+    tag_defn.add_file_tag<RAD::Type::v_u64>("ref_lengths");
 
     tag_defn.add_read_tag<RAD::Type::u32>("barcode");
 
