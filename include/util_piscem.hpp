@@ -143,8 +143,6 @@ namespace util {
         inline bool empty() const { return len == 0; }
         inline size_t size() const { return len; }
     };
-    static uint64_t _ref_shift;
-    static uint64_t _pos_mask;
 
     constexpr uint64_t pos_masks[] = {
         0x0, 0x1, 0x3, 0x7, 0xf, 0x1f, 0x3f, 0x7f, 0xff, 0x1ff, 0x3ff,
