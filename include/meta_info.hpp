@@ -9,12 +9,19 @@
 
 namespace piscem {
 
+enum RunMode {
+    bulk,
+    scrna,
+    scatac,
+};
+
 namespace meta_info {
 class run_stats {
   using ParamMapT = std::unordered_map<std::string, std::string>;
 public:
     run_stats() = default;
     inline void cmd_line(std::string& cmd_line_in) { cmd_line_ = cmd_line_in; }
+    inline void mode(RunMode mode_in) { mode_ = mode_in; }
     inline void num_reads(uint64_t num_reads_in) { num_reads_ = num_reads_in; }
     inline void num_hits(uint64_t num_hits_in) { num_hits_ = num_hits_in; }
     inline void num_multihits(uint64_t num_multi_hits_in) { num_multi_ = num_multi_hits_in; }
@@ -34,6 +41,21 @@ public:
 
 
     inline std::string cmd_line() const { return cmd_line_; }
+    inline RunMode mode () const { return mode_; }
+    inline std::string mode_str () const { 
+            switch(mode_){
+                case RunMode::scatac:
+                    return std::string{"sc-atac"};
+                case RunMode::scrna:
+                    return std::string{"sc-rna"};
+                case RunMode::bulk:
+                    return std::string{"bulk"};
+            }
+        // should not reach here, but the C++ compiler
+        // isn't smart enough to know the switch above
+        // is exhaustive.
+        return std::string{"unknown"};
+    }
     inline uint64_t num_reads() const { return num_reads_; }
     inline uint64_t num_hits() const { return num_hits_; }
     inline uint64_t num_multihits() const { return num_multi_; }
@@ -53,6 +75,7 @@ public:
 
 private:
     std::string cmd_line_{""};
+    RunMode mode_{RunMode::bulk};
     uint64_t num_reads_{0};
     uint64_t num_hits_{0};
     uint64_t num_multi_{0};
@@ -77,23 +100,30 @@ inline bool write_map_info(run_stats& rs, ghc::filesystem::path& map_info_file_p
 
     json j;
     j["cmdline"] = rs.cmd_line();
+    j["mode"] = rs.mode_str();
     j["num_reads"] = rs.num_reads();
     j["num_mapped"] = rs.num_hits();
-    j["num_multihits"] = rs.num_multihits();
     j["num_poisoned"] = rs.num_poisoned();
     double percent_mapped = (100.0 * static_cast<double>(rs.num_hits())) / rs.num_reads();
     j["percent_mapped"] = percent_mapped;
-    j["ks_matched"] = rs.num_kmatch();
-    j["l_matched"] = rs.num_lmatch();
-    j["r_matched"] = rs.num_rmatch();
-    j["dove_matched"] = rs.num_dovematch();
-    j["dove_num"] = rs.num_dovenum();
-    j["ov_matched"] = rs.num_ovmatch();
-    j["ov_num"] = rs.num_ovnum();
-    j["l_orphan"] = rs.num_lorphan();
-    j["r_orphan"] = rs.num_rorphan();
+
+    // only ouput stats tracked in sc-atac processing
+    // if we are in sc-atac mode.
+    if (rs.mode() == RunMode::scatac) {
+        j["num_multihits"] = rs.num_multihits();
+        j["ks_matched"] = rs.num_kmatch();
+        j["l_matched"] = rs.num_lmatch();
+        j["r_matched"] = rs.num_rmatch();
+        j["dove_matched"] = rs.num_dovematch();
+        j["dove_num"] = rs.num_dovenum();
+        j["ov_matched"] = rs.num_ovmatch();
+        j["ov_num"] = rs.num_ovnum();
+        j["l_orphan"] = rs.num_lorphan();
+        j["r_orphan"] = rs.num_rorphan();
+    }
+
     j["runtime_seconds"] = rs.num_seconds();
-    
+
     if (rs.ref_sig_info()) {
       rs.ref_sig_info()->add_to_json(j); 
     } 

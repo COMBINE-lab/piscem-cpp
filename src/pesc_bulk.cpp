@@ -949,6 +949,7 @@ int run_pesc_bulk(int argc, char **argv) {
   important_params["enable_structural_constraints"] = (po.enable_structural_constraints ? "true" : "false");
   piscem::meta_info::run_stats rs;
   rs.cmd_line(cmdline);
+  rs.mode(piscem::RunMode::bulk);
   rs.num_reads(global_nr.load());
   rs.num_hits(global_nh.load());
   rs.num_poisoned(global_np.load());

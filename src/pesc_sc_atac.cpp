@@ -1182,6 +1182,7 @@ int run_pesc_sc_atac(int argc, char** argv) {
     auto num_sec = std::chrono::duration_cast<std::chrono::seconds>(end_t - start_t);
     piscem::meta_info::run_stats rs;
     rs.cmd_line(cmdline);
+    rs.mode(piscem::RunMode::scatac);
     rs.num_reads(global_nr.load());
     rs.num_hits(global_nh.load());
     rs.num_multihits(global_nmult.load());

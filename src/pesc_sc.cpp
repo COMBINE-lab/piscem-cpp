@@ -816,6 +816,7 @@ int run_pesc_sc(int argc, char **argv) {
     std::chrono::duration_cast<std::chrono::seconds>(end_t - start_t);
   piscem::meta_info::run_stats rs;
   rs.cmd_line(cmdline);
+  rs.mode(piscem::RunMode::scrna);
   rs.num_reads(global_nr.load());
   rs.num_hits(global_nh.load());
   rs.num_poisoned(global_np.load());
