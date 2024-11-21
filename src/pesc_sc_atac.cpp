@@ -1004,7 +1004,7 @@ int run_pesc_sc_atac(int argc, char** argv) {
     file_tag_vals.add(RAD::Type::u16(po.blen));
     std::vector<uint64_t> len;
     len.reserve(ri.num_refs());
-    for(auto i = 0; i < ri.num_refs(); i++) {
+    for(decltype(ri.num_refs()) i = 0; i < ri.num_refs(); i++) {
         len.push_back(ri.ref_len(i));
     }
     file_tag_vals.add(RAD::Type::v_u64(len));
