@@ -719,7 +719,10 @@ inline bool check_direct_match(
       direct_phit.contigOrientation_ = hit_fw;
       raw_hits.push_back({read_pos, direct_phit});
       skip_ctx.increment_read_iter();
-    } 
+    } else {
+      // silence warning 
+      (void)read_pos;  
+    }
     // otherwise, we found the match, but we're not adding it.
     // let the caller know we were successful.
     return true;

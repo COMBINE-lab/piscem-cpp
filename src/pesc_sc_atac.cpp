@@ -732,6 +732,10 @@ void do_map(mindex::reference_index& ri,
                 rad::util::write_to_rad_stream_atac(bc_kmer, map_cache_out.map_type, map_cache_out.accepted_hits,
                                                     map_cache_out.unmapped_bc_map, num_reads_in_chunk, 
                                                     temp_buff, *bc, ri, rw, token, tn5_shift);
+            } else {
+                // silence warning
+                (void)token;
+                (void)tn5_shift;
             }
             
              if constexpr (std::is_same_v<OutputT, SamT>) {
