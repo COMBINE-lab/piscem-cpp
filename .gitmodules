@@ -1,6 +1,6 @@
 [submodule "external/doctest"]
 	path = external/doctest
-	url = git@github.com:doctest/doctest.git
+	url = https://github.com/doctest/doctest.git
 [submodule "external/libradicl"]
 	path = external/libradicl
 	url = https://github.com/jamshed/libradicl.git
@@ -11,5 +11,5 @@
 #	branch = master
 [submodule "external/sshash"]
 	path = external/sshash
-	url = git@github.com:NPSDC/sshash.git
+	url = https://github.com:NPSDC/sshash.git
 	branch = submodule-integration-for-piscem
