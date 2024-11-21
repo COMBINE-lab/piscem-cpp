@@ -11,5 +11,5 @@
 #	branch = master
 [submodule "external/sshash"]
 	path = external/sshash
-	url = https://github.com:NPSDC/sshash.git
+	url = https://github.com/NPSDC/sshash.git
 	branch = submodule-integration-for-piscem
