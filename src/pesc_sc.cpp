@@ -758,7 +758,8 @@ int run_pesc_sc(int argc, char **argv) {
       workers.push_back(
         std::thread([&ri, &rparser, &ptab, &po, &global_nr, &global_nh,
                      &global_np, &iomut, &out_info]() {
-          do_map_dispatch<decltype(*(po.p))>(ri, rparser, ptab, *(po.p), po,
+      	  custom_protocol prot(*(po.p));
+          do_map_dispatch<decltype(prot)>(ri, rparser, ptab, prot, po,
                                              global_nr, global_nh, global_np,
                                              out_info, iomut);
         }));

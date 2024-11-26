@@ -512,10 +512,10 @@ public:
     has_biological_read = other.has_biological_read;
     has_umi = other.has_umi;
     has_barcode = other.has_barcode;
-    // std::string bc_buffer;
-    // std::string umi_buffer;
-    // std::string read_buffer;
 
+    bc_len = other.bc_len;
+    umi_len = other.umi_len;
+   
     bc_slices_r1 = other.bc_slices_r1;
     umi_slices_r1 = other.umi_slices_r1;
     read_slices_r1 = other.read_slices_r1;
@@ -798,13 +798,13 @@ private:
   std::string r1_buffer;
   std::string r2_buffer;
 
-  itlib::small_vector<str_slice, 8> bc_slices_r1;
-  itlib::small_vector<str_slice, 8> umi_slices_r1;
-  itlib::small_vector<str_slice, 8> read_slices_r1;
+  itlib::small_vector<str_slice, 8> bc_slices_r1 {};
+  itlib::small_vector<str_slice, 8> umi_slices_r1 {};
+  itlib::small_vector<str_slice, 8> read_slices_r1 {};
 
-  itlib::small_vector<str_slice, 8> bc_slices_r2;
-  itlib::small_vector<str_slice, 8> umi_slices_r2;
-  itlib::small_vector<str_slice, 8> read_slices_r2;
+  itlib::small_vector<str_slice, 8> bc_slices_r2 {};
+  itlib::small_vector<str_slice, 8> umi_slices_r2 {};
+  itlib::small_vector<str_slice, 8> read_slices_r2 {};
 };
 
 #endif // __SC_UTIL_HPP__

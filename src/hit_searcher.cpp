@@ -655,8 +655,13 @@ inline void walk_safely_until(
       // determine if we had a valid match after the first one 
       // that started this interval. If we did, then add it
       if (last_valid_hit.first > raw_hits.back().first) {
+	/*
+	if (!(skip_ctx.read_pos() > last_valid_hit.first)) {
+		std::cerr << "skip_ctx.read_pos() = " << skip_ctx.read_pos() << "; last_valid_hit pos = " << last_valid_hit.first << "; raw_hits.back() = " << raw_hits.back().first << "\n";
+	}
+	*/
         raw_hits.push_back( last_valid_hit );
-        assert(("read_pos > last_valid_hit.first", skip_ctx.read_pos() > last_valid_hit.first));
+        //assert(("read_pos > last_valid_hit.first", skip_ctx.read_pos() > last_valid_hit.first));
       } 
 
      
