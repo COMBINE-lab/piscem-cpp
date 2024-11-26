@@ -759,6 +759,13 @@ int run_pesc_sc(int argc, char **argv) {
         workers.push_back(
           std::thread([&ri, &rparser, &ptab, &po, &global_nr, &global_nh,
                        &global_np, &iomut, &out_info]() {
+	    // NOTE: We shouldn't have to make a copy here, the global
+	    // po.p pointer (derefed as *(po.p)) should live long enough 
+	    // to reference directly here. However, if we do that, we get
+	    // intermittent memory problems.  This could be do to UB elsewhere
+	    // but seems entirely tied to this. This is worth further investigation
+	    // in the future, though this whole issue could be avoided by 
+	    // rewriting this in Rust anyway.
             custom_protocol prot(*(po.p));
             do_map_dispatch<decltype(prot)>(ri, rparser, ptab, prot, po,
                                                global_nr, global_nh, global_np,
