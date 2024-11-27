@@ -759,7 +759,7 @@ int run_pesc_sc(int argc, char **argv) {
         workers.push_back(
           std::thread([&ri, &rparser, &ptab, &po, &global_nr, &global_nh,
                        &global_np, &iomut, &out_info]() {
-	    static_assert(std::is_same<custom_protocol, decltype(po.p)::element_type>::value, "types are not the same!");
+	    // static_assert(std::is_same<custom_protocol, decltype(po.p)::element_type>::value, "types are not the same!");
 	    // for the tempalate parameter below, we can use:
 	    // custom_protocol
 	    // decltype(po.p)::element_type
@@ -767,7 +767,7 @@ int run_pesc_sc(int argc, char **argv) {
 	    //
 	    // but, we CAN NOT USE:
 	    // decltype(*(po.p)), as this resolves to custom_protocol& because C++ hates reason
-            do_map_dispatch<std::remove_pointer<po.p>::value>(ri, rparser, ptab, *(po.p), po,
+            do_map_dispatch<custom_protocol>(ri, rparser, ptab, *(po.p), po,
                                                global_nr, global_nh, global_np,
                                                out_info, iomut);
           }));
