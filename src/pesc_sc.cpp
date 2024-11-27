@@ -1,3 +1,4 @@
+#include "../external/sshash/include/util.hpp"
 #include "../include/CanonicalKmerIterator.hpp"
 #include "../include/FastxParser.hpp"
 #include "../include/Kmer.hpp"
@@ -17,7 +18,6 @@
 #include "../include/sc/util.hpp"
 #include "../include/spdlog_piscem/sinks/stdout_color_sinks.h"
 #include "../include/spdlog_piscem/spdlog.h"
-#include "../external/sshash/include/util.hpp"
 #include "../include/util_piscem.hpp"
 #include "zlib.h"
 
@@ -132,7 +132,7 @@ bool map_pe_fragment(AlignableReadSeqs &records, poison_state_t &poison_state,
 
   poison_state.clear();
 
-  // we have to clear map_cache_out here in case we 
+  // we have to clear map_cache_out here in case we
   // exit early.
   map_cache_out.clear();
 
@@ -160,8 +160,12 @@ bool map_pe_fragment(AlignableReadSeqs &records, poison_state_t &poison_state,
     return false;
   }
 
-  int32_t left_len = (records.seq1 == nullptr) ? 0 : static_cast<int32_t>(records.seq1->length());
-  int32_t right_len = (records.seq2 == nullptr) ? 0 : static_cast<int32_t>(records.seq2->length());
+  int32_t left_len = (records.seq1 == nullptr)
+                       ? 0
+                       : static_cast<int32_t>(records.seq1->length());
+  int32_t right_len = (records.seq2 == nullptr)
+                        ? 0
+                        : static_cast<int32_t>(records.seq2->length());
 
   /*
   std::cerr << "\n\nnew_read: " << *records.seq2 << "\n";
@@ -233,6 +237,8 @@ void do_map(mindex::reference_index &ri,
   // put these in struct
   size_t num_short_umi{0};
   size_t num_ambig_umi{0};
+  (void)num_short_umi;
+  (void)num_ambig_umi;
 
   mapping_cache_info<SketchHitT> map_cache_left(ri);
   map_cache_left.max_ec_card = po.max_ec_card;
@@ -493,15 +499,16 @@ int run_pesc_sc(int argc, char **argv) {
 
   std::string skipping_rule;
   pesc_sc_options po;
-  { // we need to ensure that no resource within po is collected until the end of this scope.
-  
-    // if the user requested to list the geometries, then do that and 
+  { // we need to ensure that no resource within po is collected until the end
+    // of this scope.
+
+    // if the user requested to list the geometries, then do that and
     // exit.
     auto list_geometries = [](std::size_t s) {
       (void)s;
       std::cout << "{\n \"supported_geometries\": [\n";
       for (size_t geo_idx = 0; geo_idx < builtin_geometries.size(); ++geo_idx) {
-        auto& geo = builtin_geometries[geo_idx];
+        auto &geo = builtin_geometries[geo_idx];
         std::cout << "  \"" << geo << "\"";
         if (geo_idx < builtin_geometries.size() - 1) {
           std::cout << ", ";
@@ -511,9 +518,12 @@ int run_pesc_sc(int argc, char **argv) {
       std::cout << "  ]\n}\n";
       std::exit(0);
     };
-  
+
     CLI::App app{"PESC — single-cell RNA-seq mapper for alevin-fry"};
-    app.add_flag("--list-geometries", list_geometries, "List the known geometries")->trigger_on_parse();
+    app
+      .add_flag("--list-geometries", list_geometries,
+                "List the known geometries")
+      ->trigger_on_parse();
     app.add_option("-i,--index", po.index_basename, "Input index prefix")
       ->required();
     app
@@ -526,7 +536,8 @@ int run_pesc_sc(int argc, char **argv) {
                   "Path to list of (comma separated) read 2 files")
       ->required()
       ->delimiter(',');
-    app.add_option("-o,--output", po.output_dirname, "Path to output directory")
+    app
+      .add_option("-o,--output", po.output_dirname, "Path to output directory")
       ->required();
     app
       .add_option("-g,--geometry", po.library_geometry,
@@ -536,9 +547,10 @@ int run_pesc_sc(int argc, char **argv) {
       .add_option("-t,--threads", po.nthread,
                   "An integer that specifies the number of threads to use")
       ->default_val(16);
-    app.add_flag("--no-poison", po.no_poison,
-                 "Do not filter reads for poison k-mers, even if a poison table "
-                 "exists for the index");
+    app.add_flag(
+      "--no-poison", po.no_poison,
+      "Do not filter reads for poison k-mers, even if a poison table "
+      "exists for the index");
     app.add_flag("-c,--struct-constraints", po.enable_structural_constraints,
                  "Apply structural constraints when performing mapping");
     app
@@ -560,7 +572,7 @@ int run_pesc_sc(int argc, char **argv) {
                   "if not ignoring highly ambiguous hits.")
       ->excludes(ignore_ambig)
       ->default_val(piscem::defaults::max_ec_card);
-  
+
     auto agroup = app.add_option_group(
       "advanced options", "provide advanced options to control mapping");
     agroup
@@ -569,43 +581,44 @@ int run_pesc_sc(int argc, char **argv) {
         "In the first pass, consider only k-mers having <= --max-hit-occ hits.")
       ->default_val(piscem::defaults::max_hit_occ);
     agroup
-      ->add_option("--max-hit-occ-recover", po.max_hit_occ_recover,
-                   "If all k-mers have > --max-hit-occ hits, then make a second "
-                   "pass and consider k-mers "
-                   "having <= --max-hit-occ-recover hits.")
+      ->add_option(
+        "--max-hit-occ-recover", po.max_hit_occ_recover,
+        "If all k-mers have > --max-hit-occ hits, then make a second "
+        "pass and consider k-mers "
+        "having <= --max-hit-occ-recover hits.")
       ->default_val(piscem::defaults::max_hit_occ_recover);
     agroup
       ->add_option("--max-read-occ", po.max_read_occ,
                    "Reads with more than this number of mappings will not have "
                    "their mappings reported.")
       ->default_val(piscem::defaults::max_read_occ);
-  
+
     /*
      "Note, this can be greater than "
      "--max-hit-occ-recover because of ambiguous hit recovery "
      "and the --max-ec-card parameter.")
     */
-  
+
     CLI11_PARSE(app, argc, argv);
-  
+
     spdlog_piscem::drop_all();
     auto logger =
       spdlog_piscem::create<spdlog_piscem::sinks::stderr_color_sink_mt>("");
     logger->set_pattern("%+");
     spdlog_piscem::set_default_logger(logger);
-  
+
     if (po.quiet) {
       spdlog_piscem::set_level(spdlog_piscem::level::warn);
     }
-  
+
     spdlog_piscem::info("enable structural constraints : {}",
                         po.enable_structural_constraints);
-  
+
     po.attempt_occ_recover = (po.max_hit_occ_recover > po.max_hit_occ);
-  
+
     // start the timer
     auto start_t = std::chrono::high_resolution_clock::now();
-  
+
     std::optional<mindex::SkippingStrategy> skip_strat_opt =
       mindex::SkippingStrategy::from_string(skipping_rule);
     if (!skip_strat_opt) {
@@ -615,13 +628,13 @@ int run_pesc_sc(int argc, char **argv) {
       return 1;
     }
     po.skip_strat = skip_strat_opt.value();
-  
+
     bool geom_ok = set_geometry(po.library_geometry, po.pt, po.p);
     if (!geom_ok) {
       spdlog_piscem::critical("could not set the library geometry properly.");
       return 1;
     }
-  
+
     // load a poison map if we had one
     // load a poison map if we had one
     poison_table ptab;
@@ -638,19 +651,19 @@ int run_pesc_sc(int argc, char **argv) {
       spdlog_piscem::info(
         "No poison k-mer map exists, or it was requested not to be used");
     }
-  
+
     // load the main index
     bool attempt_load_ec_map = !po.ignore_ambig_hits;
     mindex::reference_index ri(po.index_basename, attempt_load_ec_map);
-  
+
     // RAD file path
     ghc::filesystem::path output_path(po.output_dirname);
     ghc::filesystem::create_directories(output_path);
-  
+
     ghc::filesystem::path rad_file_path = output_path / "map.rad";
     ghc::filesystem::path unmapped_bc_file_path =
       output_path / "unmapped_bc_count.bin";
-  
+
     std::string cmdline;
     size_t narg = static_cast<size_t>(argc);
     for (size_t i = 0; i < narg; ++i) {
@@ -658,47 +671,47 @@ int run_pesc_sc(int argc, char **argv) {
       cmdline.push_back(' ');
     }
     cmdline.pop_back();
-  
+
     std::ofstream rad_file(rad_file_path.string());
     std::ofstream unmapped_bc_file(unmapped_bc_file_path.string());
-  
+
     if (!rad_file.good()) {
       spdlog_piscem::critical("Could not open {} for writing.",
                               rad_file_path.string());
       throw std::runtime_error("error creating output file.");
     }
-  
+
     if (!unmapped_bc_file.good()) {
       spdlog_piscem::critical("Could not open {} for writing.",
                               unmapped_bc_file_path.string());
       throw std::runtime_error("error creating output file.");
     }
-  
+
     pesc_output_info out_info;
     out_info.rad_file = std::move(rad_file);
     out_info.unmapped_bc_file = std::move(unmapped_bc_file);
-  
+
     size_t bc_length = bc_kmer_t::k();
     size_t umi_length = umi_kmer_t::k();
     size_t chunk_offset =
       rad::util::write_rad_header(ri, bc_length, umi_length, out_info.rad_file);
-  
+
     std::mutex iomut;
-  
+
     uint32_t np = 1;
     if ((po.left_read_filenames.size() > 1) and (po.nthread >= 6)) {
       np += 1;
       po.nthread -= 1;
     }
-  
+
     fastx_parser::FastxParser<fastx_parser::ReadPair> rparser(
       po.left_read_filenames, po.right_read_filenames, po.nthread, np);
     rparser.start();
-  
+
     // set the k-mer size for the
     // CanonicalKmer type.
     CanonicalKmer::k(ri.k());
-  
+
     std::atomic<uint64_t> global_nr{0};
     std::atomic<uint64_t> global_nh{0};
     std::atomic<uint64_t> global_np{0};
@@ -706,91 +719,98 @@ int run_pesc_sc(int argc, char **argv) {
     for (size_t i = 0; i < po.nthread; ++i) {
       switch (po.pt) {
       case protocol_t::CHROM_V2: {
-        workers.push_back(std::thread([&ri, &rparser, &ptab, &po,
-                                       &global_nr, &global_nh, &global_np, &iomut,
-                                       &out_info]() {
-          chromium_v2 prot;
-          do_map_dispatch<decltype(prot)>(ri, rparser, ptab, prot, po, global_nr,
-                                          global_nh, global_np, out_info, iomut);
-        }));
+        workers.push_back(
+          std::thread([&ri, &rparser, &ptab, &po, &global_nr, &global_nh,
+                       &global_np, &iomut, &out_info]() {
+            chromium_v2 prot;
+            do_map_dispatch<decltype(prot)>(ri, rparser, ptab, prot, po,
+                                            global_nr, global_nh, global_np,
+                                            out_info, iomut);
+          }));
         break;
       }
       case protocol_t::CHROM_V2_5P: {
-        workers.push_back(std::thread([&ri, &rparser, &ptab, &po,
-                                       &global_nr, &global_nh, &global_np, &iomut,
-                                       &out_info]() {
-          chromium_v2_5p prot;
-          do_map_dispatch<decltype(prot)>(ri, rparser, ptab, prot, po, global_nr,
-                                          global_nh, global_np, out_info, iomut);
-        }));
+        workers.push_back(
+          std::thread([&ri, &rparser, &ptab, &po, &global_nr, &global_nh,
+                       &global_np, &iomut, &out_info]() {
+            chromium_v2_5p prot;
+            do_map_dispatch<decltype(prot)>(ri, rparser, ptab, prot, po,
+                                            global_nr, global_nh, global_np,
+                                            out_info, iomut);
+          }));
         break;
       }
       case protocol_t::CHROM_V3: {
-        workers.push_back(std::thread([&ri, &rparser, &ptab, &po,
-                                       &global_nr, &global_nh, &global_np, &iomut,
-                                       &out_info]() {
-          chromium_v3 prot;
-          do_map_dispatch<decltype(prot)>(ri, rparser, ptab, prot, po, global_nr,
-                                          global_nh, global_np, out_info, iomut);
-        }));
+        workers.push_back(
+          std::thread([&ri, &rparser, &ptab, &po, &global_nr, &global_nh,
+                       &global_np, &iomut, &out_info]() {
+            chromium_v3 prot;
+            do_map_dispatch<decltype(prot)>(ri, rparser, ptab, prot, po,
+                                            global_nr, global_nh, global_np,
+                                            out_info, iomut);
+          }));
         break;
       }
       case protocol_t::CHROM_V3_5P: {
-        workers.push_back(std::thread([&ri, &rparser, &ptab, &po,
-                                       &global_nr, &global_nh, &global_np, &iomut,
-                                       &out_info]() {
-          chromium_v3_5p prot;
-          do_map_dispatch<decltype(prot)>(ri, rparser, ptab, prot, po, global_nr,
-                                          global_nh, global_np, out_info, iomut);
-        }));
+        workers.push_back(
+          std::thread([&ri, &rparser, &ptab, &po, &global_nr, &global_nh,
+                       &global_np, &iomut, &out_info]() {
+            chromium_v3_5p prot;
+            do_map_dispatch<decltype(prot)>(ri, rparser, ptab, prot, po,
+                                            global_nr, global_nh, global_np,
+                                            out_info, iomut);
+          }));
         break;
       }
       case protocol_t::CHROM_V4_3P: {
-        workers.push_back(std::thread([&ri, &rparser, &ptab, &po,
-                                       &global_nr, &global_nh, &global_np, &iomut,
-                                       &out_info]() {
-          chromium_v4_3p prot;
-          do_map_dispatch<decltype(prot)>(ri, rparser, ptab, prot, po, global_nr,
-                                          global_nh, global_np, out_info, iomut);
-        }));
+        workers.push_back(
+          std::thread([&ri, &rparser, &ptab, &po, &global_nr, &global_nh,
+                       &global_np, &iomut, &out_info]() {
+            chromium_v4_3p prot;
+            do_map_dispatch<decltype(prot)>(ri, rparser, ptab, prot, po,
+                                            global_nr, global_nh, global_np,
+                                            out_info, iomut);
+          }));
         break;
       }
       case protocol_t::CUSTOM: {
         workers.push_back(
           std::thread([&ri, &rparser, &ptab, &po, &global_nr, &global_nh,
                        &global_np, &iomut, &out_info]() {
-	    // static_assert(std::is_same<custom_protocol, decltype(po.p)::element_type>::value, "types are not the same!");
-	    // for the tempalate parameter below, we can use:
-	    // custom_protocol
-	    // decltype(po.p)::element_type
-	    // std::remove_reference<decltype(*(po.p))>::value
-	    //
-	    // but, we CAN NOT USE:
-	    // decltype(*(po.p)), as this resolves to custom_protocol& because C++ hates reason
+            // static_assert(std::is_same<custom_protocol,
+            // decltype(po.p)::element_type>::value, "types are not the same!");
+            // for the tempalate parameter below, we can use:
+            // custom_protocol
+            // decltype(po.p)::element_type
+            // std::remove_reference<decltype(*(po.p))>::value
+            //
+            // but, we CAN NOT USE:
+            // decltype(*(po.p)), as this resolves to custom_protocol& because
+            // C++ hates reason
             do_map_dispatch<custom_protocol>(ri, rparser, ptab, *(po.p), po,
-                                               global_nr, global_nh, global_np,
-                                               out_info, iomut);
+                                             global_nr, global_nh, global_np,
+                                             out_info, iomut);
           }));
         break;
       }
       }
     }
-  
+
     for (auto &w : workers) {
       w.join();
     }
     rparser.stop();
-  
+
     spdlog_piscem::info("finished mapping.");
-  
+
     // rewind to the start of the file and write the number of
     // chunks that we actually produced.
     out_info.rad_file.seekp(chunk_offset);
     uint64_t nc = out_info.num_chunks.load();
     out_info.rad_file.write(reinterpret_cast<char *>(&nc), sizeof(nc));
-  
+
     out_info.rad_file.close();
-  
+
     // We want to check if the RAD file stream was written to
     // properly. While we likely would have caught this earlier,
     // it is possible the badbit may not be set until the stream
@@ -806,7 +826,7 @@ int run_pesc_sc(int argc, char **argv) {
                               "Consequently, the output may be corrupted.\n\n");
       return 1;
     }
-  
+
     out_info.unmapped_bc_file.close();
     // Same as the RAD file stream above, check to make
     // sure the output is properly written.
@@ -819,7 +839,7 @@ int run_pesc_sc(int argc, char **argv) {
         "Consequently, the output may be corrupted.\n\n");
       return 1;
     }
-  
+
     auto end_t = std::chrono::high_resolution_clock::now();
     auto num_sec =
       std::chrono::duration_cast<std::chrono::seconds>(end_t - start_t);
@@ -831,7 +851,7 @@ int run_pesc_sc(int argc, char **argv) {
     rs.num_poisoned(global_np.load());
     rs.num_seconds(num_sec.count());
     rs.ref_sig_info(ri.ref_sig_info());
-  
+
     ghc::filesystem::path map_info_file_path = output_path / "map_info.json";
     bool info_ok = piscem::meta_info::write_map_info(rs, map_info_file_path);
     if (!info_ok) {
@@ -839,7 +859,8 @@ int run_pesc_sc(int argc, char **argv) {
     }
   }
   if (po.p) {
-    spdlog_piscem::info("used custom geometry with total bc length {} and total umi length {}", 
+    spdlog_piscem::info(
+      "used custom geometry with total bc length {} and total umi length {}",
       po.p->get_bc_len(), po.p->get_umi_len());
   }
   return 0;
