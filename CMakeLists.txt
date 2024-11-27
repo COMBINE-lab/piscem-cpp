@@ -217,10 +217,6 @@ add_executable(poison_filter src/poison_read_filter.cpp)
 target_include_directories(poison_filter PUBLIC ${CMAKE_SOURCE_DIR}/include ${ZLIB_INCLUDE_DIRS})
 target_link_libraries(poison_filter Threads::Threads sshash_static pesc_static ${CLOUDFLARE_ZLIB}) 
 
-add_executable(make_ref_len src/make_ref_length.cpp) 
-target_include_directories(make_ref_len PUBLIC ${CMAKE_SOURCE_DIR}/include ${ZLIB_INCLUDE_DIRS})
-target_link_libraries(make_ref_len Threads::Threads sshash_static pesc_static ${CLOUDFLARE_ZLIB}) 
-
 ## tests
 add_subdirectory(external/doctest)
 
