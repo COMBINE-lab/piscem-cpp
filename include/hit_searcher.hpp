@@ -55,6 +55,7 @@ class hit_searcher {
 public:
   explicit hit_searcher(reference_index *pfi) : pfi_(pfi) {
     k = static_cast<size_t>(pfi_->k());
+    (void)isSingleEnd;
   }
 
   bool get_raw_hits_sketch(std::string &read, piscem::streaming_query &qc,
@@ -95,7 +96,6 @@ private:
   uint32_t altSkip{3};
 
   bool isSingleEnd = false;
-  (void)isSingleEnd;
   std::vector<std::pair<int, projected_hits>> left_rawHits;
   std::vector<std::pair<int, projected_hits>> right_rawHits;
 };
