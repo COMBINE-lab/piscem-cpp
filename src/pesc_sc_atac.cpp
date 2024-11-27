@@ -658,8 +658,10 @@ void do_map(mindex::reference_index& ri,
     if (use_poison) {
         poison_state.ptab = &poison_map;
     }
+
+    constexpr bool paired_end_frags = std::is_same_v<fastx_parser::ReadTrip, FragT>;
     // the reads are paired
-    if constexpr (std::is_same_v<fastx_parser::ReadTrip, FragT>) {
+    if constexpr (paired_end_frags) {
         poison_state.paired_for_mapping = true;
     }
     // SAM output
@@ -700,10 +702,13 @@ void do_map(mindex::reference_index& ri,
                 std::cerr << "\rprocessed (" << rctr << ") reads; (" << hctr << ") had mappings.";
                 iomut.unlock();
             }
-            std::string* bc = &record.second.seq; // need to modify this
-            if constexpr (std::is_same_v<fastx_parser::ReadTrip, FragT>) {
+
+            std::string* bc{nullptr};
+            if constexpr (paired_end_frags) {
                 bc = &record.third.seq;
-            }
+            } else {
+		bc = &record.second.seq;
+	    }
             bc_kmer_t bc_kmer;
         
             auto recovered = single_cell::util::recover_barcode(*bc);
