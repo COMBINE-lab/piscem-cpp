@@ -33,6 +33,10 @@ public:
   streaming_query &operator=(streaming_query &&other) = default;
 
   ~streaming_query() {
+    /*
+    // print out statistics about the number of
+    // extension lookups compared to the number
+    // of stateless lookups.
     auto ns = m_n_search;
     auto ne = m_n_extend;
     if (ns > 0) {
@@ -42,6 +46,7 @@ public:
          << static_cast<double>(ne) / static_cast<double>(ns) << "\n";
       std::cerr << ss.str();
     }
+    */
   }
 
   inline void reset_state() {
