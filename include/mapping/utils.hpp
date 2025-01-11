@@ -924,7 +924,12 @@ struct poison_state_t {
 template <typename sketch_hit_info_t> struct mapping_cache_info {
 public:
   mapping_cache_info(mindex::reference_index &ri)
-    : k(ri.k()), q(ri.get_dict()), hs(&ri) {}
+    : k(ri.k()), q(ri.get_dict(), nullptr), hs(&ri) {
+    auto ref_contig_it =
+      std::make_unique<sshash::bit_vector_iterator>(ri.contigs(), 0);
+    piscem::streaming_query q2(ri.get_dict(), std::move(ref_contig_it));
+    std::swap(q, q2);
+  }
 
   inline void clear() {
     map_type = mapping::util::MappingType::UNMAPPED;

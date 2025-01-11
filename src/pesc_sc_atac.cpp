@@ -679,7 +679,10 @@ void do_map(mindex::reference_index &ri,
   auto rg = parser.getReadGroup();
   uint32_t num_reads_in_chunk{0};
 
-  piscem::streaming_query q(ri.get_dict());
+  auto ref_contig_it =
+    std::make_unique<sshash::bit_vector_iterator>(ri.contigs(), 0);
+  piscem::streaming_query q(ri.get_dict(), std::move(ref_contig_it));
+
   // for(int32_t i = 0; i < ri.num_refs(); i++) {
   //     std::cout << "i is " <<  i << " ref len is " << ri.ref_len(i) << " name
   //     is " << ri.ref_name(i) << std::endl;

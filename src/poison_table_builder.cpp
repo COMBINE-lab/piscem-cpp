@@ -1,3 +1,4 @@
+#include "../external/sshash/include/util.hpp"
 #include "../include/CanonicalKmerIterator.hpp"
 #include "../include/FastxParser.hpp"
 #include "../include/Kmer.hpp"
@@ -10,9 +11,8 @@
 #include "../include/reference_index.hpp"
 #include "../include/spdlog_piscem/sinks/stdout_color_sinks.h"
 #include "../include/spdlog_piscem/spdlog.h"
-#include "../include/util_piscem.hpp"
-#include "../external/sshash/include/util.hpp"
 #include "../include/streaming_query.hpp"
+#include "../include/util_piscem.hpp"
 
 #include <algorithm>
 #include <cstdio>
@@ -124,7 +124,10 @@ void find_poison_kmers(
   std::atomic<uint64_t> &global_nk,
   std::vector<labeled_poison_occ_t> &poison_kmer_occs) {
   pufferfish::CanonicalKmerIterator kit_end;
-  piscem::streaming_query cache(ri.get_dict());
+
+  auto ref_contig_it =
+    std::make_unique<sshash::bit_vector_iterator>(ri.contigs(), 0);
+  piscem::streaming_query cache(ri.get_dict(), std::move(ref_contig_it));
 
   poison_state_t pstate;
   pstate.reset();

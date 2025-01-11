@@ -107,6 +107,7 @@ ExternalProject_Add_Step(zlib-cloudflare
 # cloudflare libz
 include_directories(${CMAKE_BINARY_DIR}/zlib-cloudflare/include)
 link_directories(${CMAKE_BINARY_DIR}/zlib-cloudflare/lib)
+link_directories(/fs/cbcb-lab/rob/rob/gperftools/build)
 
 # direct path to the cloudflare libz
 set(CLOUDFLARE_ZLIB ${CMAKE_BINARY_DIR}/zlib-cloudflare/lib/libzcf.a)
@@ -149,7 +150,7 @@ target_include_directories(sshash_static PRIVATE  ${LIBRADICL_INCLUDE})
 
 
 add_library(pesc_static STATIC
-  src/pesc_bulk.cpp src/pesc_sc.cpp src/pesc_sc_atac.cpp src/hit_searcher.cpp src/FastxParser.cpp
+ src/pesc_bulk.cpp src/pesc_sc.cpp src/pesc_sc_atac.cpp src/hit_searcher.cpp src/FastxParser.cpp 
 )
 target_include_directories(pesc_static PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/include ${ZLIB_INCLUDE_DIRS} ${LIBRADICL_INCLUDE})
 
@@ -187,7 +188,7 @@ target_link_libraries(pesc-bulk pesc_static ${CLOUDFLARE_ZLIB} Threads::Threads 
 
 add_executable(pesc-sc-atac src/pesc_sc_atac_runner.cpp) 
 target_include_directories(pesc-sc-atac PUBLIC ${LIBRADICL_INCLUDE} ${CMAKE_SOURCE_DIR}/include ${ZLIB_INCLUDE_DIRS})
-target_link_libraries(pesc-sc-atac pesc_static radicl ${CLOUDFLARE_ZLIB} Threads::Threads sshash_static ${MALLOC_LIB})
+target_link_libraries(pesc-sc-atac pesc_static radicl ${CLOUDFLARE_ZLIB} Threads::Threads sshash_static ${MALLOC_LIB} profiler)
 #target_link_directories(pesc-sc-atac PUBLIC /fs/cbcb-lab/rob/students/noor/miniforge3/lib)
 add_dependencies(pesc-sc-atac radicl)
 
