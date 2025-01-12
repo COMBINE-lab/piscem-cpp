@@ -37,13 +37,16 @@ public:
     // print out statistics about the number of
     // extension lookups compared to the number
     // of stateless lookups.
-    auto ns = m_n_search;
-    auto ne = m_n_extend;
+    auto ns = num_searches();   // m_n_search;
+    auto ne = num_extensions(); // nm_n_extend;
     if (ns > 0) {
       std::stringstream ss;
+      ss << "method : " << search_meth() << "\n";
       ss << "\nnumber of searches = " << ns << ", number of extensions = " << ne
          << ", neighbors = " << m_neighbors << ", extension ratio = "
-         << static_cast<double>(ne) / static_cast<double>(ns) << "\n";
+         << static_cast<double>(ne) / static_cast<double>(ns)
+         << ", neihbor ratio = "
+         << static_cast<double>(m_neighbors) / static_cast<double>(ns) << "\n";
       std::cerr << ss.str();
     }
     */
@@ -69,12 +72,19 @@ public:
   inline void do_stateless_lookup(const char *kmer_s) {
     // lookup directly in the index without assuming any relation
     // to the previously queried k-mer
-    m_n_search++;
     m_prev_res = m_d->lookup_advanced(kmer_s);
     m_direction = m_prev_res.kmer_orientation ? -1 : 1;
     m_prev_kmer_id = m_prev_res.kmer_id;
     m_is_present = (m_prev_res.kmer_id != sshash::constants::invalid_uint64);
     m_start = !m_is_present;
+    m_n_search += m_is_present ? 1 : 0;
+    if (m_is_present) {
+      uint64_t kmer_offset =
+        2 * (m_prev_res.kmer_id + (m_prev_res.contig_id * (m_k - 1)));
+      kmer_offset += (m_direction > 0) ? 0 : (2 * m_k);
+      m_ref_contig_it->at(kmer_offset);
+      set_remaining_contig_bases();
+    }
   }
 
   inline void set_remaining_contig_bases() {
@@ -116,17 +126,21 @@ public:
 
     // if we need to do a stateless lookup
     if (m_start) {
-      do_stateless_lookup(kmer_s);
-      // we found this k-mer via stateless lookup
-      if (m_is_present) {
-        set_remaining_contig_bases();
+      if (!sshash::util::is_valid(kmer_s, m_k)) {
+        return sshash::lookup_result();
       }
+      do_stateless_lookup(kmer_s);
     } else {
       // try to get the next k-mer
       uint64_t next_kmer_id = m_prev_kmer_id + m_direction;
-      uint64_t kmer_offset = next_kmer_id + (m_prev_res.contig_id * (m_k - 1));
-      m_ref_contig_it->at(2 * kmer_offset);
-      auto ref_kmer = m_ref_contig_it->read(2 * m_k);
+      auto ref_kmer =
+        (m_direction > 0)
+          ? (m_ref_contig_it->eat(2), m_ref_contig_it->read(2 * m_k))
+          : (m_ref_contig_it->eat_reverse(2),
+             m_ref_contig_it->read_reverse(2 * m_k));
+      // uint64_t kmer_offset = next_kmer_id + (m_prev_res.contig_id * (m_k -
+      // 1)); m_ref_contig_it->at(2 * kmer_offset); auto ref_kmer =
+      // m_ref_contig_it->read(2 * m_k);
       auto match_type = kmit->first.isEquivalent(ref_kmer);
       m_is_present = (match_type != KmerMatchType::NO_MATCH);
 
@@ -135,9 +149,7 @@ public:
         reset_state();
         // we're doing a fresh lookup
         do_stateless_lookup(kmer_s);
-        if (m_is_present) {
-          set_remaining_contig_bases();
-        } else {
+        if (!m_is_present) {
           reset_state();
         }
       } else {
@@ -168,6 +180,9 @@ public:
     }
     return m_prev_res;
   }
+  uint64_t num_searches() { return m_n_search; }
+  uint64_t num_extensions() { return m_n_extend; }
+  std::string search_meth() { return "custom"; }
 
   /*
   inline sshash::lookup_result
@@ -187,15 +202,17 @@ public:
         reset_state();
       }
     }
-    m_prev_query_offset = query_offset;
 
-    const char *kmer = kmit.seq().data() + query_offset;
+    m_prev_query_offset = query_offset;
+    const char *kmer = kmit.seq().substr(query_offset).data();
     sshash::lookup_result res = m_q.lookup_advanced(kmer);
     m_is_present = (res.kmer_id != sshash::constants::invalid_uint64);
 
     uint64_t neighbor_inc =
-      m_is_present && ((res.kmer_id == m_prev_kmer_id + 1) ||
-                       (res.kmer_id == m_prev_kmer_id - 1));
+      (m_is_present && ((res.kmer_id == (m_prev_kmer_id + 1)) ||
+                        (res.kmer_id == (m_prev_kmer_id - 1))))
+        ? 1
+        : 0;
     m_neighbors += neighbor_inc;
     m_prev_kmer_id = res.kmer_id;
     if (m_is_present && (res.contig_id != m_prev_contig_id)) {
@@ -208,7 +225,11 @@ public:
     }
     return res;
   }
+  uint64_t num_searches() { return m_q.num_searches(); }
+  uint64_t num_extensions() { return m_q.num_extensions(); }
+  std::string search_meth() { return "builtin"; }
   */
+
   inline bool is_present() { return m_is_present; }
 
   inline sshash::util::contig_span contig_span() { return m_ctg_span; }
