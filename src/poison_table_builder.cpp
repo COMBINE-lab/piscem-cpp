@@ -10,7 +10,9 @@
 #include "../include/reference_index.hpp"
 #include "../include/spdlog_piscem/sinks/stdout_color_sinks.h"
 #include "../include/spdlog_piscem/spdlog.h"
-#include "../include/util.hpp"
+#include "../include/util_piscem.hpp"
+#include "../external/sshash/include/util.hpp"
+#include "../include/streaming_query.hpp"
 
 #include <algorithm>
 #include <cstdio>
@@ -45,7 +47,7 @@ public:
   // determine if the current or former k-mer is poison.
   inline bool
   inspect_and_update(CanonicalKmerIterator &kit, mindex::reference_index &ri,
-                     sshash::streaming_query_canonical_parsing &cache,
+                     piscem::streaming_query &cache,
                      std::vector<labeled_poison_occ_t> &poison_occs) {
     constexpr int64_t zero = 0;
     bool added_poison = false;
@@ -122,7 +124,7 @@ void find_poison_kmers(
   std::atomic<uint64_t> &global_nk,
   std::vector<labeled_poison_occ_t> &poison_kmer_occs) {
   pufferfish::CanonicalKmerIterator kit_end;
-  sshash::streaming_query_canonical_parsing cache(ri.get_dict());
+  piscem::streaming_query cache(ri.get_dict());
 
   poison_state_t pstate;
   pstate.reset();

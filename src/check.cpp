@@ -1,9 +1,11 @@
 #include <iostream>
 
-#include "../external/pthash/external/cmd_line_parser/include/parser.hpp"
+#include "../external/sshash/external/pthash/external/cmd_line_parser/include/parser.hpp"
 #include "../include/reference_index.hpp"
-#include "../include/query/streaming_query_canonical_parsing.hpp"
-#include "check_utils.hpp"
+#include "../include/streaming_query.hpp"
+#include "../external/sshash/src/common.hpp"
+#include "../external/sshash/src/bench_utils.hpp"
+#include "../external/sshash/src/check_utils.hpp"
 #include "../include/FastxParser.hpp"
 #include "../include/CanonicalKmerIterator.hpp"
 
@@ -19,7 +21,7 @@ int main(int argc, char** argv) {
     auto ref_filename = parser.get<std::string>("ref_filename");
 
   	mindex::reference_index ri(index_filename);
-    sshash::streaming_query_canonical_parsing q(ri.get_dict());
+    piscem::streaming_query q(ri.get_dict());
 
     // set the canonical k-mer size globally
     CanonicalKmer::k(ri.k());

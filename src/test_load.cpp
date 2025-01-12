@@ -1,10 +1,10 @@
 
-#include "../external/pthash/external/cmd_line_parser/include/parser.hpp"
+#include "../external/sshash/external/pthash/external/cmd_line_parser/include/parser.hpp"
 #include "../include/reference_index.hpp"
 #include "../include/kseq++.hpp"
 #include "../include/CanonicalKmerIterator.hpp"
 //#include "../include/query/contig_info_query_canonical_parsing.cpp"
-#include "../include/query/streaming_query_canonical_parsing.hpp"
+#include "../external/sshash/include/query/streaming_query_canonical_parsing.hpp"
 #include "../include/projected_hits.hpp"
 #include "zlib.h"
 

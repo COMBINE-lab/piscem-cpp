@@ -10,7 +10,9 @@
 #include "../include/reference_index.hpp"
 #include "../include/spdlog_piscem/sinks/stdout_color_sinks.h"
 #include "../include/spdlog_piscem/spdlog.h"
-#include "../include/util.hpp"
+#include "../external/sshash/include/util.hpp"
+#include "../include/util_piscem.hpp"
+#include "../include/streaming_query.hpp"
 #include "../include/defaults.hpp"
 #include "zlib.h"
 //#include "FastxParser.cpp"
@@ -478,7 +480,7 @@ void do_map(mindex::reference_index &ri,
   uint64_t processed = 0;
   uint64_t buff_size = 10000;
 
-  sshash::streaming_query_canonical_parsing q(ri.get_dict());
+  piscem::streaming_query q(ri.get_dict());
   mindex::hit_searcher hs(&ri);
   uint64_t read_num = 0;
 
@@ -947,6 +949,7 @@ int run_pesc_bulk(int argc, char **argv) {
   important_params["enable_structural_constraints"] = (po.enable_structural_constraints ? "true" : "false");
   piscem::meta_info::run_stats rs;
   rs.cmd_line(cmdline);
+  rs.mode(piscem::RunMode::bulk);
   rs.num_reads(global_nr.load());
   rs.num_hits(global_nh.load());
   rs.num_poisoned(global_np.load());

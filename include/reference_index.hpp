@@ -3,22 +3,22 @@
 #include <fstream>
 #include <optional>
 
-#include "dictionary.hpp"
+#include "../external/sshash/include/dictionary.hpp"
 #include "basic_contig_table.hpp"
 #include "equivalence_class_map.hpp"
 #include "../external/pthash/external/essentials/include/essentials.hpp"
-#include "../include/bitsery/bitsery.h"
-#include "../include/bitsery/adapter/stream.h"
-#include "../include/bitsery/brief_syntax/vector.h"
-#include "../include/bitsery/brief_syntax/string.h"
-#include "../include/ghc/filesystem.hpp"
-#include "../include/json.hpp"
-#include "../include/ref_sig_info.hpp"
-//#include "query/contig_info_query_canonical_parsing.cpp"
-#include "query/streaming_query_canonical_parsing.hpp"
+#include "bitsery/bitsery.h"
+#include "bitsery/adapter/stream.h"
+#include "bitsery/brief_syntax/vector.h"
+#include "bitsery/brief_syntax/string.h"
+#include "ghc/filesystem.hpp"
+#include "json.hpp"
+#include "ref_sig_info.hpp"
+#include "../include/streaming_query.hpp"
 #include "bit_vector_iterator.hpp"
 #include "CanonicalKmerIterator.hpp"
 #include "projected_hits.hpp"
+#include "../external/sshash/include/util.hpp"
 #include "util.hpp"
 #include "spdlog_piscem/spdlog.h"
 
@@ -32,7 +32,10 @@ public:
         sig_info = ref_sig_info_t::from_path(sigfile_name);
          
         std::string dict_name = basename + ".sshash";
+        
+        spdlog_piscem::info("sshash loaded");
         essentials::load(m_dict, dict_name.c_str());
+        spdlog_piscem::info("ctab loaded");
         std::string ctg_name = basename + ".ctab";
         essentials::load(m_bct, ctg_name.c_str());
 
@@ -68,9 +71,14 @@ public:
         spdlog_piscem::info("done loading index");
     }
 
-    projected_hits query(pufferfish::CanonicalKmerIterator kmit,
-                         sshash::streaming_query_canonical_parsing& q) {
-        auto qres = q.get_contig_pos(kmit->first.fwWord(), kmit->first.rcWord(), kmit->second);
+    projected_hits query(pufferfish::CanonicalKmerIterator& kmit,
+                         piscem::streaming_query& q) {
+        auto qres = q.query_lookup(kmit);
+        /*
+        std::string km = kmit->first.to_str();
+        const char* kmer = km.c_str();
+        auto qres = q.lookup_advanced(kmer);
+        */
 
         constexpr uint64_t invalid_u64 = std::numeric_limits<uint64_t>::max();
         constexpr uint32_t invalid_u32 = std::numeric_limits<uint32_t>::max();
@@ -132,7 +140,7 @@ public:
 
     uint64_t k() const { return m_dict.k(); }
     const sshash::dictionary* get_dict() const { return &m_dict; }
-    pthash::bit_vector& contigs() { return m_dict.m_buckets.strings; }
+    pthash::bit_vector const& contigs() { return m_dict.strings(); }
     const std::string& ref_name(size_t i) const { return m_ref_names[i]; }
     uint64_t ref_len(size_t i) const { return m_ref_lens[i]; }
     uint64_t num_refs() const { return m_ref_names.size(); }

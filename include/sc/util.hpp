@@ -17,7 +17,7 @@ namespace util {
 
 enum class BarCodeRecovered : uint8_t { OK, RECOVERED, NOT_RECOVERED };
 
-BarCodeRecovered recover_barcode(std::string &sequence) {
+inline BarCodeRecovered recover_barcode(std::string &sequence) {
   size_t pos = sequence.find_first_not_of("ACTGactg");
   if (pos == std::string::npos) {
     return BarCodeRecovered::OK;
@@ -38,7 +38,7 @@ struct geo_part {
   friend std::ostream &operator<<(std::ostream &os, const geo_part &gp);
 };
 
-std::ostream &operator<<(std::ostream &os, const geo_part &gp) {
+inline std::ostream &operator<<(std::ostream &os, const geo_part &gp) {
   switch (gp.ttype) {
   case geo_tag_type::BC: {
     os << "BC [" << gp.len << "]";
@@ -71,7 +71,7 @@ struct protocol_state {
   std::vector<geo_part> geo_parts_r2;
 };
 
-std::unique_ptr<custom_protocol> parse_custom_geometry(std::string &geom) {
+inline std::unique_ptr<custom_protocol> parse_custom_geometry(std::string &geom) {
   /*
    // definition using parser combinators (seemingly *not* faster to compile)
   using namespace peg;
@@ -512,10 +512,10 @@ public:
     has_biological_read = other.has_biological_read;
     has_umi = other.has_umi;
     has_barcode = other.has_barcode;
-    // std::string bc_buffer;
-    // std::string umi_buffer;
-    // std::string read_buffer;
 
+    bc_len = other.bc_len;
+    umi_len = other.umi_len;
+   
     bc_slices_r1 = other.bc_slices_r1;
     umi_slices_r1 = other.umi_slices_r1;
     read_slices_r1 = other.read_slices_r1;
@@ -784,7 +784,7 @@ public:
     return AlignableReadSeqs{r1_ptr, r2_ptr};
   }
 
-  friend std::ostream &operator<<(std::ostream &os, const custom_protocol &p);
+  inline friend std::ostream &operator<<(std::ostream &os, const custom_protocol &p);
 
 private:
   bool has_biological_read{false};
@@ -798,13 +798,13 @@ private:
   std::string r1_buffer;
   std::string r2_buffer;
 
-  itlib::small_vector<str_slice, 8> bc_slices_r1;
-  itlib::small_vector<str_slice, 8> umi_slices_r1;
-  itlib::small_vector<str_slice, 8> read_slices_r1;
+  itlib::small_vector<str_slice, 8> bc_slices_r1 {};
+  itlib::small_vector<str_slice, 8> umi_slices_r1 {};
+  itlib::small_vector<str_slice, 8> read_slices_r1 {};
 
-  itlib::small_vector<str_slice, 8> bc_slices_r2;
-  itlib::small_vector<str_slice, 8> umi_slices_r2;
-  itlib::small_vector<str_slice, 8> read_slices_r2;
+  itlib::small_vector<str_slice, 8> bc_slices_r2 {};
+  itlib::small_vector<str_slice, 8> umi_slices_r2 {};
+  itlib::small_vector<str_slice, 8> read_slices_r2 {};
 };
 
 #endif // __SC_UTIL_HPP__

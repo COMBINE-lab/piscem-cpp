@@ -1,11 +1,12 @@
 #include <iostream>
 #include <vector>
 #include "../include/basic_contig_table.hpp"
-#include "../external/pthash/external/essentials/include/essentials.hpp"
-#include "../include/ef_sequence.hpp"
+#include "../external/sshash/external/pthash/external/essentials/include/essentials.hpp"
+#include "../external/sshash/include/ef_sequence.hpp"
 #include "../include/equivalence_class_map.hpp"
-#include "../external/pthash/external/cmd_line_parser/include/parser.hpp"
-#include "../include/util.hpp"
+#include "../external/sshash/external/pthash/external/cmd_line_parser/include/parser.hpp"
+#include "../external/sshash/include/util.hpp"
+#include "../include/util_piscem.hpp"
 #include "../include/parallel_hashmap/phmap.h"
 #include "../include/bitsery/bitsery.h"
 #include "../include/bitsery/brief_syntax.h"
@@ -14,7 +15,7 @@
 #include "../include/bitsery/brief_syntax/string.h"
 #include "../include/spdlog_piscem/spdlog.h"
 #include "../include/json.hpp"
-#include "../external/pthash/include/utils/hasher.hpp"
+#include "../external/sshash/external/pthash/include/utils/hasher.hpp"
 
 using namespace sshash;
 using phmap::flat_hash_map;
@@ -354,9 +355,11 @@ bool build_contig_table(const std::string& input_filename, uint64_t k,
         }
         seg_table_builder.build(bct.m_ctg_entries);
     }
+    const basic_contig_table& ctabr = bct;
 
     std::string out_ctab = output_filename + ".ctab";
-    essentials::save(bct, out_ctab.c_str());
+    essentials::save(ctabr, out_ctab.c_str());
+    // essentials::save(bct, out_ctab.c_str());
 
     if (build_eq_table) {
       // map equivalence class content to id
