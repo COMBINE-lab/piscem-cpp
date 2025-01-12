@@ -1338,7 +1338,7 @@ bool hit_searcher::get_raw_hits_sketch_everykmer(std::string &read,
     }
     else {
       ++neg_kmers;
-      std::cout << kit.p_->getCanonical() << std::endl;
+      // std::cout << kit.p_->getCanonical() << std::endl;
     }
     //     if (evs.new_state)  {
     //       evs.query_kmer(kit, pfi_, raw_hits, ref_contig_it, qc);
