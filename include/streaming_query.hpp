@@ -33,23 +33,25 @@ public:
   streaming_query &operator=(streaming_query &&other) = default;
 
   ~streaming_query() {
-    /*
-    // print out statistics about the number of
-    // extension lookups compared to the number
-    // of stateless lookups.
-    auto ns = num_searches();   // m_n_search;
-    auto ne = num_extensions(); // nm_n_extend;
-    if (ns > 0) {
-      std::stringstream ss;
-      ss << "method : " << search_meth() << "\n";
-      ss << "\nnumber of searches = " << ns << ", number of extensions = " << ne
-         << ", neighbors = " << m_neighbors << ", extension ratio = "
-         << static_cast<double>(ne) / static_cast<double>(ns)
-         << ", neihbor ratio = "
-         << static_cast<double>(m_neighbors) / static_cast<double>(ns) << "\n";
-      std::cerr << ss.str();
+    if constexpr (m_print_stats) {
+      // print out statistics about the number of
+      // extension lookups compared to the number
+      // of stateless lookups.
+      auto ns = num_searches();   // m_n_search;
+      auto ne = num_extensions(); // nm_n_extend;
+      if (ns > 0) {
+        std::stringstream ss;
+        ss << "method : " << search_meth() << "\n";
+        ss << "\nnumber of searches = " << ns
+           << ", number of extensions = " << ne
+           << ", neighbors = " << m_neighbors << ", extension ratio = "
+           << static_cast<double>(ne) / static_cast<double>(ns)
+           << ", neihbor ratio = "
+           << static_cast<double>(m_neighbors) / static_cast<double>(ns)
+           << "\n";
+        std::cerr << ss.str();
+      }
     }
-    */
   }
 
   inline void reset_state() {
@@ -100,6 +102,7 @@ public:
   query_lookup(pufferfish::CanonicalKmerIterator &kmit,
                sshash::ef_sequence<false> &m_ctg_offsets,
                pthash::compact_vector &m_ctg_entries) {
+
     auto query_offset = kmit->second;
 
     // if the current query offset position is
@@ -126,6 +129,9 @@ public:
 
     // if we need to do a stateless lookup
     if (m_start) {
+      // NOTE: technically, the `CanonicalKmerIterator` should
+      // never yield an invalid k-mer, so we shouldn't have to
+      // actually check this.
       if (!sshash::util::is_valid(kmer_s, m_k)) {
         return sshash::lookup_result();
       }
@@ -180,55 +186,12 @@ public:
     }
     return m_prev_res;
   }
+
   uint64_t num_searches() { return m_n_search; }
+
   uint64_t num_extensions() { return m_n_extend; }
+
   std::string search_meth() { return "custom"; }
-
-  /*
-  inline sshash::lookup_result
-  query_lookup(pufferfish::CanonicalKmerIterator &kmit,
-               sshash::ef_sequence<false> &m_ctg_offsets,
-               pthash::compact_vector &m_ctg_entries) {
-    auto query_offset = kmit->second;
-
-    // if the current query offset position is
-    // the next position after the stored query
-    // offset position, then we can apply the
-    // relevant optimizations.  Otherwise, we
-    // should consider this as basically a "new"
-    // query
-    if (m_prev_query_offset != invalid_query_offset) {
-      if ((m_prev_query_offset + 1) != query_offset) {
-        reset_state();
-      }
-    }
-
-    m_prev_query_offset = query_offset;
-    const char *kmer = kmit.seq().substr(query_offset).data();
-    sshash::lookup_result res = m_q.lookup_advanced(kmer);
-    m_is_present = (res.kmer_id != sshash::constants::invalid_uint64);
-
-    uint64_t neighbor_inc =
-      (m_is_present && ((res.kmer_id == (m_prev_kmer_id + 1)) ||
-                        (res.kmer_id == (m_prev_kmer_id - 1))))
-        ? 1
-        : 0;
-    m_neighbors += neighbor_inc;
-    m_prev_kmer_id = res.kmer_id;
-    if (m_is_present && (res.contig_id != m_prev_contig_id)) {
-      auto start_pos = m_ctg_offsets.access(res.contig_id);
-      auto end_pos = m_ctg_offsets.access(res.contig_id + 1);
-      size_t len = end_pos - start_pos;
-      m_ctg_span = {m_ctg_entries.at(start_pos),
-                    m_ctg_entries.at(start_pos + len), len};
-      m_prev_contig_id = res.contig_id;
-    }
-    return res;
-  }
-  uint64_t num_searches() { return m_q.num_searches(); }
-  uint64_t num_extensions() { return m_q.num_extensions(); }
-  std::string search_meth() { return "builtin"; }
-  */
 
   inline bool is_present() { return m_is_present; }
 
@@ -253,8 +216,7 @@ private:
   std::unique_ptr<sshash::bit_vector_iterator> m_ref_contig_it{nullptr};
   int32_t m_remaining_contig_bases{0};
   uint64_t m_k;
-
-  // ref_contig_it.at(2 * ph.globalPos_);
+  static constexpr bool m_print_stats{false};
 };
 } // namespace piscem
 
