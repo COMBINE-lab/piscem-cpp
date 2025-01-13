@@ -25,9 +25,7 @@ int main(int argc, char **argv) {
   auto ref_filename = parser.get<std::string>("ref_filename");
 
   mindex::reference_index ri(index_filename);
-  auto ref_contig_it =
-    std::make_unique<sshash::bit_vector_iterator>(ri.contigs(), 0);
-  piscem::streaming_query q(ri.get_dict(), std::move(ref_contig_it));
+  piscem::streaming_query q(ri.get_dict());
 
   // set the canonical k-mer size globally
   CanonicalKmer::k(ri.k());
