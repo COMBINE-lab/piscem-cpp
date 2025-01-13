@@ -20,12 +20,11 @@ constexpr uint64_t invalid_contig_id = std::numeric_limits<uint64_t>::max();
 
 class streaming_query {
 public:
-  inline streaming_query(
-    sshash::dictionary const *d,
-    std::unique_ptr<sshash::bit_vector_iterator> &&contig_it)
-    : m_d(d), m_q(d), m_prev_query_offset(invalid_query_offset),
+  inline streaming_query(sshash::dictionary const *d)
+    : m_d(d), m_prev_query_offset(invalid_query_offset),
       m_prev_contig_id(invalid_contig_id), m_prev_kmer_id(invalid_query_offset),
-      m_ref_contig_it(std::move(contig_it)), m_k(d->k()) {}
+      m_ref_contig_it(sshash::bit_vector_iterator(d->strings(), 0)),
+      m_k(d->k()) {}
 
   streaming_query(const streaming_query &other) = delete;
   streaming_query(streaming_query &&other) = default;
@@ -77,7 +76,7 @@ public:
       uint64_t kmer_offset =
         2 * (m_prev_res.kmer_id + (m_prev_res.contig_id * (m_k - 1)));
       kmer_offset += (m_direction > 0) ? 0 : (2 * m_k);
-      m_ref_contig_it->at(kmer_offset);
+      m_ref_contig_it.at(kmer_offset);
       set_remaining_contig_bases();
     } else {
       reset_state();
@@ -136,9 +135,9 @@ public:
       uint64_t next_kmer_id = m_prev_kmer_id + m_direction;
       auto ref_kmer =
         (m_direction > 0)
-          ? (m_ref_contig_it->eat(2), m_ref_contig_it->read(2 * m_k))
-          : (m_ref_contig_it->eat_reverse(2),
-             m_ref_contig_it->read_reverse(2 * m_k));
+          ? (m_ref_contig_it.eat(2), m_ref_contig_it.read(2 * m_k))
+          : (m_ref_contig_it.eat_reverse(2),
+             m_ref_contig_it.read_reverse(2 * m_k));
       auto match_type = kmit->first.isEquivalent(ref_kmer);
       m_is_present = (match_type != KmerMatchType::NO_MATCH);
 
@@ -187,7 +186,6 @@ public:
 
 private:
   sshash::dictionary const *m_d;
-  sshash::streaming_query_canonical_parsing m_q;
 
   int32_t m_prev_query_offset;
   uint64_t m_prev_contig_id;
@@ -201,10 +199,10 @@ private:
   int32_t m_n_extend{0};
   sshash::lookup_result m_prev_res;
   sshash::util::contig_span m_ctg_span;
-  std::unique_ptr<sshash::bit_vector_iterator> m_ref_contig_it{nullptr};
+  sshash::bit_vector_iterator m_ref_contig_it;
   int32_t m_remaining_contig_bases{0};
   uint64_t m_k;
-  static constexpr bool m_print_stats{true};
+  static constexpr bool m_print_stats{false};
 };
 } // namespace piscem
 

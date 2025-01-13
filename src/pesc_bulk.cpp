@@ -482,10 +482,6 @@ void do_map(mindex::reference_index &ri,
   uint64_t processed = 0;
   uint64_t buff_size = 10000;
 
-  auto ref_contig_it =
-    std::make_unique<sshash::bit_vector_iterator>(ri.contigs(), 0);
-  piscem::streaming_query q(ri.get_dict(), std::move(ref_contig_it));
-
   mindex::hit_searcher hs(&ri);
   uint64_t read_num = 0;
 

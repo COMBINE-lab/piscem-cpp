@@ -125,9 +125,7 @@ void find_poison_kmers(
   std::vector<labeled_poison_occ_t> &poison_kmer_occs) {
   pufferfish::CanonicalKmerIterator kit_end;
 
-  auto ref_contig_it =
-    std::make_unique<sshash::bit_vector_iterator>(ri.contigs(), 0);
-  piscem::streaming_query cache(ri.get_dict(), std::move(ref_contig_it));
+  piscem::streaming_query cache(ri.get_dict());
 
   poison_state_t pstate;
   pstate.reset();
