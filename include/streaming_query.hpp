@@ -56,20 +56,13 @@ public:
 
   inline void reset_state() {
     m_prev_query_offset = invalid_query_offset;
-    m_is_present = false;
-    m_start = true;
-    m_remaining_contig_bases = 0;
-    // m_q.reset_state();
-  }
-
-  inline void start() {
-    m_prev_query_offset = invalid_query_offset;
     m_prev_kmer_id = invalid_query_offset;
     m_is_present = false;
     m_start = true;
     m_remaining_contig_bases = 0;
-    // m_q.start();
   }
+
+  inline void start() { reset_state(); }
 
   inline void do_stateless_lookup(const char *kmer_s) {
     // lookup directly in the index without assuming any relation
@@ -86,6 +79,8 @@ public:
       kmer_offset += (m_direction > 0) ? 0 : (2 * m_k);
       m_ref_contig_it->at(kmer_offset);
       set_remaining_contig_bases();
+    } else {
+      reset_state();
     }
   }
 
@@ -144,20 +139,13 @@ public:
           ? (m_ref_contig_it->eat(2), m_ref_contig_it->read(2 * m_k))
           : (m_ref_contig_it->eat_reverse(2),
              m_ref_contig_it->read_reverse(2 * m_k));
-      // uint64_t kmer_offset = next_kmer_id + (m_prev_res.contig_id * (m_k -
-      // 1)); m_ref_contig_it->at(2 * kmer_offset); auto ref_kmer =
-      // m_ref_contig_it->read(2 * m_k);
       auto match_type = kmit->first.isEquivalent(ref_kmer);
       m_is_present = (match_type != KmerMatchType::NO_MATCH);
 
       if (!m_is_present) {
         // the next k-mer was not what was expected
-        reset_state();
         // we're doing a fresh lookup
         do_stateless_lookup(kmer_s);
-        if (!m_is_present) {
-          reset_state();
-        }
       } else {
         // the next k-mer was what was expected
         m_n_extend++;
@@ -216,7 +204,7 @@ private:
   std::unique_ptr<sshash::bit_vector_iterator> m_ref_contig_it{nullptr};
   int32_t m_remaining_contig_bases{0};
   uint64_t m_k;
-  static constexpr bool m_print_stats{false};
+  static constexpr bool m_print_stats{true};
 };
 } // namespace piscem
 
