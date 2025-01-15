@@ -84,12 +84,14 @@ struct SkipContext {
     return kit1->first.isEquivalent(fast_hit.ref_kmer);
   }
 
-  inline bool query_kmer(piscem::streaming_query &qc) {
+  template <typename streaming_query_t>
+  inline bool query_kmer(streaming_query_t &qc) {
     phits = pfi->query(kit1, qc);
     return !phits.empty();
   }
 
-  inline bool query_kmer_complex(piscem::streaming_query &qc,
+  template <typename streaming_query_t>
+  inline bool query_kmer_complex(streaming_query_t &qc,
                                  bool &obtained_confirmatory_hit) {
     bool found_match = false;
     if (fast_hit.valid()) {
@@ -542,9 +544,10 @@ struct SkipInfoT {
 //
 // Walk safely (one k-mer at a time until skip_ctx reaches the end_readPos)
 //
+template <typename streaming_query_t>
 inline void walk_safely_until(
   SkipContext &skip_ctx, // the skip context we'll use for searching
-  piscem::streaming_query &qc,
+  streaming_query_t &qc,
   int end_read_pos, // the position that we will shearch until
   std::vector<std::pair<int, projected_hits>>
     &raw_hits // the structure where we'll aggregate results
@@ -791,11 +794,12 @@ struct EveryKmer {
     new_state = (dist_to_contig_end <= 0) ? true : false;
   }
 
+  template <typename streaming_query_t>
   inline void query_kmer(pufferfish::CanonicalKmerIterator &kit,
                          mindex::reference_index *pfi,
                          std::vector<std::pair<int, projected_hits>> &raw_hits,
                          sshash::bit_vector_iterator &ref_contig_it,
-                         piscem::streaming_query &qc) {
+                         streaming_query_t &qc) {
     (void)ref_contig_it;
     qc.reset_state();
     auto ph = pfi->query(kit, qc);
@@ -884,8 +888,9 @@ struct EveryKmer {
 // [1] Bray NL, Pimentel H, Melsted P, Pachter L.
 // Near-optimal probabilistic RNA-seq quantification.
 // Nat Biotechnol. 2016;34(5):525-527.
+template <typename streaming_query_t>
 bool hit_searcher::get_raw_hits_sketch(std::string &read,
-                                       piscem::streaming_query &qc,
+                                       streaming_query_t &qc,
                                        mindex::SkippingStrategy strat,
                                        bool isLeft, bool verbose) {
   (void)verbose;
@@ -1179,8 +1184,9 @@ bool hit_searcher::get_raw_hits_sketch(std::string &read,
 // Near-optimal probabilistic RNA-seq quantification.
 // Nat Biotechnol. 2016;34(5):525-527.
 //
+template <typename streaming_query_t>
 bool hit_searcher::get_raw_hits_sketch_orig(std::string &read,
-                                            piscem::streaming_query &qc,
+                                            streaming_query_t &qc,
                                             mindex::SkippingStrategy strat,
                                             bool isLeft, bool verbose) {
   (void)verbose;
@@ -1301,8 +1307,9 @@ bool hit_searcher::get_raw_hits_sketch_orig(std::string &read,
   return raw_hits.size() != 0;
 }
 
+template <typename streaming_query_t>
 bool hit_searcher::get_raw_hits_sketch_everykmer(std::string &read,
-                                                 piscem::streaming_query &qc,
+                                                 streaming_query_t &qc,
                                                  bool isLeft, bool verbose) {
   clear();
   (void)verbose;
@@ -1366,5 +1373,30 @@ void hit_searcher::clear() {
   left_rawHits.clear();
   right_rawHits.clear();
 }
+
+template bool hit_searcher::get_raw_hits_sketch_everykmer<piscem::streaming_query<false>>(std::string &read,
+                                                 piscem::streaming_query<false> &qc, bool isLeft, bool verbose);
+template bool hit_searcher::get_raw_hits_sketch_everykmer<piscem::streaming_query<true>>(std::string &read,
+                                                 piscem::streaming_query<true> &qc, bool isLeft, bool verbose);
+
+template bool hit_searcher::get_raw_hits_sketch<piscem::streaming_query<false>>(std::string &read,
+                                       piscem::streaming_query<false> &qc,
+                                       mindex::SkippingStrategy strat,
+                                       bool isLeft, bool verbose);
+ 
+template bool hit_searcher::get_raw_hits_sketch<piscem::streaming_query<true>>(std::string &read,
+                                       piscem::streaming_query<true> &qc,
+                                       mindex::SkippingStrategy strat,
+                                       bool isLeft, bool verbose);
+ 
+template bool hit_searcher::get_raw_hits_sketch_orig<piscem::streaming_query<false>>(std::string &read,
+                                       piscem::streaming_query<false> &qc,
+                                       mindex::SkippingStrategy strat,
+                                       bool isLeft, bool verbose);
+ 
+template bool hit_searcher::get_raw_hits_sketch_orig<piscem::streaming_query<true>>(std::string &read,
+                                       piscem::streaming_query<true> &qc,
+                                       mindex::SkippingStrategy strat,
+                                       bool isLeft, bool verbose);
 
 } // namespace mindex

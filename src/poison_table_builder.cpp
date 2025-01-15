@@ -47,7 +47,7 @@ public:
   // determine if the current or former k-mer is poison.
   inline bool
   inspect_and_update(CanonicalKmerIterator &kit, mindex::reference_index &ri,
-                     piscem::streaming_query &cache,
+                     piscem::streaming_query<false> &cache,
                      std::vector<labeled_poison_occ_t> &poison_occs) {
     constexpr int64_t zero = 0;
     bool added_poison = false;
@@ -125,7 +125,7 @@ void find_poison_kmers(
   std::vector<labeled_poison_occ_t> &poison_kmer_occs) {
   pufferfish::CanonicalKmerIterator kit_end;
 
-  piscem::streaming_query cache(ri.get_dict());
+  piscem::streaming_query<false> cache(ri.get_dict());
 
   poison_state_t pstate;
   pstate.reset();

@@ -921,7 +921,7 @@ struct poison_state_t {
   poison_table *ptab{nullptr};
 };
 
-template <typename sketch_hit_info_t> struct mapping_cache_info {
+template <typename sketch_hit_info_t, typename streaming_query_t> struct mapping_cache_info {
 public:
   mapping_cache_info(mindex::reference_index &ri)
     : k(ri.k()), q(ri.get_dict()), hs(&ri) {}
@@ -956,7 +956,7 @@ public:
   size_t k{0};
 
   // to perform queries
-  piscem::streaming_query q;
+  streaming_query_t q;
   // implements the PASC algorithm
   mindex::hit_searcher hs;
   size_t max_chunk_reads = 5000;

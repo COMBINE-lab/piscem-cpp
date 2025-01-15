@@ -670,9 +670,9 @@ void do_map(mindex::reference_index &ri,
   std::string workstr_right;
   std::ostringstream osstream;
 
-  mapping_cache_info<SketchHitT> map_cache_left(ri);
-  mapping_cache_info<SketchHitT> map_cache_right(ri);
-  mapping_cache_info<SketchHitT> map_cache_out(ri);
+  mapping_cache_info<SketchHitT, piscem::streaming_query<true>> map_cache_left(ri);
+  mapping_cache_info<SketchHitT, piscem::streaming_query<true>> map_cache_right(ri);
+  mapping_cache_info<SketchHitT, piscem::streaming_query<true>> map_cache_out(ri);
 
   size_t max_chunk_reads = 5000;
 

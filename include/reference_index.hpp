@@ -76,8 +76,9 @@ public:
     spdlog_piscem::info("done loading index");
   }
 
+  template <typename streaming_query_t>
   projected_hits query(pufferfish::CanonicalKmerIterator &kmit,
-                       piscem::streaming_query &q) {
+                       streaming_query_t &q) {
     auto qres = q.query_lookup(kmit, m_bct.m_ctg_offsets, m_bct.m_ctg_entries);
     constexpr uint64_t invalid_u64 = std::numeric_limits<uint64_t>::max();
     constexpr uint32_t invalid_u32 = std::numeric_limits<uint32_t>::max();

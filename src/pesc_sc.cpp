@@ -240,21 +240,21 @@ void do_map(mindex::reference_index &ri,
   (void)num_short_umi;
   (void)num_ambig_umi;
 
-  mapping_cache_info<SketchHitT> map_cache_left(ri);
+  mapping_cache_info<SketchHitT, piscem::streaming_query<false>> map_cache_left(ri);
   map_cache_left.max_ec_card = po.max_ec_card;
   map_cache_left.max_hit_occ = po.max_hit_occ;
   map_cache_left.max_hit_occ_recover = po.max_hit_occ_recover;
   map_cache_left.max_read_occ = po.max_read_occ;
   map_cache_left.attempt_occ_recover = po.attempt_occ_recover;
 
-  mapping_cache_info<SketchHitT> map_cache_right(ri);
+  mapping_cache_info<SketchHitT, piscem::streaming_query<false>> map_cache_right(ri);
   map_cache_right.max_ec_card = po.max_ec_card;
   map_cache_right.max_hit_occ = po.max_hit_occ;
   map_cache_right.max_hit_occ_recover = po.max_hit_occ_recover;
   map_cache_right.max_read_occ = po.max_read_occ;
   map_cache_right.attempt_occ_recover = po.attempt_occ_recover;
 
-  mapping_cache_info<SketchHitT> map_cache_out(ri);
+  mapping_cache_info<SketchHitT, piscem::streaming_query<false>> map_cache_out(ri);
   map_cache_out.max_ec_card = po.max_ec_card;
   map_cache_out.max_hit_occ = po.max_hit_occ;
   map_cache_out.max_hit_occ_recover = po.max_hit_occ_recover;

@@ -58,17 +58,20 @@ public:
     (void)isSingleEnd;
   }
 
-  bool get_raw_hits_sketch(std::string &read, piscem::streaming_query &qc,
+  template <typename streaming_query_t>
+  bool get_raw_hits_sketch(std::string &read, streaming_query_t &qc,
                            SkippingStrategy strat = SkippingStrategy::STRICT,
                            bool isLeft = false, bool verbose = false);
 
-  bool
-  get_raw_hits_sketch_orig(std::string &read, piscem::streaming_query &qc,
+
+  template <typename streaming_query_t>
+  bool get_raw_hits_sketch_orig(std::string &read, streaming_query_t&qc,
                            SkippingStrategy strat = SkippingStrategy::STRICT,
                            bool isLeft = false, bool verbose = false);
 
+  template <typename streaming_query_t>
   bool get_raw_hits_sketch_everykmer(std::string &read,
-                                     piscem::streaming_query &qc,
+                                     streaming_query_t &qc,
                                      bool isLeft = false, bool verbose = false);
 
   void clear();

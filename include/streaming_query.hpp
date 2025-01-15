@@ -5,9 +5,11 @@
 #include "../external/sshash/include/dictionary.hpp"
 #include "../external/sshash/include/query/streaming_query_canonical_parsing.hpp"
 #include "../external/sshash/include/util.hpp"
+#include "../include/unordered_dense.h"
 #include "CanonicalKmerIterator.hpp"
 #include "util_piscem.hpp"
 #include <sstream>
+#include <limits>
 
 namespace mindex {
 class reference_index;
@@ -18,8 +20,18 @@ namespace piscem {
 constexpr int32_t invalid_query_offset = std::numeric_limits<int32_t>::lowest();
 constexpr uint64_t invalid_contig_id = std::numeric_limits<uint64_t>::max();
 
+struct empty_map_t {};
+
+// if `with_cache` is `true`, then this class will 
+// instantiate and use a cache for retaining the 
+// end-of-unitig k-mers to speed up lookup, if 
+// it is instantiated with `false`, no such cache 
+// will be used.
+template <bool with_cache>
 class streaming_query {
+  using cache_t = std::conditional_t<with_cache, ankerl::unordered_dense::map<uint64_t, sshash::lookup_result>, empty_map_t>;
 public:
+  
   inline streaming_query(sshash::dictionary const *d)
     : m_d(d), m_prev_query_offset(invalid_query_offset),
       m_prev_contig_id(invalid_contig_id), m_prev_kmer_id(invalid_query_offset),
@@ -43,11 +55,13 @@ public:
         ss << "method : " << search_meth() << "\n";
         ss << "\nnumber of searches = " << ns
            << ", number of extensions = " << ne
-           << ", neighbors = " << m_neighbors << ", extension ratio = "
-           << static_cast<double>(ne) / static_cast<double>(ns)
-           << ", neihbor ratio = "
-           << static_cast<double>(m_neighbors) / static_cast<double>(ns)
-           << "\n";
+           << ", extension ratio = "
+           << static_cast<double>(ne) / static_cast<double>(ns) << "\n";
+        if constexpr (with_cache) {
+           ss << ", cache size = " << m_unitig_ends.size() << "\n"
+              << ", cache hits = " << m_num_cache_hits << "\n";
+        }
+
         std::cerr << ss.str();
       }
     }
@@ -63,16 +77,50 @@ public:
 
   inline void start() { reset_state(); }
 
-  inline void do_stateless_lookup(const char *kmer_s) {
+  inline void do_stateless_lookup(const char *kmer_s, CanonicalKmer& kmer) {
     // lookup directly in the index without assuming any relation
     // to the previously queried k-mer
-    m_prev_res = m_d->lookup_advanced(kmer_s);
+    bool was_cached = false;
+    bool fw_is_canonical = kmer.isFwCanonical();
+   
+    if constexpr (with_cache) {
+      // first check the end cache if we are looking in a relevant place
+      if (m_cache_end) {
+        auto cache_it = m_unitig_ends.find(kmer.getCanonicalWord());
+        if (cache_it != m_unitig_ends.end()) {
+          m_num_cache_hits++;
+          m_prev_res = cache_it->second;
+          // marked as 1 if, when we looked up in the actual index, 
+          // the forward k-mer was the canonical k-mer, and 0 otherwise; 
+          uint64_t inserted_fw = (m_prev_res.kmer_orientation & 0x3) >> 1;
+          m_prev_res.kmer_orientation = (m_prev_res.kmer_orientation & 0x1);
+          if (inserted_fw != fw_is_canonical) {
+            m_prev_res.kmer_orientation = 1 - m_prev_res.kmer_orientation; 
+          }
+          was_cached = true;
+        }
+      }
+
+      if (!was_cached) { 
+        m_prev_res = m_d->lookup_advanced(kmer_s); 
+      }
+    } else {
+      m_prev_res = m_d->lookup_advanced(kmer_s); 
+    }
+
     m_direction = m_prev_res.kmer_orientation ? -1 : 1;
     m_prev_kmer_id = m_prev_res.kmer_id;
     m_is_present = (m_prev_res.kmer_id != sshash::constants::invalid_uint64);
     m_start = !m_is_present;
     m_n_search += m_is_present ? 1 : 0;
     if (m_is_present) {
+      if constexpr(with_cache) {
+        if (!was_cached && m_cache_end && m_unitig_ends.size() < m_max_cache_size) {
+          auto res_copy = m_prev_res;
+          res_copy.kmer_orientation |= fw_is_canonical ? 0x3 : 0x0;
+          m_unitig_ends[kmer.getCanonicalWord()] = res_copy;
+        }
+      }
       uint64_t kmer_offset =
         2 * (m_prev_res.kmer_id + (m_prev_res.contig_id * (m_k - 1)));
       kmer_offset += (m_direction > 0) ? 0 : (2 * m_k);
@@ -81,6 +129,7 @@ public:
     } else {
       reset_state();
     }
+    m_cache_end = false;
   }
 
   inline void set_remaining_contig_bases() {
@@ -98,6 +147,8 @@ public:
                pthash::compact_vector &m_ctg_entries) {
 
     auto query_offset = kmit->second;
+    int32_t query_advance = (query_offset > m_prev_query_offset) ?
+      (query_offset - m_prev_query_offset) : std::numeric_limits<int32_t>::min();
 
     // if the current query offset position is
     // the next position after the stored query
@@ -112,9 +163,9 @@ public:
       // if there is no contig left to walk, or if
       // the current k-mer is not the successor of the
       // previous k-mer on the query, then reset the state.
-      if (((m_prev_query_offset + 1) != query_offset) ||
-          (m_remaining_contig_bases <= 0)) {
+      if (m_remaining_contig_bases < query_advance) {
         reset_state();
+        m_cache_end = true;
       }
     }
 
@@ -129,14 +180,14 @@ public:
       if (!sshash::util::is_valid(kmer_s, m_k)) {
         return sshash::lookup_result();
       }
-      do_stateless_lookup(kmer_s);
+      do_stateless_lookup(kmer_s, kmit->first);
     } else {
       // try to get the next k-mer
-      uint64_t next_kmer_id = m_prev_kmer_id + m_direction;
+      uint64_t next_kmer_id = m_prev_kmer_id + (m_direction * query_advance);
       auto ref_kmer =
         (m_direction > 0)
-          ? (m_ref_contig_it.eat(2), m_ref_contig_it.read(2 * m_k))
-          : (m_ref_contig_it.eat_reverse(2),
+          ? (m_ref_contig_it.eat(2 * query_advance), m_ref_contig_it.read(2 * m_k))
+          : (m_ref_contig_it.eat_reverse(2 * query_advance),
              m_ref_contig_it.read_reverse(2 * m_k));
       auto match_type = kmit->first.isEquivalent(ref_kmer);
       m_is_present = (match_type != KmerMatchType::NO_MATCH);
@@ -144,15 +195,15 @@ public:
       if (!m_is_present) {
         // the next k-mer was not what was expected
         // we're doing a fresh lookup
-        do_stateless_lookup(kmer_s);
+        do_stateless_lookup(kmer_s, kmit->first);
       } else {
         // the next k-mer was what was expected
         m_n_extend++;
         m_remaining_contig_bases--;
         m_start = false;
         m_prev_kmer_id = next_kmer_id;
-        m_prev_res.kmer_id += m_direction;
-        m_prev_res.kmer_id_in_contig += m_direction;
+        m_prev_res.kmer_id += (m_direction * query_advance);
+        m_prev_res.kmer_id_in_contig += (m_direction * query_advance);
       }
     }
 
@@ -191,18 +242,23 @@ private:
   uint64_t m_prev_contig_id;
   uint64_t m_prev_kmer_id;
   uint64_t m_neighbors{0};
-
+  
+  cache_t m_unitig_ends;
+  bool m_cache_end = false;
   bool m_start = true;
   bool m_is_present = false;
   int32_t m_direction{0};
   int32_t m_n_search{0};
   int32_t m_n_extend{0};
+  uint64_t m_num_cache_hits{0};
   sshash::lookup_result m_prev_res;
   sshash::util::contig_span m_ctg_span;
   sshash::bit_vector_iterator m_ref_contig_it;
   int32_t m_remaining_contig_bases{0};
   uint64_t m_k;
   static constexpr bool m_print_stats{false};
+  static constexpr uint64_t m_max_cache_size{1000000};
+  //static constexpr bool with_cache{false};
 };
 } // namespace piscem
 
