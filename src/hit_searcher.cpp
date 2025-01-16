@@ -1316,7 +1316,7 @@ bool hit_searcher::get_raw_hits_sketch_everykmer(std::string &read,
   auto &raw_hits = isLeft ? left_rawHits : right_rawHits;
   pufferfish::CanonicalKmerIterator kit(read), kit_end;
   CanonicalKmer::k(k);
-  int32_t k = static_cast<int32_t>(CanonicalKmer::k());
+  //int32_t k = static_cast<int32_t>(CanonicalKmer::k());
   qc.start();
   // qc.reset_state();
   // EveryKmer evs(k);

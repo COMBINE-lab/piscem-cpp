@@ -19,6 +19,7 @@
 #include "../include/spdlog_piscem/spdlog.h"
 #include "../include/streaming_query.hpp"
 #include "../include/util_piscem.hpp"
+#include "../include/boost/unordered/concurrent_flat_map.hpp"
 #include "check_overlap.cpp"
 // #include "FastxParser.cpp"
 // #include "hit_searcher.cpp"
@@ -619,7 +620,9 @@ void do_map(mindex::reference_index &ri,
             std::atomic<uint64_t> &r_orphan, std::atomic<uint64_t> &l_orphan,
             std::atomic<uint64_t> &global_npoisoned, pesc_output_info &out_info,
             std::mutex &iomut, bool write_bed, bool check_kmers_orphans,
-            bool tn5_shift, bool use_chr, RAD::RAD_Writer &rw,
+            bool tn5_shift, bool use_chr, 
+            boost::concurrent_flat_map<uint64_t, sshash::lookup_result>& unitig_end_cache,
+            RAD::RAD_Writer &rw,
             RAD::Token token) {
 
   auto log_level = spdlog_piscem::get_level();
@@ -670,9 +673,9 @@ void do_map(mindex::reference_index &ri,
   std::string workstr_right;
   std::ostringstream osstream;
 
-  mapping_cache_info<SketchHitT, piscem::streaming_query<true>> map_cache_left(ri);
-  mapping_cache_info<SketchHitT, piscem::streaming_query<true>> map_cache_right(ri);
-  mapping_cache_info<SketchHitT, piscem::streaming_query<true>> map_cache_out(ri);
+  mapping_cache_info<SketchHitT, piscem::streaming_query<true>> map_cache_left(ri, &unitig_end_cache);
+  mapping_cache_info<SketchHitT, piscem::streaming_query<true>> map_cache_right(ri, &unitig_end_cache);
+  mapping_cache_info<SketchHitT, piscem::streaming_query<true>> map_cache_out(ri, &unitig_end_cache);
 
   size_t max_chunk_reads = 5000;
 
@@ -1077,6 +1080,7 @@ int run_pesc_sc_atac(int argc, char **argv) {
       np += 1;
       nthread -= 1;
     }
+    boost::concurrent_flat_map<uint64_t, sshash::lookup_result> unitig_end_cache(5000000);
     std::vector<std::thread> workers;
     for (size_t i = 0; i < nthread; ++i) {
       workers.push_back(std::thread([&ri, &po, &rparser, &binning, &ptab,
@@ -1084,7 +1088,7 @@ int run_pesc_sc_atac(int argc, char **argv) {
                                      &k_match, &global_np, &out_info, &iomut,
                                      &rw, &l_match, &r_match, &dove_match,
                                      &dove_num, &ov_num, &ov_match, &r_orphan,
-                                     &l_orphan]() {
+                                     &l_orphan, &unitig_end_cache]() {
         const auto token = rw.get_token();
         if (!po.enable_structural_constraints) {
           using SketchHitT =
@@ -1094,13 +1098,13 @@ int run_pesc_sc_atac(int argc, char **argv) {
               ri, rparser, binning, ptab, global_nr, global_nh, global_nmult,
               k_match, l_match, r_match, dove_num, dove_match, ov_num, ov_match,
               r_orphan, l_orphan, global_np, out_info, iomut, po.use_bed_format,
-              po.check_kmers_orphans, po.tn5_shift, po.use_chr, rw, token);
+              po.check_kmers_orphans, po.tn5_shift, po.use_chr, unitig_end_cache, rw, token);
           } else {
             do_map<FragmentT, SketchHitT, RadT>(
               ri, rparser, binning, ptab, global_nr, global_nh, global_nmult,
               k_match, l_match, r_match, dove_num, dove_match, ov_num, ov_match,
               r_orphan, l_orphan, global_np, out_info, iomut, po.use_bed_format,
-              po.check_kmers_orphans, po.tn5_shift, po.use_chr, rw, token);
+              po.check_kmers_orphans, po.tn5_shift, po.use_chr, unitig_end_cache, rw, token);
           }
         } else {
           using SketchHitT = mapping::util::sketch_hit_info;
@@ -1109,13 +1113,13 @@ int run_pesc_sc_atac(int argc, char **argv) {
               ri, rparser, binning, ptab, global_nr, global_nh, global_nmult,
               k_match, l_match, r_match, dove_num, dove_match, ov_num, ov_match,
               r_orphan, l_orphan, global_np, out_info, iomut, po.use_bed_format,
-              po.check_kmers_orphans, po.tn5_shift, po.use_chr, rw, token);
+              po.check_kmers_orphans, po.tn5_shift, po.use_chr, unitig_end_cache, rw, token);
           } else {
             do_map<FragmentT, SketchHitT, RadT>(
               ri, rparser, binning, ptab, global_nr, global_nh, global_nmult,
               k_match, l_match, r_match, dove_num, dove_match, ov_num, ov_match,
               r_orphan, l_orphan, global_np, out_info, iomut, po.use_bed_format,
-              po.check_kmers_orphans, po.tn5_shift, po.use_chr, rw, token);
+              po.check_kmers_orphans, po.tn5_shift, po.use_chr, unitig_end_cache, rw, token);
           }
         }
       }));
@@ -1137,6 +1141,7 @@ int run_pesc_sc_atac(int argc, char **argv) {
       np += 1;
       nthread -= 1;
     }
+    boost::concurrent_flat_map<uint64_t, sshash::lookup_result> unitig_end_cache(5000000);
     std::vector<std::thread> workers;
     for (size_t i = 0; i < nthread; ++i) {
       workers.push_back(std::thread([&ri, &po, &rparser, &binning, &ptab,
@@ -1144,7 +1149,7 @@ int run_pesc_sc_atac(int argc, char **argv) {
                                      &k_match, &global_np, &out_info, &iomut,
                                      &rw, &l_match, &r_match, &dove_match,
                                      &dove_num, &ov_num, &ov_match, &r_orphan,
-                                     &l_orphan]() {
+                                     &l_orphan, &unitig_end_cache]() {
         const auto token = rw.get_token();
         if (!po.enable_structural_constraints) {
           using SketchHitT =
@@ -1154,13 +1159,13 @@ int run_pesc_sc_atac(int argc, char **argv) {
               ri, rparser, binning, ptab, global_nr, global_nh, global_nmult,
               k_match, l_match, r_match, dove_num, dove_match, ov_num, ov_match,
               r_orphan, l_orphan, global_np, out_info, iomut, po.use_bed_format,
-              po.check_kmers_orphans, po.tn5_shift, po.use_chr, rw, token);
+              po.check_kmers_orphans, po.tn5_shift, po.use_chr, unitig_end_cache, rw, token);
           } else {
             do_map<FragmentT, SketchHitT, RadT>(
               ri, rparser, binning, ptab, global_nr, global_nh, global_nmult,
               k_match, l_match, r_match, dove_num, dove_match, ov_num, ov_match,
               r_orphan, l_orphan, global_np, out_info, iomut, po.use_bed_format,
-              po.check_kmers_orphans, po.tn5_shift, po.use_chr, rw, token);
+              po.check_kmers_orphans, po.tn5_shift, po.use_chr, unitig_end_cache, rw, token);
           }
         } else {
           using SketchHitT = mapping::util::sketch_hit_info;
@@ -1169,13 +1174,13 @@ int run_pesc_sc_atac(int argc, char **argv) {
               ri, rparser, binning, ptab, global_nr, global_nh, global_nmult,
               k_match, l_match, r_match, dove_num, dove_match, ov_num, ov_match,
               r_orphan, l_orphan, global_np, out_info, iomut, po.use_bed_format,
-              po.check_kmers_orphans, po.tn5_shift, po.use_chr, rw, token);
+              po.check_kmers_orphans, po.tn5_shift, po.use_chr, unitig_end_cache, rw, token);
           } else {
             do_map<FragmentT, SketchHitT, RadT>(
               ri, rparser, binning, ptab, global_nr, global_nh, global_nmult,
               k_match, l_match, r_match, dove_num, dove_match, ov_num, ov_match,
               r_orphan, l_orphan, global_np, out_info, iomut, po.use_bed_format,
-              po.check_kmers_orphans, po.tn5_shift, po.use_chr, rw, token);
+              po.check_kmers_orphans, po.tn5_shift, po.use_chr, unitig_end_cache, rw, token);
           }
         }
       }));

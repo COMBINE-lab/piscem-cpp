@@ -6,6 +6,8 @@
 #include "../external/sshash/include/query/streaming_query_canonical_parsing.hpp"
 #include "../external/sshash/include/util.hpp"
 #include "../include/unordered_dense.h"
+// #include "../include/bcf/cuckoofilter.h"
+#include "../include/boost/unordered/concurrent_flat_map.hpp"
 #include "CanonicalKmerIterator.hpp"
 #include "util_piscem.hpp"
 #include <sstream>
@@ -21,6 +23,9 @@ constexpr int32_t invalid_query_offset = std::numeric_limits<int32_t>::lowest();
 constexpr uint64_t invalid_contig_id = std::numeric_limits<uint64_t>::max();
 
 struct empty_map_t {};
+struct empty_filter_t {
+  empty_filter_t(size_t _s) { (void)_s; }
+};
 
 // if `with_cache` is `true`, then this class will 
 // instantiate and use a cache for retaining the 
@@ -29,12 +34,16 @@ struct empty_map_t {};
 // will be used.
 template <bool with_cache>
 class streaming_query {
-  using cache_t = std::conditional_t<with_cache, ankerl::unordered_dense::map<uint64_t, sshash::lookup_result>, empty_map_t>;
+  using cache_t = boost::concurrent_flat_map<uint64_t, sshash::lookup_result>;
+  //using cache_t = std::conditional_t<with_cache, ankerl::unordered_dense::map<uint64_t, sshash::lookup_result>, empty_map_t>;
+  //using filter_t = std::conditional_t<with_cache, cuckoofilter::CuckooFilter<uint64_t, 12>, empty_filter_t>;
 public:
   
-  inline streaming_query(sshash::dictionary const *d)
+  inline streaming_query(sshash::dictionary const *d, cache_t* unitig_end_cache = nullptr)
     : m_d(d), m_prev_query_offset(invalid_query_offset),
       m_prev_contig_id(invalid_contig_id), m_prev_kmer_id(invalid_query_offset),
+      /*m_unitig_ends_filter(m_max_cache_size), */
+      m_unitig_ends(unitig_end_cache), 
       m_ref_contig_it(sshash::bit_vector_iterator(d->strings(), 0)),
       m_k(d->k()) {}
 
@@ -44,7 +53,7 @@ public:
   streaming_query &operator=(streaming_query &&other) = default;
 
   ~streaming_query() {
-    if constexpr (m_print_stats) {
+    if constexpr (with_cache && m_print_stats) {
       // print out statistics about the number of
       // extension lookups compared to the number
       // of stateless lookups.
@@ -58,7 +67,7 @@ public:
            << ", extension ratio = "
            << static_cast<double>(ne) / static_cast<double>(ns) << "\n";
         if constexpr (with_cache) {
-           ss << ", cache size = " << m_unitig_ends.size() << "\n"
+           ss << ", cache size = " << m_unitig_ends->size() << "\n"
               << ", cache hits = " << m_num_cache_hits << "\n";
         }
 
@@ -86,10 +95,31 @@ public:
     if constexpr (with_cache) {
       // first check the end cache if we are looking in a relevant place
       if (m_cache_end) {
+        // ankerl map
+        /*
         auto cache_it = m_unitig_ends.find(kmer.getCanonicalWord());
         if (cache_it != m_unitig_ends.end()) {
-          m_num_cache_hits++;
           m_prev_res = cache_it->second;
+          m_num_cache_hits++;
+
+          // marked as 1 if, when we looked up in the actual index, 
+          // the forward k-mer was the canonical k-mer, and 0 otherwise; 
+          uint64_t inserted_fw = (m_prev_res.kmer_orientation & 0x3) >> 1;
+          m_prev_res.kmer_orientation = (m_prev_res.kmer_orientation & 0x1);
+          if (inserted_fw != fw_is_canonical) {
+            m_prev_res.kmer_orientation = 1 - m_prev_res.kmer_orientation; 
+          }
+          was_cached = true;
+        }
+        */
+
+        // boost concurrent
+        // num_visited is 1 if we found the value matching the key in the 
+        // map and 0 otherwise.
+        size_t num_visited = m_unitig_ends->cvisit(kmer.getCanonicalWord(), 
+          [this](const auto& x) { this->m_prev_res = x.second; });
+        if (num_visited == 1) {
+          m_num_cache_hits++;
           // marked as 1 if, when we looked up in the actual index, 
           // the forward k-mer was the canonical k-mer, and 0 otherwise; 
           uint64_t inserted_fw = (m_prev_res.kmer_orientation & 0x3) >> 1;
@@ -115,10 +145,32 @@ public:
     m_n_search += m_is_present ? 1 : 0;
     if (m_is_present) {
       if constexpr(with_cache) {
-        if (!was_cached && m_cache_end && m_unitig_ends.size() < m_max_cache_size) {
+        uint64_t canon_kmer = kmer.getCanonicalWord();
+        /*
+        // starts off as false until the filter is full,
+        // then remains true (but our cache is bounded size so
+        // this is OK).
+        bool do_insert = !m_use_filter;
+        if (!was_cached && m_use_filter) {
+          if (m_unitig_ends_filter.Contain(canon_kmer) == cuckoofilter::Ok) {
+            // key was in the filter already so now add to the cache
+            do_insert = true;
+          } else if (m_unitig_ends_filter.Add(canon_kmer) != cuckoofilter::Ok) {
+            // insert failed so stop trying to use the filter
+            m_use_filter = false;
+          }
+          if (m_unitig_ends_filter.Size() >= m_max_cache_size) {
+            m_use_filter = false;
+          }
+        }
+        */
+        if (!was_cached && m_cache_end && m_unitig_ends->size() < m_max_cache_size) {
           auto res_copy = m_prev_res;
           res_copy.kmer_orientation |= fw_is_canonical ? 0x3 : 0x0;
-          m_unitig_ends[kmer.getCanonicalWord()] = res_copy;
+          // boost concurrent
+          m_unitig_ends->try_emplace_or_cvisit(canon_kmer, std::move(res_copy), [](const auto& x) { (void)x; });
+          // ankerl hash
+          //m_unitig_ends[kmer.getCanonicalWord()] = res_copy;
         }
       }
       uint64_t kmer_offset =
@@ -242,8 +294,12 @@ private:
   uint64_t m_prev_contig_id;
   uint64_t m_prev_kmer_id;
   uint64_t m_neighbors{0};
+ 
   
-  cache_t m_unitig_ends;
+  //filter_t m_unitig_ends_filter;
+  cache_t *m_unitig_ends;
+  //cache_t m_unitig_ends;
+  bool m_use_filter = false;//with_cache;
   bool m_cache_end = false;
   bool m_start = true;
   bool m_is_present = false;
@@ -256,9 +312,8 @@ private:
   sshash::bit_vector_iterator m_ref_contig_it;
   int32_t m_remaining_contig_bases{0};
   uint64_t m_k;
-  static constexpr bool m_print_stats{false};
-  static constexpr uint64_t m_max_cache_size{1000000};
-  //static constexpr bool with_cache{false};
+  static constexpr bool m_print_stats{true};
+  static constexpr uint64_t m_max_cache_size{5000000};
 };
 } // namespace piscem
 
