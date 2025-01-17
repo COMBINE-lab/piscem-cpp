@@ -28,10 +28,9 @@ struct empty_filter_t {
 };
 
 // if `with_cache` is `true`, then this class will 
-// instantiate and use a cache for retaining the 
-// end-of-unitig k-mers to speed up lookup, if 
-// it is instantiated with `false`, no such cache 
-// will be used.
+// use a cache for retaining the end-of-unitig k-mers 
+// to speed up lookup. If it is instantiated with `false`, 
+// no such cache will be used.
 template <bool with_cache>
 class streaming_query {
   using cache_t = boost::concurrent_flat_map<uint64_t, sshash::lookup_result>;

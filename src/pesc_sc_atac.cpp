@@ -1067,6 +1067,7 @@ int run_pesc_sc_atac(int argc, char **argv) {
   std::atomic<uint64_t> global_np{
     0}; // whether the kmer exists in the unitig table
   std::mutex iomut;
+  constexpr size_t unitig_end_cache_size{5000000};
 
   if (paired_end) {
     using FragmentT = fastx_parser::ReadTrip;
@@ -1080,7 +1081,7 @@ int run_pesc_sc_atac(int argc, char **argv) {
       np += 1;
       nthread -= 1;
     }
-    boost::concurrent_flat_map<uint64_t, sshash::lookup_result> unitig_end_cache(5000000);
+    boost::concurrent_flat_map<uint64_t, sshash::lookup_result> unitig_end_cache(unitig_end_cache_size);
     std::vector<std::thread> workers;
     for (size_t i = 0; i < nthread; ++i) {
       workers.push_back(std::thread([&ri, &po, &rparser, &binning, &ptab,
@@ -1141,7 +1142,7 @@ int run_pesc_sc_atac(int argc, char **argv) {
       np += 1;
       nthread -= 1;
     }
-    boost::concurrent_flat_map<uint64_t, sshash::lookup_result> unitig_end_cache(5000000);
+    boost::concurrent_flat_map<uint64_t, sshash::lookup_result> unitig_end_cache(unitig_end_cache_size);
     std::vector<std::thread> workers;
     for (size_t i = 0; i < nthread; ++i) {
       workers.push_back(std::thread([&ri, &po, &rparser, &binning, &ptab,
