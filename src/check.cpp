@@ -25,7 +25,8 @@ int main(int argc, char **argv) {
   auto ref_filename = parser.get<std::string>("ref_filename");
 
   mindex::reference_index ri(index_filename);
-  piscem::streaming_query q(ri.get_dict());
+  boost::concurrent_flat_map<uint64_t, sshash::lookup_result> unitig_end_cache(5000000);
+  piscem::streaming_query<true> q(ri.get_dict(), &unitig_end_cache);
 
   // set the canonical k-mer size globally
   CanonicalKmer::k(ri.k());
