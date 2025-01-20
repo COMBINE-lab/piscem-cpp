@@ -89,6 +89,7 @@ public:
     // lookup directly in the index without assuming any relation
     // to the previously queried k-mer
     bool was_cached = false;
+    uint64_t canon_kmer = kmer.getCanonicalWord();
     bool fw_is_canonical = kmer.isFwCanonical();
    
     if constexpr (with_cache) {
@@ -115,15 +116,15 @@ public:
         // boost concurrent
         // num_visited is 1 if we found the value matching the key in the 
         // map and 0 otherwise.
-        size_t num_visited = m_unitig_ends->cvisit(kmer.getCanonicalWord(), 
+        size_t num_visited = m_unitig_ends->cvisit(canon_kmer,
           [this](const auto& x) { this->m_prev_res = x.second; });
         if (num_visited == 1) {
           m_num_cache_hits++;
           // marked as 1 if, when we looked up in the actual index, 
           // the forward k-mer was the canonical k-mer, and 0 otherwise; 
-          uint64_t inserted_fw = (m_prev_res.kmer_orientation & 0x3) >> 1;
+          bool fw_was_canonical = (((m_prev_res.kmer_orientation & 0x2) >> 1) == 1) ? true : false;
           m_prev_res.kmer_orientation = (m_prev_res.kmer_orientation & 0x1);
-          if (inserted_fw != fw_is_canonical) {
+          if (fw_was_canonical != fw_is_canonical) {
             m_prev_res.kmer_orientation = 1 - m_prev_res.kmer_orientation; 
           }
           was_cached = true;
@@ -144,7 +145,6 @@ public:
     m_n_search += m_is_present ? 1 : 0;
     if (m_is_present) {
       if constexpr(with_cache) {
-        uint64_t canon_kmer = kmer.getCanonicalWord();
         /*
         // starts off as false until the filter is full,
         // then remains true (but our cache is bounded size so
@@ -165,7 +165,7 @@ public:
         */
         if (!was_cached && m_cache_end && m_unitig_ends->size() < m_max_cache_size) {
           auto res_copy = m_prev_res;
-          res_copy.kmer_orientation |= fw_is_canonical ? 0x3 : 0x0;
+          res_copy.kmer_orientation |= fw_is_canonical ? 0x2 : 0x0;
           // boost concurrent
           m_unitig_ends->try_emplace_or_cvisit(canon_kmer, std::move(res_copy), [](const auto& x) { (void)x; });
           // ankerl hash
