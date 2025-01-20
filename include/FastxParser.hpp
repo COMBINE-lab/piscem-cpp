@@ -132,6 +132,7 @@ private:
   moodycamel::ConsumerToken ct_;
 };
 
+
 template <typename T> class FastxParser {
 public:
   FastxParser(std::vector<std::string> files, uint32_t numConsumers,

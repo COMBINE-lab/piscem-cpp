@@ -1072,15 +1072,16 @@ int run_pesc_sc_atac(int argc, char **argv) {
   if (paired_end) {
     using FragmentT = fastx_parser::ReadTrip;
 
+    if (nthread >= 6) {
+      np += 1;
+      nthread -= 1;
+    }
+
     fastx_parser::FastxParser<fastx_parser::ReadTrip> rparser(
       po.left_read_filenames, po.right_read_filenames, po.barcode_filenames,
       nthread, np);
 
     rparser.start();
-    if (nthread >= 6) {
-      np += 1;
-      nthread -= 1;
-    }
     boost::concurrent_flat_map<uint64_t, sshash::lookup_result> unitig_end_cache(unitig_end_cache_size);
     std::vector<std::thread> workers;
     for (size_t i = 0; i < nthread; ++i) {
