@@ -1071,10 +1071,22 @@ int run_pesc_sc_atac(int argc, char **argv) {
 
   if (paired_end) {
     using FragmentT = fastx_parser::ReadTrip;
+    
+    auto num_input_files = po.left_read_filenames.size();
+    size_t additional_files = (num_input_files > 1) ? (num_input_files - 1) : 0;
 
-    if (nthread >= 6) {
-      np += 1;
-      nthread -= 1;
+    // start with 1 parsing thread, and one more for every
+    // 6 threads, as long as there are additional input files
+    // to parse.
+    size_t remaining_threads = nthread;
+    for (size_t i = 0; i < additional_files; ++i) {
+      if (remaining_threads >= 6) {
+        np += 1;
+        nthread -= 1;
+        remaining_threads -= 6;
+      } else {
+        break;
+      }
     }
 
     fastx_parser::FastxParser<fastx_parser::ReadTrip> rparser(
@@ -1131,18 +1143,30 @@ int run_pesc_sc_atac(int argc, char **argv) {
       w.join();
     }
     rparser.stop();
-  }
-
-  else {
+  } else {
     using FragmentT = fastx_parser::ReadPair;
+ 
+    auto num_input_files = po.single_read_filenames.size();
+    size_t additional_files = (num_input_files > 1) ? (num_input_files - 1) : 0;
+
+    // start with 1 parsing thread, and one more for every
+    // 6 threads, as long as there are additional input files
+    // to parse.
+    size_t remaining_threads = nthread;
+    for (size_t i = 0; i < additional_files; ++i) {
+      if (remaining_threads >= 6) {
+        np += 1;
+        nthread -= 1;
+        remaining_threads -= 6;
+      } else {
+        break;
+      }
+    }
+
     fastx_parser::FastxParser<fastx_parser::ReadPair> rparser(
       po.single_read_filenames, po.barcode_filenames, nthread, np);
 
     rparser.start();
-    if (nthread >= 6) {
-      np += 1;
-      nthread -= 1;
-    }
     boost::concurrent_flat_map<uint64_t, sshash::lookup_result> unitig_end_cache(unitig_end_cache_size);
     std::vector<std::thread> workers;
     for (size_t i = 0; i < nthread; ++i) {

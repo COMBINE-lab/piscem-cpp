@@ -699,9 +699,22 @@ int run_pesc_sc(int argc, char **argv) {
     std::mutex iomut;
 
     uint32_t np = 1;
-    if ((po.left_read_filenames.size() > 1) and (po.nthread >= 6)) {
-      np += 1;
-      po.nthread -= 1;
+    
+    auto num_input_files = po.left_read_filenames.size();
+    size_t additional_files = (num_input_files > 1) ? (num_input_files - 1) : 0;
+
+    // start with 1 parsing thread, and one more for every
+    // 6 threads, as long as there are additional input files
+    // to parse.
+    size_t remaining_threads = po.nthread;
+    for (size_t i = 0; i < additional_files; ++i) {
+      if (remaining_threads >= 6) {
+        np += 1;
+        po.nthread -= 1;
+        remaining_threads -= 6;
+      } else {
+        break;
+      }
     }
 
     fastx_parser::FastxParser<fastx_parser::ReadPair> rparser(

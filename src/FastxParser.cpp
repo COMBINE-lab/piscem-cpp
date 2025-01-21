@@ -83,7 +83,7 @@ FastxParser<T>::FastxParser(std::vector<std::string> files,
   if (numParsers > files.size()) {
     std::cerr << "Can't make user of more parsing threads than file (triplets); "
                  "setting # of parsing threads to "
-              << files.size();
+              << files.size() << "\n\n";
     numParsers = files.size();
   }
   numParsers_ = numParsers;
@@ -476,6 +476,7 @@ int parse_read_triplets(
   uint32_t fn{0};
   while (workQueue.try_dequeue(fn)) {
     // for (size_t fn = 0; fn < inputStreams.size(); ++fn) {
+
     auto& file = inputStreams[fn];
     auto& file2 = inputStreams2[fn];
     auto& file3 = inputStreams3[fn];
@@ -501,7 +502,8 @@ int parse_read_triplets(
     auto seq3 = make_kstream(fp3, gzread, mode::in);
 
     s = &((*local)[numWaiting]);
-    while ( (seq >> s->first) and (seq2 >> s->second) and (seq3 >> s->third)) {//ksv >= 0 and ksv2 >= 0) {
+    while ( (seq >> s->first) and (seq2 >> s->second) and (seq3 >> s->third)) {
+      //ksv >= 0 and ksv2 >= 0
       numWaiting++;
       // If we've filled the local vector, then dump to the concurrent queue
       if (numWaiting == numObtained) {
