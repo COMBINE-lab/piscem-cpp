@@ -311,7 +311,7 @@ private:
   sshash::bit_vector_iterator m_ref_contig_it;
   int32_t m_remaining_contig_bases{0};
   uint64_t m_k;
-  static constexpr bool m_print_stats{true};
+  static constexpr bool m_print_stats{false};
   static constexpr uint64_t m_max_cache_size{5000000};
 };
 } // namespace piscem
