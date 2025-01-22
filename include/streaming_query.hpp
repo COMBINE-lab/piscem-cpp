@@ -38,11 +38,12 @@ class streaming_query {
   //using filter_t = std::conditional_t<with_cache, cuckoofilter::CuckooFilter<uint64_t, 12>, empty_filter_t>;
 public:
   
-  inline streaming_query(sshash::dictionary const *d, cache_t* unitig_end_cache = nullptr)
+  inline streaming_query(sshash::dictionary const *d, piscem::unitig_end_cache_t* unitig_end_cache = nullptr)
     : m_d(d), m_prev_query_offset(invalid_query_offset),
       m_prev_contig_id(invalid_contig_id), m_prev_kmer_id(invalid_query_offset),
       /*m_unitig_ends_filter(m_max_cache_size), */
-      m_unitig_ends(unitig_end_cache), 
+      m_unitig_ends((unitig_end_cache == nullptr) ? nullptr : unitig_end_cache->get_map()),
+      m_max_cache_size((unitig_end_cache == nullptr) ? 0 : unitig_end_cache->get_capacity()),
       m_ref_contig_it(sshash::bit_vector_iterator(d->strings(), 0)),
       m_k(d->k()) {}
 
@@ -297,6 +298,7 @@ private:
   
   //filter_t m_unitig_ends_filter;
   cache_t *m_unitig_ends;
+  size_t m_max_cache_size{0};
   //cache_t m_unitig_ends;
   bool m_use_filter = false;//with_cache;
   bool m_cache_end = false;
@@ -312,7 +314,7 @@ private:
   int32_t m_remaining_contig_bases{0};
   uint64_t m_k;
   static constexpr bool m_print_stats{false};
-  static constexpr uint64_t m_max_cache_size{5000000};
+  //static constexpr uint64_t m_max_cache_size{5000000};
 };
 } // namespace piscem
 

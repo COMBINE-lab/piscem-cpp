@@ -7,6 +7,7 @@
 #include "../include/parallel_hashmap/phmap.h"
 #include "../include/poison_table.hpp"
 #include "../include/projected_hits.hpp"
+#include "../include/util_piscem.hpp"
 #include "../include/reference_index.hpp"
 #include "../include/streaming_query.hpp"
 #include "../include/boost/unordered/concurrent_flat_map.hpp"
@@ -924,7 +925,7 @@ struct poison_state_t {
 
 template <typename sketch_hit_info_t, typename streaming_query_t> struct mapping_cache_info {
 public:
-  mapping_cache_info(mindex::reference_index &ri, boost::concurrent_flat_map<uint64_t, sshash::lookup_result>* unitig_end_map = nullptr)
+  mapping_cache_info(mindex::reference_index &ri, piscem::unitig_end_cache_t* unitig_end_map = nullptr)
     : k(ri.k()), q(ri.get_dict(), unitig_end_map), hs(&ri) {}
 
   inline void clear() {

@@ -1,6 +1,8 @@
 #include "bitsery/bitsery.h"
 #include "bitsery/brief_syntax.h"
 #include "../external/sshash/include/hash_util.hpp"
+#include "../external/sshash/include/util.hpp"
+#include "../include/boost/unordered/concurrent_flat_map.hpp"
 
 #pragma once
 
@@ -8,6 +10,29 @@
 #include <cassert>
 #include <fstream>
 #include <cmath>  // for std::ceil on linux
+
+namespace piscem {
+    class unitig_end_cache_t {
+    public:
+      explicit unitig_end_cache_t(size_t max_size) : 
+        m_max_size(max_size), m_unitig_end_map(max_size) {}
+
+      unitig_end_cache_t() = delete;
+      unitig_end_cache_t(const unitig_end_cache_t& other) = delete;
+      unitig_end_cache_t(unitig_end_cache_t&& other) = delete;
+      unitig_end_cache_t& operator=(const unitig_end_cache_t& other) = delete;
+      unitig_end_cache_t& operator=(unitig_end_cache_t&& other) = delete;
+
+      inline boost::concurrent_flat_map<uint64_t, sshash::lookup_result>* get_map() {
+        return &m_unitig_end_map;
+      }
+      inline size_t get_capacity() const { return m_max_size; }
+      inline size_t get_map_size() const { return m_unitig_end_map.size(); }
+    private:
+      size_t m_max_size{0};
+      boost::concurrent_flat_map<uint64_t, sshash::lookup_result> m_unitig_end_map;
+    };
+}
 
 namespace sshash {
 

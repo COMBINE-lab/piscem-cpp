@@ -58,6 +58,7 @@ struct pesc_atac_options {
   bool tn5_shift{true};
   bool enable_structural_constraints{false};
   float thr{0.7};
+  size_t end_cache_capacity{5000000};
   bool quiet{false};
   bool check_ambig_hits{false};
   uint16_t blen{16};
@@ -621,7 +622,7 @@ void do_map(mindex::reference_index &ri,
             std::atomic<uint64_t> &global_npoisoned, pesc_output_info &out_info,
             std::mutex &iomut, bool write_bed, bool check_kmers_orphans,
             bool tn5_shift, bool use_chr, 
-            boost::concurrent_flat_map<uint64_t, sshash::lookup_result>& unitig_end_cache,
+            piscem::unitig_end_cache_t& unitig_end_cache,
             RAD::RAD_Writer &rw,
             RAD::Token token) {
 
@@ -916,6 +917,7 @@ int run_pesc_sc_atac(int argc, char **argv) {
     ->default_val("permissive");
   app.add_flag("--quiet", po.quiet,
                "Try to be quiet in terms of console output");
+  app.add_option("--end-cache-capacity", po.end_cache_capacity, "maximum capcity of the unitig end cache")->default_val(5000000);
   app.add_option("--thr", po.thr, "threshold for psa")->default_val(0.7);
   app.add_option("--bclen", po.blen, "length for barcode")->default_val(16);
   app.add_option("--bin-size", po.bin_size, "size for binning")
@@ -1027,7 +1029,7 @@ int run_pesc_sc_atac(int argc, char **argv) {
 
   std::vector<std::string> refs;
 
-  bc_kmer_t::k(16);
+  bc_kmer_t::k(po.blen);
   rad::util::write_rad_header_atac(ri, refs, tag_defn);
   mapping::util::bin_pos binning(&ri, po.thr, po.bin_size, po.bin_overlap);
 
@@ -1067,7 +1069,6 @@ int run_pesc_sc_atac(int argc, char **argv) {
   std::atomic<uint64_t> global_np{
     0}; // whether the kmer exists in the unitig table
   std::mutex iomut;
-  constexpr size_t unitig_end_cache_size{5000000};
 
   if (paired_end) {
     using FragmentT = fastx_parser::ReadTrip;
@@ -1094,7 +1095,7 @@ int run_pesc_sc_atac(int argc, char **argv) {
       nthread, np);
 
     rparser.start();
-    boost::concurrent_flat_map<uint64_t, sshash::lookup_result> unitig_end_cache(unitig_end_cache_size);
+    piscem::unitig_end_cache_t unitig_end_cache(po.end_cache_capacity);
     std::vector<std::thread> workers;
     for (size_t i = 0; i < nthread; ++i) {
       workers.push_back(std::thread([&ri, &po, &rparser, &binning, &ptab,
@@ -1167,7 +1168,7 @@ int run_pesc_sc_atac(int argc, char **argv) {
       po.single_read_filenames, po.barcode_filenames, nthread, np);
 
     rparser.start();
-    boost::concurrent_flat_map<uint64_t, sshash::lookup_result> unitig_end_cache(unitig_end_cache_size);
+    piscem::unitig_end_cache_t unitig_end_cache(po.end_cache_capacity);
     std::vector<std::thread> workers;
     for (size_t i = 0; i < nthread; ++i) {
       workers.push_back(std::thread([&ri, &po, &rparser, &binning, &ptab,
