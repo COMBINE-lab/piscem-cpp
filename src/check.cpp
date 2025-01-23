@@ -5,6 +5,7 @@
 // #include "../external/sshash/src/bench_utils.hpp"
 // #include "../external/sshash/src/check_utils.hpp"
 #include "../external/sshash/src/common.hpp"
+#include "../include/util_piscem.hpp"
 #include "../include/CanonicalKmerIterator.hpp"
 #include "../include/FastxParser.hpp"
 #include "../include/reference_index.hpp"
@@ -25,7 +26,7 @@ int main(int argc, char **argv) {
   auto ref_filename = parser.get<std::string>("ref_filename");
 
   mindex::reference_index ri(index_filename);
-  boost::concurrent_flat_map<uint64_t, sshash::lookup_result> unitig_end_cache(5000000);
+  piscem::unitig_end_cache_t unitig_end_cache(5000000);
   piscem::streaming_query<true> q(ri.get_dict(), &unitig_end_cache);
 
   // set the canonical k-mer size globally
