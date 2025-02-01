@@ -236,15 +236,19 @@ public:
     } else {
       // try to get the next k-mer
       uint64_t next_kmer_id = m_prev_kmer_id + (m_direction * query_advance);
+      const bool can_eat = (query_advance <= 31);
+      const bool kmer_is_fw = (m_direction > 0);
+      const uint64_t k_bits = 2 * m_k;
       // can't "eat" more than 63 bits, so make sure we don't attempt to do so
       auto ref_kmer =
-        (query_advance <= 31) ? 
-        ((m_direction > 0)
-          ? (m_ref_contig_it.eat(2 * query_advance), m_ref_contig_it.read(2 * m_k))
-          : (m_ref_contig_it.eat_reverse(2 * query_advance),
-             m_ref_contig_it.read_reverse(2 * m_k))) : 
+        (can_eat) ? 
+        (kmer_is_fw
+          ? (m_ref_contig_it.eat(2 * query_advance), m_ref_contig_it.read(k_bits))
+          : (m_ref_contig_it.eat_reverse(2 * query_advance), m_ref_contig_it.read_reverse(k_bits))) : 
         // if we can't just shift to the new k-mer, then use the `at` method;
-        (m_ref_contig_it.at(next_kmer_id), m_ref_contig_it.read(2 * m_k));
+        (kmer_is_fw
+          ? (m_ref_contig_it.at(next_kmer_id), m_ref_contig_it.read(k_bits))
+          : (m_ref_contig_it.at(next_kmer_id + k_bits), m_ref_contig_it.read_reverse(k_bits)));
       
       auto match_type = kmit->first.isEquivalent(ref_kmer);
       m_is_present = (match_type != KmerMatchType::NO_MATCH);
