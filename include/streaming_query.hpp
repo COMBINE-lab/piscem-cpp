@@ -40,7 +40,7 @@ public:
   
   inline streaming_query(sshash::dictionary const *d, piscem::unitig_end_cache_t* unitig_end_cache = nullptr)
     : m_d(d), m_prev_query_offset(invalid_query_offset),
-      m_prev_contig_id(invalid_contig_id), m_prev_kmer_id(invalid_query_offset),
+      m_prev_contig_id(invalid_contig_id), m_prev_kmer_id(sshash::constants::invalid_uint64),
       /*m_unitig_ends_filter(m_max_cache_size), */
       m_unitig_ends((unitig_end_cache == nullptr) ? nullptr : unitig_end_cache->get_map()),
       m_max_cache_size((unitig_end_cache == nullptr) ? 0 : unitig_end_cache->get_capacity()),
@@ -78,7 +78,7 @@ public:
 
   inline void reset_state() {
     m_prev_query_offset = invalid_query_offset;
-    m_prev_kmer_id = invalid_query_offset;
+    m_prev_kmer_id = sshash::constants::invalid_uint64;
     m_is_present = false;
     m_start = true;
     m_remaining_contig_bases = 0;
@@ -200,7 +200,7 @@ public:
 
     auto query_offset = kmit->second;
     int32_t query_advance = (query_offset > m_prev_query_offset) ?
-      (query_offset - m_prev_query_offset) : std::numeric_limits<int32_t>::min();
+      (query_offset - m_prev_query_offset) : (reset_state(), invalid_query_offset);
 
     // if the current query offset position is
     // the next position after the stored query
@@ -236,14 +236,18 @@ public:
     } else {
       // try to get the next k-mer
       uint64_t next_kmer_id = m_prev_kmer_id + (m_direction * query_advance);
+      // can't "eat" more than 63 bits, so make sure we don't attempt to do so
       auto ref_kmer =
-        (m_direction > 0)
+        (query_advance <= 31) ? 
+        ((m_direction > 0)
           ? (m_ref_contig_it.eat(2 * query_advance), m_ref_contig_it.read(2 * m_k))
           : (m_ref_contig_it.eat_reverse(2 * query_advance),
-             m_ref_contig_it.read_reverse(2 * m_k));
+             m_ref_contig_it.read_reverse(2 * m_k))) : 
+        // if we can't just shift to the new k-mer, then use the `at` method;
+        (m_ref_contig_it.at(next_kmer_id), m_ref_contig_it.read(2 * m_k));
+      
       auto match_type = kmit->first.isEquivalent(ref_kmer);
       m_is_present = (match_type != KmerMatchType::NO_MATCH);
-
       if (!m_is_present) {
         // the next k-mer was not what was expected
         // we're doing a fresh lookup
@@ -251,11 +255,28 @@ public:
       } else {
         // the next k-mer was what was expected
         m_n_extend++;
-        m_remaining_contig_bases--;
+        m_remaining_contig_bases -= query_advance;
         m_start = false;
         m_prev_kmer_id = next_kmer_id;
         m_prev_res.kmer_id += (m_direction * query_advance);
         m_prev_res.kmer_id_in_contig += (m_direction * query_advance);
+
+        // record the orientation of the previous match and look at the orientation
+        // of the current match.
+        auto prev_orientation = m_prev_res.kmer_orientation;
+        m_direction = (match_type == KmerMatchType::IDENTITY_MATCH) ? 
+          (m_prev_res.kmer_orientation = sshash::constants::forward_orientation, 1) : 
+          (m_prev_res.kmer_orientation = sshash::constants::backward_orientation, -1);
+        // if the orientation switched (should be exceedingly rare), recompute the 
+        // distance to the end of the unitig because we have changed traversal direction.
+        if (prev_orientation != m_prev_res.kmer_orientation) {
+          // NOTE: This is a really strange case. We are walking along a contig in some direction
+          // and we find the k-mer where we expect it, but the orientation is the opposite of what
+          // we expect.  How, exactly does this happen?
+          // In any case, it seems the right thing to do is to re-compute the distance to 
+          // the end of the contig in the new orientation
+          set_remaining_contig_bases();
+        }
       }
     }
 
