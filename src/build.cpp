@@ -88,15 +88,14 @@ int run_build(int argc, char** argv) {
         ->default_val(constants::seed);
     app.add_option("-l,--load", build_config.l,
                    "A (integer) constant that controls the space/time trade-off of the dictionary. "
-                   "A reasonable values lies between 2 and 12")
+                   "A reasonable values lies in [2.." + std::to_string(constants::max_l)  + ")")
         ->default_val(constants::min_l);
-    /*app.add_option(
-           "-c,--cscale", build_config.c,
-           "A (floating point) constant that trades construction speed for space effectiveness "
-           "of minimal perfect hashing. "
-           "A reasonable value lies between 3.0 and 10.0")
-        ->default_val(constants::c);
-    */
+    app.add_option("--lambda", build_config.lambda,
+               "A (floating point) constant that trades construction speed for space effectiveness "
+               "of minimal perfect hashing. "
+               "A reasonable value lies between 3.0 and 10.0 (default is " +
+                   std::to_string(constants::lambda) + ").")
+        ->default_val(constants::lambda);
 
     CLI::Option* tmpdir_opt =
         app.add_option("-d,--tempdir", tmp_dirname,
