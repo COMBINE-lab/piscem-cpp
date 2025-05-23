@@ -1,7 +1,7 @@
 #ifndef STREAMING_QUERY_HPP
 #define STREAMING_QUERY_HPP
 
-#include "../external/sshash/external/pthash/external/essentials/include/essentials.hpp"
+#include "essentials.hpp"
 #include "../external/sshash/include/query/streaming_query_canonical_parsing.hpp"
 #include "../external/sshash/include/util.hpp"
 #include "../include/unordered_dense.h"

@@ -3,7 +3,7 @@
 #include <fstream>
 #include <optional>
 
-#include "../external/pthash/external/essentials/include/essentials.hpp"
+#include "essentials.hpp"
 #include "../external/sshash/include/util.hpp"
 #include "../include/streaming_query.hpp"
 #include "CanonicalKmerIterator.hpp"

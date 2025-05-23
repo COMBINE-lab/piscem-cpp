@@ -1,7 +1,7 @@
 #include <iostream>
 #include <vector>
 #include "../include/basic_contig_table.hpp"
-#include "../external/sshash/external/pthash/external/essentials/include/essentials.hpp"
+#include "essentials.hpp"
 #include "../external/sshash/external/pthash/external/bits/include/elias_fano.hpp"
 #include "../include/equivalence_class_map.hpp"
 #include "../external/sshash/external/pthash/external/cmd_line_parser/include/parser.hpp"

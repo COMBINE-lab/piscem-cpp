@@ -12,6 +12,7 @@ external/sshash/include
 external/sshash 
 external/sshash/external/pthash 
 external/sshash/external/pthash/external/essentials/include
+external/sshash/external/pthash/external/bits/external/essentials/include
 external/sshash/external/pthash/external/mm_file/include
 )
 add_subdirectory(${CMAKE_SOURCE_DIR}/external/libradicl)
