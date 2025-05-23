@@ -4,7 +4,7 @@
 #include "../external/sshash/external/pthash/external/cmd_line_parser/include/parser.hpp"
 // #include "../external/sshash/src/bench_utils.hpp"
 // #include "../external/sshash/src/check_utils.hpp"
-#include "../external/sshash/src/common.hpp"
+#include "../external/sshash/tools/common.hpp"
 #include "../include/util_piscem.hpp"
 #include "../include/CanonicalKmerIterator.hpp"
 #include "../include/FastxParser.hpp"

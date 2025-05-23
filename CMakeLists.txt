@@ -2,7 +2,18 @@
 # a reasonable minimum version worth supporting.
 cmake_minimum_required(VERSION 3.15)
 project(SSHASH)
-include_directories(AFTER external/sshash/src external/sshash/include external/sshash external/sshash/external/pthash external/sshash/external/pthash/external/essentials/include)
+include_directories(AFTER 
+external/sshash/external/pthash/external/xxHash
+external/sshash/external/pthash/include 
+external/sshash/external/pthash/external/bits/include 
+external/sshash/external/pthash/external/fastmod 
+external/sshash/src 
+external/sshash/include 
+external/sshash 
+external/sshash/external/pthash 
+external/sshash/external/pthash/external/essentials/include
+external/sshash/external/pthash/external/mm_file/include
+)
 add_subdirectory(${CMAKE_SOURCE_DIR}/external/libradicl)
 # Set path for modules required to search for existing packages in the system.
 set(CMAKE_MODULE_PATH ${CMAKE_MODULE_PATH} "${CMAKE_SOURCE_DIR}/cmake/Modules/")
@@ -129,12 +140,11 @@ else()
 endif()
 
 set(Z_LIB_SOURCES
-  external/sshash/include/gz/zip_stream.cpp
+  external/sshash/external/gz/zip_stream.cpp
 )
 
 set(SSHASH_SOURCES
-  external/sshash/include/dictionary.cpp
-  external/sshash/include/info.cpp
+  src/sshash_fwd_decl.cpp
 )
 
 set(LIBRADICL_INCLUDE ${CMAKE_CURRENT_SOURCE_DIR}/external/libradicl/include)
@@ -143,7 +153,6 @@ set(LIBRADICL_INCLUDE ${CMAKE_CURRENT_SOURCE_DIR}/external/libradicl/include)
 add_library(sshash_static STATIC
   ${Z_LIB_SOURCES}
   ${SSHASH_SOURCES}
-  external/sshash/include/builder/build.cpp
 )
 target_include_directories(sshash_static PRIVATE  ${LIBRADICL_INCLUDE})
 
@@ -211,11 +220,11 @@ target_link_libraries(evaluator ${CLOUDFLARE_ZLIB} Threads::Threads sshash_stati
 
 add_executable(build-poison-table src/poison_table_build_runner.cpp) 
 target_include_directories(build-poison-table PUBLIC ${CMAKE_SOURCE_DIR}/include ${ZLIB_INCLUDE_DIRS})
-target_link_libraries(build-poison-table Threads::Threads build_static sshash_static pesc_static ${CLOUDFLARE_ZLIB} ${MALLOC_LIB})
+target_link_libraries(build-poison-table Threads::Threads build_static pesc_static sshash_static ${CLOUDFLARE_ZLIB} ${MALLOC_LIB})
 
 add_executable(poison_filter src/poison_read_filter.cpp) 
 target_include_directories(poison_filter PUBLIC ${CMAKE_SOURCE_DIR}/include ${ZLIB_INCLUDE_DIRS})
-target_link_libraries(poison_filter Threads::Threads sshash_static pesc_static ${CLOUDFLARE_ZLIB}) 
+target_link_libraries(poison_filter Threads::Threads pesc_static sshash_static ${CLOUDFLARE_ZLIB}) 
 
 ## tests
 add_subdirectory(external/doctest)

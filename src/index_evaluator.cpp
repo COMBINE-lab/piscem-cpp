@@ -16,17 +16,25 @@ std::vector<uint64_t> histogram(mindex::reference_index& ri){
 	
 	phmap::flat_hash_map<uint64_t, uint64_t> freq_map;
 
-	auto cit = ct.m_ctg_offsets.at(0);// sshash::ef_sequence<false>::iterator(&ct.m_ctg_offsets, 0);
+//	auto cit = ct.m_ctg_offsets.at(0);// sshash::ef_sequence<false>::iterator(&ct.m_ctg_offsets, 0);
 	uint64_t max_freq = 0;
-	uint64_t prev = 0;
-	while (cit.has_next()) {
+//	uint64_t prev = 0;
+	for (size_t i = 0; i < ct.m_ctg_offsets.size() - 1; ++i) {
+		auto curr_start = ct.m_ctg_offsets.access(i);
+		auto curr_end = ct.m_ctg_offsets.access(i + 1);
+		auto v = curr_end - curr_start;
+		auto& f = freq_map[v];
+		f += 1;
+		if (v > max_freq) { max_freq = v; }
+	}
+/*	while (cit.has_next()) {
 		auto n = cit.next();
 		auto v = (n-prev);
 		auto& f = freq_map[v];
 		f += 1;
 		if (v > max_freq) { max_freq = v; }
 		prev = n;
-	}
+	}*/
 
 	std::cerr << "max_freq = " << max_freq << "\n";
 	std::vector<uint64_t> freqs(max_freq+1, 0);

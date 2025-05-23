@@ -4,7 +4,6 @@
 #include <optional>
 
 #include "../external/pthash/external/essentials/include/essentials.hpp"
-#include "../external/sshash/include/dictionary.hpp"
 #include "../external/sshash/include/util.hpp"
 #include "../include/streaming_query.hpp"
 #include "CanonicalKmerIterator.hpp"
@@ -21,6 +20,7 @@
 #include "ref_sig_info.hpp"
 #include "spdlog_piscem/spdlog.h"
 #include "util.hpp"
+#include "../include/util_piscem.hpp"
 
 namespace mindex {
 class reference_index {
@@ -121,8 +121,8 @@ public:
   }
 
   uint64_t k() const { return m_dict.k(); }
-  const sshash::dictionary *get_dict() const { return &m_dict; }
-  pthash::bit_vector const &contigs() { return m_dict.strings(); }
+  const piscem::piscem_dictionary *get_dict() const { return &m_dict; }
+  bits::bit_vector const &contigs() { return m_dict.strings(); }
   const std::string &ref_name(size_t i) const { return m_ref_names[i]; }
   uint64_t ref_len(size_t i) const { return m_ref_lens[i]; }
   uint64_t num_refs() const { return m_ref_names.size(); }
@@ -134,7 +134,7 @@ public:
   std::optional<ref_sig_info_t> ref_sig_info() const { return sig_info; }
 
 private:
-  sshash::dictionary m_dict;
+  piscem::piscem_dictionary m_dict;
   sshash::basic_contig_table m_bct;
   sshash::equivalence_class_map m_ec_tab;
   std::vector<std::string> m_ref_names;

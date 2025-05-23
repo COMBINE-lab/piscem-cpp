@@ -3,14 +3,16 @@
 #include <thread>
 
 #include "../external/sshash/external/pthash/external/cmd_line_parser/include/parser.hpp"
-#include "../external/sshash/src/common.hpp"
-#include "../external/sshash/include/dictionary.hpp"
+#include "../external/sshash/tools/common.hpp"
+#include "../include/reference_index.hpp"
 #include "../include/spdlog_piscem/spdlog.h"
 #include "../include/spdlog_piscem/sinks/stdout_color_sinks.h"
 #include "../include/cli11/CLI11.hpp"
 #include "build_contig_table.cpp"
-#include "../external/sshash/src/bench_utils.hpp"
-#include "../external/sshash/src/check_utils.hpp"
+#include "../external/sshash/tools/perf.hpp"
+#include "../external/sshash/test/check.hpp"
+#include "../external/sshash/test/check_from_file.hpp"
+#include "../external/sshash/tools/perf.hpp"
 
 using namespace sshash;
 
@@ -22,7 +24,7 @@ int run_build(int argc, char** argv);
 }
 #endif
 
-bool check_correctness_iterator(dictionary const& dict) {
+bool check_correctness_iterator(piscem::piscem_dictionary const& dict) {
     std::cout << "checking correctness of iterator..." << std::endl;
     std::string expected_kmer(dict.k(), 0);
     constexpr uint64_t runs = 3;
@@ -73,7 +75,7 @@ int run_build(int argc, char** argv) {
            ".cf_seg, possibly ending with '.gz'.)")
         ->required();
     app.add_option("-k,--klen", build_config.k,
-                   "K-mer length (must be <= " + std::to_string(constants::max_k) + ")")
+                   "K-mer length (must be <= " + std::to_string(piscem::piscem_kmer_t::max_k) + ")")
         ->required();
     app.add_option("-m,--minimizer-len", build_config.m, "Minimizer length (must be < k).")->required();
     app.add_option("-o,--output", output_filename,
@@ -88,12 +90,13 @@ int run_build(int argc, char** argv) {
                    "A (integer) constant that controls the space/time trade-off of the dictionary. "
                    "A reasonable values lies between 2 and 12")
         ->default_val(constants::min_l);
-    app.add_option(
+    /*app.add_option(
            "-c,--cscale", build_config.c,
            "A (floating point) constant that trades construction speed for space effectiveness "
            "of minimal perfect hashing. "
            "A reasonable value lies between 3.0 and 10.0")
         ->default_val(constants::c);
+    */
 
     CLI::Option* tmpdir_opt =
         app.add_option("-d,--tempdir", tmp_dirname,
@@ -136,7 +139,7 @@ int run_build(int argc, char** argv) {
         build_config.num_threads = max_num_threads;
         spdlog_piscem::warn("too many threads specified, defaulting to {}", build_config.num_threads);
     }
-    build_config.input_type = sshash::input_build_type::cfseg;
+    //build_config.input_type = sshash::input_build_type::cfseg;
     // if it was passed in
     if (!tmpdir_opt->empty()) {
         build_config.tmp_dirname = tmp_dirname;
@@ -149,7 +152,7 @@ int run_build(int argc, char** argv) {
         // ensure it goes out of scope before we build the
         // contig table
         auto input_seq = input_files_basename + ".cf_seg";
-        dictionary dict;
+        piscem::piscem_dictionary dict;
         dict.build(input_seq, build_config);
         assert(dict.k() == build_config.k);
         auto output_seqidx = output_filename + ".sshash";
@@ -158,7 +161,7 @@ int run_build(int argc, char** argv) {
         spdlog_piscem::info("DONE");
 
         if (check) {
-            check_correctness_lookup_access(dict, input_seq, "cfseg");
+            check_correctness_lookup_access(dict, input_seq);
             if (build_config.weighted) check_correctness_weights(dict, input_seq);
             check_correctness_iterator(dict);
         }

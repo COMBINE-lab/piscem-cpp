@@ -2,6 +2,8 @@
 #include "bitsery/brief_syntax.h"
 #include "../external/sshash/include/hash_util.hpp"
 #include "../external/sshash/include/util.hpp"
+#include "../external/sshash/include/dictionary.hpp"
+#include "../external/sshash/include/bit_vector_iterator.hpp"
 #include "../include/boost/unordered/concurrent_flat_map.hpp"
 
 #pragma once
@@ -11,6 +13,11 @@
 #include <fstream>
 #include <cmath>  // for std::ceil on linux
 
+/*
+namespace sshash{
+	template<typename kmer_t> class dictionary;
+}
+*/
 namespace piscem {
     class unitig_end_cache_t {
     public:
@@ -32,6 +39,13 @@ namespace piscem {
       size_t m_max_size{0};
       boost::concurrent_flat_map<uint64_t, sshash::lookup_result> m_unitig_end_map;
     };
+
+    using piscem_kmer_t = sshash::dna_uint_kmer_t<uint64_t>;
+    using piscem_dictionary = sshash::dictionary<piscem_kmer_t>;
+    using piscem_bv_iterator = sshash::bit_vector_iterator<piscem_kmer_t>;
+
+//    uint64_t max_k = sizeof(piscem_kmer_t) * 4 - 1;
+
 }
 
 namespace sshash {
@@ -149,22 +163,22 @@ namespace util {
     };
 
     struct contig_span {
-        pthash::compact_vector::iterator start;
-        pthash::compact_vector::iterator stop;
+        bits::compact_vector::iterator start;
+        bits::compact_vector::iterator stop;
         size_t len=0;
 
-        inline pthash::compact_vector::iterator begin() { return start; }
-        inline pthash::compact_vector::iterator end() { return stop; }
+        inline bits::compact_vector::iterator begin() { return start; }
+        inline bits::compact_vector::iterator end() { return stop; }
         inline bool empty() const { return len == 0; }
         inline size_t size() const { return len; }
     };
     struct ec_span {
-        pthash::compact_vector::iterator start;
-        pthash::compact_vector::iterator stop;
+        bits::compact_vector::iterator start;
+        bits::compact_vector::iterator stop;
         size_t len=0;
 
-        inline pthash::compact_vector::iterator begin() { return start; }
-        inline pthash::compact_vector::iterator end() { return stop; }
+        inline bits::compact_vector::iterator begin() { return start; }
+        inline bits::compact_vector::iterator end() { return stop; }
         inline bool empty() const { return len == 0; }
         inline size_t size() const { return len; }
     };

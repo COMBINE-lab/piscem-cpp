@@ -2,7 +2,7 @@
 #include <vector>
 #include "../include/basic_contig_table.hpp"
 #include "../external/sshash/external/pthash/external/essentials/include/essentials.hpp"
-#include "../external/sshash/include/ef_sequence.hpp"
+#include "../external/sshash/external/pthash/external/bits/include/elias_fano.hpp"
 #include "../include/equivalence_class_map.hpp"
 #include "../external/sshash/external/pthash/external/cmd_line_parser/include/parser.hpp"
 #include "../external/sshash/include/util.hpp"
@@ -288,7 +288,7 @@ bool build_contig_table(const std::string& input_filename, uint64_t k,
     {
         // Finally, we'll go over the sequences of segments again
         // and build the final table.
-        auto seg_table_builder = pthash::compact_vector::builder(tot_seg_occ, total_ctg_bits);
+        auto seg_table_builder = bits::compact_vector::builder(tot_seg_occ, total_ctg_bits);
         // auto& seg_table = bct.m_ctg_entries;
         // seg_table.resize(tot_seg_occ);
         std::ifstream ifile(input_filename + ".cf_seq");
@@ -446,13 +446,13 @@ bool build_contig_table(const std::string& input_filename, uint64_t k,
             label_list_offsets.back());
         
         uint64_t tile_id_width = std::ceil(std::log2(ec_id_map.size() + 1));
-        pthash::compact_vector::builder ec_id_builder(tile_ec_ids.begin(), tile_ec_ids.size(), tile_id_width);
+        bits::compact_vector::builder ec_id_builder(tile_ec_ids.begin(), tile_ec_ids.size(), tile_id_width);
         ec_id_builder.build(ect.m_tile_ec_ids);
       } // end scope to free labal_list_offsets 
 
       // the +2 is for the orientation bits;
       uint64_t label_width = std::ceil(std::log2(largest_label + 1)) + 2;
-      pthash::compact_vector::builder label_builder(total_label_length, label_width);
+      bits::compact_vector::builder label_builder(total_label_length, label_width);
 
       // now, iterate over the equivalence class map and pack the 
       // label information into the concatenated vector

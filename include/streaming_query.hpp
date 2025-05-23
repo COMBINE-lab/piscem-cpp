@@ -2,7 +2,6 @@
 #define STREAMING_QUERY_HPP
 
 #include "../external/sshash/external/pthash/external/essentials/include/essentials.hpp"
-#include "../external/sshash/include/dictionary.hpp"
 #include "../external/sshash/include/query/streaming_query_canonical_parsing.hpp"
 #include "../external/sshash/include/util.hpp"
 #include "../include/unordered_dense.h"
@@ -38,13 +37,13 @@ class streaming_query {
   //using filter_t = std::conditional_t<with_cache, cuckoofilter::CuckooFilter<uint64_t, 12>, empty_filter_t>;
 public:
   
-  inline streaming_query(sshash::dictionary const *d, piscem::unitig_end_cache_t* unitig_end_cache = nullptr)
+  inline streaming_query(piscem::piscem_dictionary const *d, piscem::unitig_end_cache_t* unitig_end_cache = nullptr)
     : m_d(d), m_prev_query_offset(invalid_query_offset),
       m_prev_contig_id(invalid_contig_id), m_prev_kmer_id(sshash::constants::invalid_uint64),
       /*m_unitig_ends_filter(m_max_cache_size), */
       m_unitig_ends((unitig_end_cache == nullptr) ? nullptr : unitig_end_cache->get_map()),
       m_max_cache_size((unitig_end_cache == nullptr) ? 0 : unitig_end_cache->get_capacity()),
-      m_ref_contig_it(sshash::bit_vector_iterator(d->strings(), 0)),
+      m_ref_contig_it(piscem::piscem_bv_iterator(d->strings(), 0)),
       m_k(d->k()) {}
 
   streaming_query(const streaming_query &other) = delete;
@@ -195,8 +194,8 @@ public:
 
   inline sshash::lookup_result
   query_lookup(pufferfish::CanonicalKmerIterator &kmit,
-               sshash::ef_sequence<false> &m_ctg_offsets,
-               pthash::compact_vector &m_ctg_entries) {
+               bits::elias_fano<false,false> &m_ctg_offsets,
+               bits::compact_vector &m_ctg_entries) {
 
     auto query_offset = kmit->second;
     int32_t query_advance = (query_offset > m_prev_query_offset) ?
@@ -229,7 +228,7 @@ public:
       // NOTE: technically, the `CanonicalKmerIterator` should
       // never yield an invalid k-mer, so we shouldn't have to
       // actually check this.
-      if (!sshash::util::is_valid(kmer_s, m_k)) {
+      if (!sshash::util::is_valid<piscem::piscem_kmer_t>(kmer_s, m_k)) {
         return sshash::lookup_result();
       }
       do_stateless_lookup(kmer_s, kmit->first);
@@ -243,12 +242,12 @@ public:
       auto ref_kmer =
         (can_eat) ? 
         (kmer_is_fw
-          ? (m_ref_contig_it.eat(2 * query_advance), m_ref_contig_it.read(k_bits))
-          : (m_ref_contig_it.eat_reverse(2 * query_advance), m_ref_contig_it.read_reverse(k_bits))) : 
+          ? (m_ref_contig_it.eat(2 * query_advance), static_cast<uint64_t>(m_ref_contig_it.read(k_bits)))
+          : (m_ref_contig_it.eat_reverse(2 * query_advance), static_cast<uint64_t>(m_ref_contig_it.read_reverse(k_bits)))) : 
         // if we can't just shift to the new k-mer, then use the `at` method;
         (kmer_is_fw
-          ? (m_ref_contig_it.at(next_kmer_id), m_ref_contig_it.read(k_bits))
-          : (m_ref_contig_it.at(next_kmer_id + k_bits), m_ref_contig_it.read_reverse(k_bits)));
+          ? (m_ref_contig_it.at(next_kmer_id), static_cast<uint64_t>(m_ref_contig_it.read(k_bits)))
+          : (m_ref_contig_it.at(next_kmer_id + k_bits), static_cast<uint64_t>(m_ref_contig_it.read_reverse(k_bits))));
       
       auto match_type = kmit->first.isEquivalent(ref_kmer);
       m_is_present = (match_type != KmerMatchType::NO_MATCH);
@@ -295,8 +294,8 @@ public:
       auto start_pos = m_ctg_offsets.access(m_prev_res.contig_id);
       auto end_pos = m_ctg_offsets.access(m_prev_res.contig_id + 1);
       size_t len = end_pos - start_pos;
-      m_ctg_span = {m_ctg_entries.at(start_pos),
-                    m_ctg_entries.at(start_pos + len), len};
+      m_ctg_span = {m_ctg_entries.get_iterator_at(start_pos),
+                    m_ctg_entries.get_iterator_at(start_pos + len), len};
       m_prev_contig_id = m_prev_res.contig_id;
     }
     return m_prev_res;
@@ -313,7 +312,7 @@ public:
   inline sshash::util::contig_span contig_span() { return m_ctg_span; }
 
 private:
-  sshash::dictionary const *m_d;
+  piscem::piscem_dictionary const *m_d;
 
   int32_t m_prev_query_offset;
   uint64_t m_prev_contig_id;
@@ -335,7 +334,7 @@ private:
   uint64_t m_num_cache_hits{0};
   sshash::lookup_result m_prev_res;
   sshash::util::contig_span m_ctg_span;
-  sshash::bit_vector_iterator m_ref_contig_it;
+  piscem::piscem_bv_iterator m_ref_contig_it;
   int32_t m_remaining_contig_bases{0};
   uint64_t m_k;
   static constexpr bool m_print_stats{false};

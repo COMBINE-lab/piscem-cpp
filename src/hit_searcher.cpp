@@ -2,6 +2,7 @@
 #include "../external/sshash/include/bit_vector_iterator.hpp"
 #include "../external/sshash/include/util.hpp"
 #include "../include/streaming_query.hpp"
+#include "../include/reference_index.hpp"
 #include <cmath>
 #include <limits>
 #include <optional>
@@ -41,7 +42,7 @@ struct SkipContext {
   SkipContext(std::string &read, reference_index *pfi_in, int32_t k_in,
               uint32_t alt_skip_in)
     : kit1(read), kit_tmp(read), pfi(pfi_in),
-      ref_contig_it(sshash::bit_vector_iterator(pfi_in->contigs(), 0)),
+      ref_contig_it(piscem::piscem_bv_iterator(pfi_in->contigs(), 0)),
       read_len(static_cast<int32_t>(read.length())), read_target_pos(0),
       read_current_pos(0), read_prev_pos(0), safe_skip(1), k(k_in),
       expected_cid(invalid_cid), last_skip_type(LastSkipType::NO_HIT),
@@ -401,7 +402,7 @@ struct SkipContext {
       // set the ref contig iterator position and read off
       // the reference k-mer
       ref_contig_it.at(2 * cCurrPos);
-      fast_hit.ref_kmer = ref_contig_it.read(2 * k);
+      fast_hit.ref_kmer = static_cast<uint64_t>(ref_contig_it.read(2 * k));
     }
   }
 
@@ -488,7 +489,7 @@ struct SkipContext {
         fast_hit.is_confirmatory = false;
         fast_hit.valid(true);
         ref_contig_it.at(2 * global_contig_pos);
-        fast_hit.ref_kmer = ref_contig_it.read(2 * k);
+        fast_hit.ref_kmer = static_cast<uint64_t>(ref_contig_it.read(2 * k));
       }
       // if we pass the read target position, then
       // we no longer have an expectation of what
@@ -511,7 +512,7 @@ struct SkipContext {
   pufferfish::CanonicalKmerIterator kit_end;
   pufferfish::CanonicalKmerIterator kit_swap;
   reference_index *pfi = {nullptr};
-  sshash::bit_vector_iterator ref_contig_it;
+  piscem::piscem_bv_iterator ref_contig_it;
   int32_t read_len;
   int32_t read_target_pos;
   int32_t read_current_pos;
@@ -626,7 +627,7 @@ inline void walk_safely_until(
           // set the ref contig iterator position and read off
           // the reference k-mer
           skip_ctx.ref_contig_it.at(2 * cCurrPos);
-          skip_ctx.fast_hit.ref_kmer = skip_ctx.ref_contig_it.read(2 * k);
+          skip_ctx.fast_hit.ref_kmer = static_cast<uint64_t>(skip_ctx.ref_contig_it.read(2 * k));
           auto match_type = skip_ctx.check_match();
           matches = (match_type != KmerMatchType::NO_MATCH);
 
@@ -704,7 +705,7 @@ check_direct_match(SkipContext &skip_ctx, int32_t k, int direction,
   int32_t inc_offset = (direction * dist);
   curr_pos += inc_offset;
   skip_ctx.ref_contig_it.at(2 * curr_pos);
-  skip_ctx.fast_hit.ref_kmer = skip_ctx.ref_contig_it.read(2 * k);
+  skip_ctx.fast_hit.ref_kmer = static_cast<uint64_t>(skip_ctx.ref_contig_it.read(2 * k));
 
   auto direct_phit = raw_hits.back().second;
   auto prev_hit_fw = direct_phit.hit_fw_on_contig();
@@ -798,7 +799,7 @@ struct EveryKmer {
   inline void query_kmer(pufferfish::CanonicalKmerIterator &kit,
                          mindex::reference_index *pfi,
                          std::vector<std::pair<int, projected_hits>> &raw_hits,
-                         sshash::bit_vector_iterator &ref_contig_it,
+                         piscem::piscem_bv_iterator &ref_contig_it,
                          streaming_query_t &qc) {
     (void)ref_contig_it;
     qc.reset_state();
@@ -822,13 +823,13 @@ struct EveryKmer {
     }
   }
 
-  inline bool check_match(sshash::bit_vector_iterator &ref_contig_it,
+  inline bool check_match(piscem::piscem_bv_iterator &ref_contig_it,
                           pufferfish::CanonicalKmerIterator &kit) {
 
     int64_t cpos = cCurrPos + direction;
 
     ref_contig_it.at(2 * cpos);
-    auto ref_kmer = ref_contig_it.read(2 * k);
+    auto ref_kmer = static_cast<uint64_t>(ref_contig_it.read(2 * k));
 
     /*
     std::cerr << "\t(k = " << k << ") checking hit between " << kit->second << "
@@ -1321,7 +1322,7 @@ bool hit_searcher::get_raw_hits_sketch_everykmer(std::string &read,
   // qc.reset_state();
   // EveryKmer evs(k);
 
-  // auto ref_contig_it = sshash::bit_vector_iterator(pfi_->contigs(), 0);
+  // auto ref_contig_it = piscem::piscem_bv_iterator(pfi_->contigs(), 0);
 
   // Look at every kmer: if new state, do index query
   // Else: move forward by 1 kmer on reference and see if it matches the contig

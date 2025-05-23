@@ -3,15 +3,15 @@
 #include <vector>
 #include "../external/sshash/include/util.hpp"
 #include "util_piscem.hpp"
-#include "../external/sshash/include/ef_sequence.hpp"
+#include "../external/sshash/external/pthash/external/bits/include/elias_fano.hpp"
 
 namespace sshash {
 
 class basic_contig_table {
 public:
     uint64_t m_ref_len_bits;
-    pthash::compact_vector m_ctg_entries;
-    sshash::ef_sequence<false> m_ctg_offsets;
+    bits::compact_vector m_ctg_entries;
+    bits::elias_fano<false,false> m_ctg_offsets;
     template <typename Visitor>
     void visit(Visitor& visitor) const {
       visit_impl(visitor, *this);
@@ -33,7 +33,7 @@ public:
       auto start_pos = m_ctg_offsets.access(contig_id);
       auto end_pos = m_ctg_offsets.access(contig_id + 1);
       size_t len = end_pos - start_pos;
-      return {m_ctg_entries.at(start_pos), m_ctg_entries.at(start_pos + len), len};
+      return {m_ctg_entries.get_iterator_at(start_pos), m_ctg_entries.get_iterator_at(start_pos + len), len};
     }
 
 };
