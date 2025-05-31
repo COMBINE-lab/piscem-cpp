@@ -4,7 +4,7 @@
 #include "../external/sshash/include/kmer.hpp"
 
 namespace sshash {
-  template class dictionary<dna_uint_kmer_t<uint64_t>>;
+  template struct dictionary<dna_uint_kmer_t<uint64_t>>;
 }
 
 

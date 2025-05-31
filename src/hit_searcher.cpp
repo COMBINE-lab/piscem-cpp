@@ -813,7 +813,7 @@ struct EveryKmer {
       // std::cerr << "direction " << direction << ", dist_to_end" <<
       // dist_to_contig_end << ", cCurrPos: " << cCurrPos << "\n";
       ref_contig_it.at(2 * ph.globalPos_);
-      uint64_t ref_kmer = ref_contig_it.read(2 * k);
+      uint64_t ref_kmer = static_cast<uint64_t>(ref_contig_it.read(2 * k));
       (void)ref_kmer;
       // std::cerr << "\t(MATCH IS) ref_kmer = " <<
       // sshash::util::uint_kmer_to_string(ref_kmer, k) << ", kit = " <<
