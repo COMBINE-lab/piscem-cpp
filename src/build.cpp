@@ -106,7 +106,7 @@ int run_build(int argc, char** argv) {
                    "Number of threads to use for hash construction (much of the other index "
                    "building is currently single-threaded.")
         ->default_val(default_num_threads);
-    app.add_flag("--canonical-parsing", build_config.canonical_parsing,
+    app.add_flag("--canonical", build_config.canonical,
                  "Canonical parsing of k-mers. This option changes the parsing and results in a "
                  "trade-off between index space and lookup time.");
     app.add_flag("--build-ec-table", build_ec_table,
@@ -170,6 +170,7 @@ int run_build(int argc, char** argv) {
             perf_test_iterator(dict);
         }
     }
+    
 
     // now build the contig table
     bool ctab_ok =

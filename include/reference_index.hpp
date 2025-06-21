@@ -8,7 +8,7 @@
 #include "../include/streaming_query.hpp"
 #include "CanonicalKmerIterator.hpp"
 #include "basic_contig_table.hpp"
-#include "bit_vector_iterator.hpp"
+#include "kmer_iterator.hpp"
 #include "bitsery/adapter/stream.h"
 #include "bitsery/bitsery.h"
 #include "bitsery/brief_syntax/string.h"

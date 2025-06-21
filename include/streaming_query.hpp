@@ -2,7 +2,7 @@
 #define STREAMING_QUERY_HPP
 
 #include "essentials.hpp"
-#include "../external/sshash/include/query/streaming_query_canonical_parsing.hpp"
+#include "../external/sshash/include/streaming_query.hpp"
 #include "../external/sshash/include/util.hpp"
 #include "../include/unordered_dense.h"
 // #include "../include/bcf/cuckoofilter.h"
@@ -122,10 +122,10 @@ public:
           m_num_cache_hits++;
           // marked as 1 if, when we looked up in the actual index, 
           // the forward k-mer was the canonical k-mer, and 0 otherwise; 
-          bool fw_was_canonical = (((m_prev_res.kmer_orientation & 0x2) >> 1) == 1) ? true : false;
-          m_prev_res.kmer_orientation = (m_prev_res.kmer_orientation & 0x1);
+          bool fw_was_canonical = ((m_prev_res.kmer_orientation & 0x2) == 0x2) ? true : false;
+          m_prev_res.kmer_orientation = ((m_prev_res.kmer_orientation & 0x4) == 0x4) ? sshash::constants::backward_orientation : sshash::constants::forward_orientation;
           if (fw_was_canonical != fw_is_canonical) {
-            m_prev_res.kmer_orientation = 1 - m_prev_res.kmer_orientation; 
+            m_prev_res.kmer_orientation = (m_prev_res.kmer_orientation == sshash::constants::forward_orientation) ? sshash::constants::backward_orientation : sshash::constants::forward_orientation;
           }
           was_cached = true;
         }
@@ -138,7 +138,7 @@ public:
       m_prev_res = m_d->lookup_advanced(kmer_s); 
     }
 
-    m_direction = m_prev_res.kmer_orientation ? -1 : 1;
+    m_direction = (m_prev_res.kmer_orientation == sshash::constants::backward_orientation) ? -1 : 1;
     m_prev_kmer_id = m_prev_res.kmer_id;
     m_is_present = (m_prev_res.kmer_id != sshash::constants::invalid_uint64);
     m_start = !m_is_present;
@@ -165,7 +165,8 @@ public:
         */
         if (!was_cached && m_cache_end && m_unitig_ends->size() < m_max_cache_size) {
           auto res_copy = m_prev_res;
-          res_copy.kmer_orientation |= fw_is_canonical ? 0x2 : 0x0;
+          res_copy.kmer_orientation = fw_is_canonical ?
+            (res_copy.kmer_orientation | 0x00000002) : (res_copy.kmer_orientation & 0xFFFFFFFD);
           // boost concurrent
           m_unitig_ends->try_emplace_or_cvisit(canon_kmer, std::move(res_copy), [](const auto& x) { (void)x; });
           // ankerl hash
@@ -229,7 +230,8 @@ public:
       // never yield an invalid k-mer, so we shouldn't have to
       // actually check this.
       if (!sshash::util::is_valid<piscem::piscem_kmer_t>(kmer_s, m_k)) {
-        return sshash::lookup_result();
+        auto r = sshash::lookup_result();
+        return r;
       }
       do_stateless_lookup(kmer_s, kmit->first);
     } else {

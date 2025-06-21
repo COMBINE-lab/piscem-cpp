@@ -69,6 +69,7 @@ bool build_contig_table(const std::string& input_filename, uint64_t k,
         // identifier and length of each segment.
         std::ifstream seg_file(input_filename + ".cf_seg");
         uint64_t idx = 0;
+        uint64_t max_segment_length = 0; 
         while (!seg_file.eof()) {
             uint64_t seg_id;
             uint32_t seg_len;
@@ -76,11 +77,12 @@ bool build_contig_table(const std::string& input_filename, uint64_t k,
             while (seg_file >> seg_id >> seg) {
                 segment_order.push_back(seg_id);
                 seg_len = seg.length();
+                max_segment_length = std::max(max_segment_length, static_cast<uint64_t>(seg_len));
                 id_to_rank[seg_id] = {idx, seg_len, 0};
                 ++idx;
             }
         }
-        spdlog_piscem::info("computed all segment lengts");
+        spdlog_piscem::info("computed all segment lengths. maximum segment length: {}", max_segment_length);
     }
 
     size_t num_refs = 0;

@@ -1,5 +1,5 @@
 #include "../include/hit_searcher.hpp"
-#include "../external/sshash/include/bit_vector_iterator.hpp"
+#include "../external/sshash/include/kmer_iterator.hpp"
 #include "../external/sshash/include/util.hpp"
 #include "../include/streaming_query.hpp"
 #include "../include/reference_index.hpp"
