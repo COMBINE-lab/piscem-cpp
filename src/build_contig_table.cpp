@@ -193,8 +193,8 @@ bool build_contig_table(const std::string& input_filename, uint64_t k,
             nlohmann::json dbg_info;
             std::ifstream json_file(input_filename + ".json");
             json_file >> dbg_info;
-            if (dbg_info.contains("short refs")) {
-                short_refs_t short_refs_info = dbg_info["short refs"].get<short_refs_t>();
+            if (dbg_info.contains("short seqs")) {
+                short_refs_t short_refs_info = dbg_info["short seqs"].get<short_refs_t>();
                 for (auto& p : short_refs_info) {
                     ref_names.push_back(p.first);
                     ref_lens.push_back(static_cast<uint64_t>(p.second));
