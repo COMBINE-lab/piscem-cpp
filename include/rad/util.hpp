@@ -2,6 +2,7 @@
 #define __RAD_UTIL_HPP__
 
 #include <fstream>
+#include <utility>
 
 #include "../parallel_hashmap/phmap.h"
 #include "../mapping/utils.hpp"
@@ -24,7 +25,7 @@ namespace util {
 using umi_kmer_t = combinelib::kmers::Kmer<31, 2>;
 using bc_kmer_t = combinelib::kmers::Kmer<31, 3>;
 
-inline size_t write_rad_header(mindex::reference_index &ri, size_t bc_length,
+inline std::pair<size_t, size_t> write_rad_header(mindex::reference_index &ri, size_t bc_length,
                                size_t umi_length, std::ofstream &rad_file) {
   rad_writer bw;
   //  RADHeader
@@ -46,7 +47,7 @@ inline size_t write_rad_header(mindex::reference_index &ri, size_t bc_length,
   // write the tag meta-information section
 
   // File-level tag description
-  uint16_t file_level_tags{2};
+  uint16_t file_level_tags{3};
   bw << file_level_tags;
 
   // cblen
@@ -56,6 +57,10 @@ inline size_t write_rad_header(mindex::reference_index &ri, size_t bc_length,
 
   bw << std::string("ulen");
   bw << type_id;
+
+  // rlen
+  bw << std::string("rlen");
+  bw << type_id; // also use u16 for read length
 
   // read-level tag description
   uint16_t read_level_tags{2};
@@ -88,15 +93,20 @@ inline size_t write_rad_header(mindex::reference_index &ri, size_t bc_length,
   bw << type_id;
 
   // alignment-level tag description
-  uint16_t aln_level_tags{1};
+  uint16_t aln_level_tags{2};
   bw << aln_level_tags;
   // we maintain orientation
   // bw << std::string("orientation");
   // type_id = 1;
   // bw << type_id;
 
-  // and reference id
+  // tag 1: compressed orientation and reference id (u32)
   bw << std::string("compressed_ori_refid");
+  type_id = 3;
+  bw << type_id;
+
+  // new tag 2: pos (u32)
+  bw << std::string("pos");
   type_id = 3;
   bw << type_id;
 
@@ -105,10 +115,15 @@ inline size_t write_rad_header(mindex::reference_index &ri, size_t bc_length,
   // the actual file-level tags
   bw << static_cast<uint16_t>(bc_length);
   bw << static_cast<uint16_t>(umi_length);
+  
+  // Save offset where read_length will be written (as placeholder with 0)
+  size_t read_length_offset = bw.num_bytes();
+  // Write 0 as placeholder for read_length - will be updated later
+  bw << static_cast<uint16_t>(0);
 
   rad_file << bw;
   bw.clear();
-  return chunk_offset;
+  return {chunk_offset, read_length_offset};
 }
 
 inline size_t write_rad_header_bulk(mindex::reference_index &ri, bool is_paired,
@@ -282,7 +297,13 @@ inline void write_to_rad_stream(bc_kmer_t &bck, umi_kmer_t &umi,
       // NOTE: should not happen!
       break;
     }
-    bw << (aln.tid | fw_mask);
+    uint32_t compressed_ori_refid = (aln.tid | fw_mask);
+    bw << compressed_ori_refid;
+
+    // New: Add pos tag as u32
+    uint32_t pos_u32 = static_cast<uint32_t>(aln.pos);
+    bw << pos_u32;
+
   }
   ++num_reads_in_chunk;
 }

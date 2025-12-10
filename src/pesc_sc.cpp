@@ -21,6 +21,8 @@
 #include "../include/util_piscem.hpp"
 #include "zlib.h"
 
+#include <algorithm>
+#include <array>
 #include <atomic>
 #include <chrono>
 #include <cstdio>
@@ -96,6 +98,11 @@ public:
   // the mutex for safely writing to
   // unmapped_bc_file
   std::mutex unmapped_bc_mutex;
+  
+  // Collect read lengths during processing, validate after all loops
+  std::atomic<size_t> read_length_count{0};
+  std::array<uint16_t, 3> collected_read_lengths{0, 0, 0};
+  std::atomic<bool> has_collected_3_read_lengths{false};
 };
 
 // single-end
@@ -331,6 +338,24 @@ void do_map(mindex::reference_index &ri,
       // alt_max_occ = 0;
       AlignableReadSeqs read_seqs = protocol.get_mappable_read_sequences(
         record.first.seq, record.second.seq);
+      
+      // Collect read length (only if we haven't collected 3 valid lengths yet)
+      if (!out_info.has_collected_3_read_lengths.load()) {
+        std::string* alignable_seq = read_seqs.get_alignable_seq();
+        if (alignable_seq != nullptr) {
+          uint16_t read_length = static_cast<uint16_t>(alignable_seq->length());
+          if (read_length > 0) {
+            // Atomically get index and increment - only update if index < 3
+            size_t idx = out_info.read_length_count.fetch_add(1);
+            if (idx < 3) {
+              out_info.collected_read_lengths[idx] = read_length;
+              if (idx == 2) {
+                out_info.has_collected_3_read_lengths.store(true);
+              }
+            }
+          }
+        }
+      }
 
       bool had_early_stop = false;
       // dispatch on the *compile-time determined* paired-endness of this
@@ -693,7 +718,7 @@ int run_pesc_sc(int argc, char **argv) {
 
     size_t bc_length = bc_kmer_t::k();
     size_t umi_length = umi_kmer_t::k();
-    size_t chunk_offset =
+    auto [chunk_offset, read_length_offset] =
       rad::util::write_rad_header(ri, bc_length, umi_length, out_info.rad_file);
 
     std::mutex iomut;
@@ -821,6 +846,25 @@ int run_pesc_sc(int argc, char **argv) {
     out_info.rad_file.seekp(chunk_offset);
     uint64_t nc = out_info.num_chunks.load();
     out_info.rad_file.write(reinterpret_cast<char *>(&nc), sizeof(nc));
+
+    // Validate and update read_length in header (after all loops, before writing)
+    uint16_t final_read_length = 0;
+    if (out_info.has_collected_3_read_lengths.load()) {
+      const auto& lens = out_info.collected_read_lengths;
+      if (lens[0] == lens[1] && lens[1] == lens[2]) {
+        final_read_length = lens[0];
+        spdlog_piscem::info("Found validated read length: {}", final_read_length);
+      } else {
+        spdlog_piscem::warn("First 3 read lengths are not equal: {}, {}, {}", 
+                           lens[0], lens[1], lens[2]);
+      }
+    } else {
+      spdlog_piscem::warn("Failed to get valid read length");
+    }
+    if (final_read_length > 0) {
+      out_info.rad_file.seekp(read_length_offset);
+      out_info.rad_file.write(reinterpret_cast<char *>(&final_read_length), sizeof(final_read_length));
+    }
 
     out_info.rad_file.close();
 
