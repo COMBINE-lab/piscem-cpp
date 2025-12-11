@@ -35,6 +35,7 @@
 #include <sstream>
 #include <thread>
 #include <type_traits>
+#include <unordered_map>
 #include <vector>
 
 using namespace klibpp;
@@ -250,7 +251,7 @@ void do_map(mindex::reference_index &ri,
   (void)num_short_umi;
   (void)num_ambig_umi;
 
-  constexpr size_t num_local_samples = 3;
+  constexpr size_t num_local_samples = 10;
   itlib::small_vector<uint32_t, num_local_samples> local_read_lengths;
 
   mapping_cache_info<SketchHitT, piscem::streaming_query<false>> map_cache_left(
@@ -864,22 +865,45 @@ int run_pesc_sc(int argc, char **argv) {
 
     if (po.with_position) {
       uint32_t final_read_length = 0;
+      std::unordered_map<uint32_t, size_t> freq_map;
+      size_t tot = 0;
+      for (auto &l : out_info.collected_read_lengths) {
+        freq_map[l] += 1;
+        tot++;
+      }
+
+      uint32_t most_frequent_len = 0;
+      size_t frequency = 0;
+      for (auto &kv : freq_map) {
+        if (kv.second > frequency) {
+          frequency = kv.second;
+          most_frequent_len = kv.first;
+        }
+      }
+
+      double most_frequent_ratio =
+        (tot > 0) ? frequency / static_cast<double>(tot) : 0.0;
+
       // Validate and update read_length in header (after all loops, before
       // writing)
-      if (out_info.collected_read_lengths.size() >= 3) {
-        auto &lens = out_info.collected_read_lengths;
-        // https://stackoverflow.com/questions/20287095/checking-if-all-elements-of-a-vector-are-equal-in-c
-        if (std::adjacent_find(lens.begin(), lens.end(),
-                               std::not_equal_to<>()) == lens.end()) {
-          final_read_length = lens.front();
-          spdlog_piscem::info("Found validated read length: {}",
-                              final_read_length);
-        } else {
-          spdlog_piscem::warn("First read lengths are not equal: {}, {}, {}",
-                              lens[0], lens[1], lens[2]);
-        }
+      if (most_frequent_ratio >= 0.9) {
+        final_read_length = most_frequent_len;
+        spdlog_piscem::info("Found validated read length: {}",
+                            final_read_length);
       } else {
-        spdlog_piscem::warn("Failed to get valid read length");
+        std::stringstream sstr;
+        for (auto &v : out_info.collected_read_lengths) {
+          sstr << v << ", ";
+        }
+        std::string vec_str = sstr.str();
+        if (!vec_str.empty()) {
+          vec_str.pop_back();
+        }
+        if (!vec_str.empty()) {
+          vec_str.pop_back();
+        }
+        spdlog_piscem::warn("Collected read lengths are too variable: [{}]",
+                            vec_str);
       }
       if (final_read_length > 0) {
         out_info.rad_file.seekp(*read_length_offset);

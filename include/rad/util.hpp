@@ -63,7 +63,7 @@ write_rad_header(mindex::reference_index &ri, size_t bc_length,
   if (with_position) {
     // rlen
     bw << std::string("rlen");
-    bw << 3; // use u32 for read length
+    bw << static_cast<uint8_t>(3); // use u32 for read length
   }
 
   // read-level tag description
@@ -97,7 +97,7 @@ write_rad_header(mindex::reference_index &ri, size_t bc_length,
   bw << type_id;
 
   // alignment-level tag description
-  uint16_t aln_level_tags{2};
+  uint16_t aln_level_tags = with_position ? 2 : 1;
   bw << aln_level_tags;
   // we maintain orientation
   // bw << std::string("orientation");
@@ -109,10 +109,11 @@ write_rad_header(mindex::reference_index &ri, size_t bc_length,
   type_id = 3;
   bw << type_id;
 
-  // new tag 2: pos (u32)
-  bw << std::string("pos");
-  type_id = 3;
-  bw << type_id;
+  if (with_position) {
+    bw << std::string("pos");
+    type_id = 3;
+    bw << type_id;
+  }
 
   // ### end of tag definitions
 
