@@ -2,21 +2,21 @@
 #define __RAD_UTIL_HPP__
 
 #include <fstream>
+#include <optional>
 #include <utility>
 
-#include "../parallel_hashmap/phmap.h"
+#include "../Kmer.hpp"
 #include "../mapping/utils.hpp"
 #include "../mapping/utils_bin.hpp"
-#include "../Kmer.hpp"
+#include "../parallel_hashmap/phmap.h"
 #include "../reference_index.hpp"
 #include "rad_header.hpp"
 #include "rad_writer.hpp"
 
-#include "../../external/libradicl/include/RAD_Writer.hpp"
 #include "../../external/libradicl/include/Alignment_Record.hpp"
-#include "../../external/libradicl/include/Read_Record.hpp"
 #include "../../external/libradicl/include/Byte_Array.hpp"
-#include "../../external/libradicl/include/Tags.hpp"
+#include "../../external/libradicl/include/RAD_Writer.hpp"
+#include "../../external/libradicl/include/Read_Record.hpp"
 #include "../../external/libradicl/include/Tags.hpp"
 
 namespace rad {
@@ -25,8 +25,10 @@ namespace util {
 using umi_kmer_t = combinelib::kmers::Kmer<31, 2>;
 using bc_kmer_t = combinelib::kmers::Kmer<31, 3>;
 
-inline std::pair<size_t, size_t> write_rad_header(mindex::reference_index &ri, size_t bc_length,
-                               size_t umi_length, std::ofstream &rad_file) {
+inline std::pair<size_t, std::optional<size_t>>
+write_rad_header(mindex::reference_index &ri, size_t bc_length,
+                 size_t umi_length, bool with_position,
+                 std::ofstream &rad_file) {
   rad_writer bw;
   //  RADHeader
   rad_header rh;
@@ -47,7 +49,7 @@ inline std::pair<size_t, size_t> write_rad_header(mindex::reference_index &ri, s
   // write the tag meta-information section
 
   // File-level tag description
-  uint16_t file_level_tags{3};
+  uint16_t file_level_tags = with_position ? 3 : 2;
   bw << file_level_tags;
 
   // cblen
@@ -58,9 +60,11 @@ inline std::pair<size_t, size_t> write_rad_header(mindex::reference_index &ri, s
   bw << std::string("ulen");
   bw << type_id;
 
-  // rlen
-  bw << std::string("rlen");
-  bw << type_id; // also use u16 for read length
+  if (with_position) {
+    // rlen
+    bw << std::string("rlen");
+    bw << 3; // use u32 for read length
+  }
 
   // read-level tag description
   uint16_t read_level_tags{2};
@@ -115,11 +119,14 @@ inline std::pair<size_t, size_t> write_rad_header(mindex::reference_index &ri, s
   // the actual file-level tags
   bw << static_cast<uint16_t>(bc_length);
   bw << static_cast<uint16_t>(umi_length);
-  
+
   // Save offset where read_length will be written (as placeholder with 0)
-  size_t read_length_offset = bw.num_bytes();
-  // Write 0 as placeholder for read_length - will be updated later
-  bw << static_cast<uint16_t>(0);
+  std::optional<size_t> read_length_offset =
+    with_position ? std::make_optional<size_t>(bw.num_bytes()) : std::nullopt;
+  if (with_position) {
+    // Write 0 as placeholder for read_length - will be updated later
+    bw << static_cast<uint32_t>(0);
+  }
 
   rad_file << bw;
   bw.clear();
@@ -209,22 +216,27 @@ inline size_t write_rad_header_bulk(mindex::reference_index &ri, bool is_paired,
   return chunk_offset;
 }
 
-inline void write_rad_header_atac(mindex::reference_index& ri, std::vector<std::string>& refs, RAD::Tag_Defn& tag_defn) {
-    
-    for (size_t i = 0; i < ri.num_refs(); ++i) { refs.emplace_back(ri.ref_name(i)); }
+inline void write_rad_header_atac(mindex::reference_index &ri,
+                                  std::vector<std::string> &refs,
+                                  RAD::Tag_Defn &tag_defn) {
 
-    tag_defn.add_file_tag<RAD::Type::u16>("cblen");
-    tag_defn.add_file_tag<RAD::Type::v_u64>("ref_lengths");
+  for (size_t i = 0; i < ri.num_refs(); ++i) {
+    refs.emplace_back(ri.ref_name(i));
+  }
 
-    tag_defn.add_read_tag<RAD::Type::u32>("barcode");
+  tag_defn.add_file_tag<RAD::Type::u16>("cblen");
+  tag_defn.add_file_tag<RAD::Type::v_u64>("ref_lengths");
 
-    tag_defn.add_aln_tag<RAD::Type::u32>("ref");
-    tag_defn.add_aln_tag<RAD::Type::u8>("type");
-    tag_defn.add_aln_tag<RAD::Type::u32>("start_pos");
-    tag_defn.add_aln_tag<RAD::Type::u16>("frag_len");
+  tag_defn.add_read_tag<RAD::Type::u32>("barcode");
+
+  tag_defn.add_aln_tag<RAD::Type::u32>("ref");
+  tag_defn.add_aln_tag<RAD::Type::u8>("type");
+  tag_defn.add_aln_tag<RAD::Type::u32>("start_pos");
+  tag_defn.add_aln_tag<RAD::Type::u16>("frag_len");
 }
 
-inline void write_to_rad_stream(bc_kmer_t &bck, umi_kmer_t &umi,
+inline void
+write_to_rad_stream(bc_kmer_t &bck, umi_kmer_t &umi, bool with_position,
                     mapping::util::MappingType map_type,
                     std::vector<mapping::util::simple_hit> &accepted_hits,
                     phmap::flat_hash_map<uint64_t, uint32_t> &unmapped_bc_map,
@@ -300,15 +312,17 @@ inline void write_to_rad_stream(bc_kmer_t &bck, umi_kmer_t &umi,
     uint32_t compressed_ori_refid = (aln.tid | fw_mask);
     bw << compressed_ori_refid;
 
-    // New: Add pos tag as u32
-    uint32_t pos_u32 = static_cast<uint32_t>(aln.pos);
-    bw << pos_u32;
-
+    if (with_position) {
+      // Add pos tag as u32
+      uint32_t pos_u32 = static_cast<uint32_t>(aln.pos);
+      bw << pos_u32;
+    }
   }
   ++num_reads_in_chunk;
 }
 
-inline void write_to_rad_stream_bulk(mapping::util::MappingType map_type,
+inline void
+write_to_rad_stream_bulk(mapping::util::MappingType map_type,
                          std::vector<mapping::util::simple_hit> &accepted_hits,
                          uint32_t &num_reads_in_chunk, rad_writer &bw) {
   if (map_type == mapping::util::MappingType::UNMAPPED) {
@@ -374,115 +388,114 @@ inline void write_to_rad_stream_bulk(mapping::util::MappingType map_type,
   ++num_reads_in_chunk;
 }
 
+inline void write_to_rad_stream_atac(
+  bc_kmer_t &bck, mapping::util::MappingType map_type,
+  std::vector<mapping::util::simple_hit> &accepted_hits,
+  phmap::flat_hash_map<uint64_t, uint32_t> &unmapped_bc_map,
+  uint32_t &num_reads_in_chunk, std::string &strbuff, std::string &barcode,
+  mindex::reference_index &ri, RAD::RAD_Writer &rw, RAD::Token &token,
+  bool tn5_shift) {
 
+  if (map_type == mapping::util::MappingType::UNMAPPED) {
+    unmapped_bc_map[bck.word(0)] += 1;
+    // do nothing here
+    return;
+  }
+  RAD::Read read_rec;
 
-inline void write_to_rad_stream_atac(bc_kmer_t& bck, mapping::util::MappingType map_type,
-                                     std::vector<mapping::util::simple_hit>& accepted_hits,
-                                     phmap::flat_hash_map<uint64_t, uint32_t>& unmapped_bc_map,
-                                     uint32_t& num_reads_in_chunk, std::string& strbuff, 
-                                     std::string& barcode, mindex::reference_index& ri, 
-                                     RAD::RAD_Writer& rw, RAD::Token& token, bool tn5_shift) {
-                                        
-    if (map_type == mapping::util::MappingType::UNMAPPED) {
-        unmapped_bc_map[bck.word(0)] += 1;
-        // do nothing here
-        return;
-    }
-    RAD::Read read_rec;
-    
-    read_rec.set(accepted_hits.size());
-    
-    const uint32_t barcode_len = bc_kmer_t::k();
-    if (barcode_len <= 32) {
-        if (barcode_len <= 16) {  // can use 32-bit int
-            uint32_t shortbck = static_cast<uint32_t>(0x00000000FFFFFFFF & bck.word(0));
-            read_rec.add_tag(RAD::Type::u32(shortbck));
-        } else {  // must use 64-bit int
-            read_rec.add_tag(RAD::Type::u64(bck.word(0)));
-        }
-    } else {
-            std::cerr << "should not happen\n";
-    }
-    for (auto& aln : accepted_hits) {
-        RAD::Aln_Record aln_rec;
-        uint8_t type{0};
-        // top 2 bits are fw,rc ori
-        // uint32_t fw_mask = aln.is_fw ? 0x80000000 : 0x00000000;
-        // uint32_t mate_fw_mask = aln.mate_is_fw ? 0x40000000 : 0x00000000;
-        // bottom 30 bits are target id
-        // strbuff += std::to_string((0x3FFFFFFF & aln.tid) | fw_mask | mate_fw_mask);
-        strbuff += ri.ref_name(aln.tid);
-        strbuff += "\t";
-        int32_t leftmost_pos = 0;
-        // placeholder value for no fragment length
-        uint16_t frag_len = std::numeric_limits<uint16_t>::max();
+  read_rec.set(accepted_hits.size());
 
-        switch (map_type) {
-            case mapping::util::MappingType::SINGLE_MAPPED:
-                // then the posittion must be that of the only
-                // mapped read.
-                leftmost_pos = std::max(0, aln.pos);
-                type = 1;
-                break;
-            case mapping::util::MappingType::MAPPED_FIRST_ORPHAN:
-                leftmost_pos = std::max(0, aln.pos);
-                type = 2;
-                break;
-            case mapping::util::MappingType::MAPPED_SECOND_ORPHAN:
-                // it's not mate pos b/c in this case we
-                // simply returned the right accepted hits
-                // as the accepted hits
-                leftmost_pos = std::max(0, aln.pos);
-                type = 3;
-                break;
-            case mapping::util::MappingType::MAPPED_PAIR:
-                // if we actually have a paird fragment get the
-                // leftmost position
-                leftmost_pos = std::min(aln.pos, aln.mate_pos);
-                frag_len = aln.frag_len();
-                type = 4;
-                // if the leftmost position is < 0, then adjust
-                // the overhang by setting the start position to 0
-                // and subtracting the overhang from the fragment
-                // length.
-                if (leftmost_pos < 0) {
-                    frag_len = aln.frag_len() + leftmost_pos;
-                    leftmost_pos = 0;
-                }
-                break;
-            case mapping::util::MappingType::UNMAPPED:
-                type = 8;
-                // don't do anything here
-                break;
-        }
-        if (tn5_shift) {
-          leftmost_pos += 4;
-          frag_len -= 9;
-        }
-        aln_rec.clear();
-        aln_rec.add_tag(RAD::Type::u32(aln.tid));
-        aln_rec.add_tag(RAD::Type::u8(type));
-        aln_rec.add_tag(RAD::Type::u32(leftmost_pos));
-        aln_rec.add_tag(RAD::Type::u16(frag_len));
-        read_rec.add_aln_rec(aln_rec);
-        
-        strbuff += std::to_string(leftmost_pos);
-        strbuff += "\t";
-        strbuff += std::to_string(leftmost_pos + frag_len);
-        strbuff += "\t";
-        strbuff += barcode;
-        strbuff += "\t";
-        strbuff += std::to_string(accepted_hits.size());
-        strbuff += "\n";
+  const uint32_t barcode_len = bc_kmer_t::k();
+  if (barcode_len <= 32) {
+    if (barcode_len <= 16) { // can use 32-bit int
+      uint32_t shortbck =
+        static_cast<uint32_t>(0x00000000FFFFFFFF & bck.word(0));
+      read_rec.add_tag(RAD::Type::u32(shortbck));
+    } else { // must use 64-bit int
+      read_rec.add_tag(RAD::Type::u64(bck.word(0)));
     }
-    
-    rw.add(read_rec, token);
-    ++num_reads_in_chunk;
+  } else {
+    std::cerr << "should not happen\n";
+  }
+  for (auto &aln : accepted_hits) {
+    RAD::Aln_Record aln_rec;
+    uint8_t type{0};
+    // top 2 bits are fw,rc ori
+    // uint32_t fw_mask = aln.is_fw ? 0x80000000 : 0x00000000;
+    // uint32_t mate_fw_mask = aln.mate_is_fw ? 0x40000000 : 0x00000000;
+    // bottom 30 bits are target id
+    // strbuff += std::to_string((0x3FFFFFFF & aln.tid) | fw_mask |
+    // mate_fw_mask);
+    strbuff += ri.ref_name(aln.tid);
+    strbuff += "\t";
+    int32_t leftmost_pos = 0;
+    // placeholder value for no fragment length
+    uint16_t frag_len = std::numeric_limits<uint16_t>::max();
+
+    switch (map_type) {
+    case mapping::util::MappingType::SINGLE_MAPPED:
+      // then the posittion must be that of the only
+      // mapped read.
+      leftmost_pos = std::max(0, aln.pos);
+      type = 1;
+      break;
+    case mapping::util::MappingType::MAPPED_FIRST_ORPHAN:
+      leftmost_pos = std::max(0, aln.pos);
+      type = 2;
+      break;
+    case mapping::util::MappingType::MAPPED_SECOND_ORPHAN:
+      // it's not mate pos b/c in this case we
+      // simply returned the right accepted hits
+      // as the accepted hits
+      leftmost_pos = std::max(0, aln.pos);
+      type = 3;
+      break;
+    case mapping::util::MappingType::MAPPED_PAIR:
+      // if we actually have a paird fragment get the
+      // leftmost position
+      leftmost_pos = std::min(aln.pos, aln.mate_pos);
+      frag_len = aln.frag_len();
+      type = 4;
+      // if the leftmost position is < 0, then adjust
+      // the overhang by setting the start position to 0
+      // and subtracting the overhang from the fragment
+      // length.
+      if (leftmost_pos < 0) {
+        frag_len = aln.frag_len() + leftmost_pos;
+        leftmost_pos = 0;
+      }
+      break;
+    case mapping::util::MappingType::UNMAPPED:
+      type = 8;
+      // don't do anything here
+      break;
+    }
+    if (tn5_shift) {
+      leftmost_pos += 4;
+      frag_len -= 9;
+    }
+    aln_rec.clear();
+    aln_rec.add_tag(RAD::Type::u32(aln.tid));
+    aln_rec.add_tag(RAD::Type::u8(type));
+    aln_rec.add_tag(RAD::Type::u32(leftmost_pos));
+    aln_rec.add_tag(RAD::Type::u16(frag_len));
+    read_rec.add_aln_rec(aln_rec);
+
+    strbuff += std::to_string(leftmost_pos);
+    strbuff += "\t";
+    strbuff += std::to_string(leftmost_pos + frag_len);
+    strbuff += "\t";
+    strbuff += barcode;
+    strbuff += "\t";
+    strbuff += std::to_string(accepted_hits.size());
+    strbuff += "\n";
+  }
+
+  rw.add(read_rec, token);
+  ++num_reads_in_chunk;
 }
 
+} // namespace util
+} // namespace rad
 
-}  // namespace util
-}  // namespace rad
-
-
-#endif  //__RAD_UTIL_HPP__
+#endif //__RAD_UTIL_HPP__
