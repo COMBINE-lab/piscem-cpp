@@ -3,6 +3,7 @@
 #include "../include/CanonicalKmerIterator.hpp"
 #include "../include/FastxParser.hpp"
 #include "../include/Kmer.hpp"
+#include "../include/boost/unordered/concurrent_flat_map.hpp"
 #include "../include/cli11/CLI11.hpp"
 #include "../include/ghc/filesystem.hpp"
 #include "../include/mapping/utils.hpp"
@@ -19,7 +20,6 @@
 #include "../include/spdlog_piscem/spdlog.h"
 #include "../include/streaming_query.hpp"
 #include "../include/util_piscem.hpp"
-#include "../include/boost/unordered/concurrent_flat_map.hpp"
 #include "check_overlap.cpp"
 // #include "FastxParser.cpp"
 // #include "hit_searcher.cpp"
@@ -621,9 +621,8 @@ void do_map(mindex::reference_index &ri,
             std::atomic<uint64_t> &r_orphan, std::atomic<uint64_t> &l_orphan,
             std::atomic<uint64_t> &global_npoisoned, pesc_output_info &out_info,
             std::mutex &iomut, bool write_bed, bool check_kmers_orphans,
-            bool tn5_shift, bool use_chr, 
-            piscem::unitig_end_cache_t& unitig_end_cache,
-            RAD::RAD_Writer &rw,
+            bool tn5_shift, bool use_chr,
+            piscem::unitig_end_cache_t &unitig_end_cache, RAD::RAD_Writer &rw,
             RAD::Token token) {
 
   auto log_level = spdlog_piscem::get_level();
@@ -674,9 +673,12 @@ void do_map(mindex::reference_index &ri,
   std::string workstr_right;
   std::ostringstream osstream;
 
-  mapping_cache_info<SketchHitT, piscem::streaming_query<true>> map_cache_left(ri, &unitig_end_cache);
-  mapping_cache_info<SketchHitT, piscem::streaming_query<true>> map_cache_right(ri, &unitig_end_cache);
-  mapping_cache_info<SketchHitT, piscem::streaming_query<true>> map_cache_out(ri, &unitig_end_cache);
+  mapping_cache_info<SketchHitT, piscem::streaming_query<true>> map_cache_left(
+    ri, &unitig_end_cache);
+  mapping_cache_info<SketchHitT, piscem::streaming_query<true>> map_cache_right(
+    ri, &unitig_end_cache);
+  mapping_cache_info<SketchHitT, piscem::streaming_query<true>> map_cache_out(
+    ri, &unitig_end_cache);
 
   size_t max_chunk_reads = 5000;
 
@@ -917,7 +919,10 @@ int run_pesc_sc_atac(int argc, char **argv) {
     ->default_val("permissive");
   app.add_flag("--quiet", po.quiet,
                "Try to be quiet in terms of console output");
-  app.add_option("--end-cache-capacity", po.end_cache_capacity, "maximum capcity of the unitig end cache")->default_val(5000000);
+  app
+    .add_option("--end-cache-capacity", po.end_cache_capacity,
+                "maximum capcity of the unitig end cache")
+    ->default_val(5000000);
   app.add_option("--thr", po.thr, "threshold for psa")->default_val(0.7);
   app.add_option("--bclen", po.blen, "length for barcode")->default_val(16);
   app.add_option("--bin-size", po.bin_size, "size for binning")
@@ -1020,6 +1025,7 @@ int run_pesc_sc_atac(int argc, char **argv) {
   RAD::Tag_Defn tag_defn;
   RAD::Tag_List file_tag_vals;
   file_tag_vals.add(RAD::Type::u16(po.blen));
+  file_tag_vals.add(RAD::Type::str("sc_atac"));
   std::vector<uint64_t> len;
   len.reserve(ri.num_refs());
   for (decltype(ri.num_refs()) i = 0; i < ri.num_refs(); i++) {
@@ -1072,7 +1078,7 @@ int run_pesc_sc_atac(int argc, char **argv) {
 
   if (paired_end) {
     using FragmentT = fastx_parser::ReadTrip;
-    
+
     auto num_input_files = po.left_read_filenames.size();
     size_t additional_files = (num_input_files > 1) ? (num_input_files - 1) : 0;
 
@@ -1098,46 +1104,49 @@ int run_pesc_sc_atac(int argc, char **argv) {
     piscem::unitig_end_cache_t unitig_end_cache(po.end_cache_capacity);
     std::vector<std::thread> workers;
     for (size_t i = 0; i < nthread; ++i) {
-      workers.push_back(std::thread([&ri, &po, &rparser, &binning, &ptab,
-                                     &global_nr, &global_nh, &global_nmult,
-                                     &k_match, &global_np, &out_info, &iomut,
-                                     &rw, &l_match, &r_match, &dove_match,
-                                     &dove_num, &ov_num, &ov_match, &r_orphan,
-                                     &l_orphan, &unitig_end_cache]() {
-        const auto token = rw.get_token();
-        if (!po.enable_structural_constraints) {
-          using SketchHitT =
-            mapping::util::sketch_hit_info_no_struct_constraint;
-          if (po.use_sam_format) {
-            do_map<FragmentT, SketchHitT, SamT>(
-              ri, rparser, binning, ptab, global_nr, global_nh, global_nmult,
-              k_match, l_match, r_match, dove_num, dove_match, ov_num, ov_match,
-              r_orphan, l_orphan, global_np, out_info, iomut, po.use_bed_format,
-              po.check_kmers_orphans, po.tn5_shift, po.use_chr, unitig_end_cache, rw, token);
+      workers.push_back(std::thread(
+        [&ri, &po, &rparser, &binning, &ptab, &global_nr, &global_nh,
+         &global_nmult, &k_match, &global_np, &out_info, &iomut, &rw, &l_match,
+         &r_match, &dove_match, &dove_num, &ov_num, &ov_match, &r_orphan,
+         &l_orphan, &unitig_end_cache]() {
+          const auto token = rw.get_token();
+          if (!po.enable_structural_constraints) {
+            using SketchHitT =
+              mapping::util::sketch_hit_info_no_struct_constraint;
+            if (po.use_sam_format) {
+              do_map<FragmentT, SketchHitT, SamT>(
+                ri, rparser, binning, ptab, global_nr, global_nh, global_nmult,
+                k_match, l_match, r_match, dove_num, dove_match, ov_num,
+                ov_match, r_orphan, l_orphan, global_np, out_info, iomut,
+                po.use_bed_format, po.check_kmers_orphans, po.tn5_shift,
+                po.use_chr, unitig_end_cache, rw, token);
+            } else {
+              do_map<FragmentT, SketchHitT, RadT>(
+                ri, rparser, binning, ptab, global_nr, global_nh, global_nmult,
+                k_match, l_match, r_match, dove_num, dove_match, ov_num,
+                ov_match, r_orphan, l_orphan, global_np, out_info, iomut,
+                po.use_bed_format, po.check_kmers_orphans, po.tn5_shift,
+                po.use_chr, unitig_end_cache, rw, token);
+            }
           } else {
-            do_map<FragmentT, SketchHitT, RadT>(
-              ri, rparser, binning, ptab, global_nr, global_nh, global_nmult,
-              k_match, l_match, r_match, dove_num, dove_match, ov_num, ov_match,
-              r_orphan, l_orphan, global_np, out_info, iomut, po.use_bed_format,
-              po.check_kmers_orphans, po.tn5_shift, po.use_chr, unitig_end_cache, rw, token);
+            using SketchHitT = mapping::util::sketch_hit_info;
+            if (po.use_sam_format) {
+              do_map<FragmentT, SketchHitT, SamT>(
+                ri, rparser, binning, ptab, global_nr, global_nh, global_nmult,
+                k_match, l_match, r_match, dove_num, dove_match, ov_num,
+                ov_match, r_orphan, l_orphan, global_np, out_info, iomut,
+                po.use_bed_format, po.check_kmers_orphans, po.tn5_shift,
+                po.use_chr, unitig_end_cache, rw, token);
+            } else {
+              do_map<FragmentT, SketchHitT, RadT>(
+                ri, rparser, binning, ptab, global_nr, global_nh, global_nmult,
+                k_match, l_match, r_match, dove_num, dove_match, ov_num,
+                ov_match, r_orphan, l_orphan, global_np, out_info, iomut,
+                po.use_bed_format, po.check_kmers_orphans, po.tn5_shift,
+                po.use_chr, unitig_end_cache, rw, token);
+            }
           }
-        } else {
-          using SketchHitT = mapping::util::sketch_hit_info;
-          if (po.use_sam_format) {
-            do_map<FragmentT, SketchHitT, SamT>(
-              ri, rparser, binning, ptab, global_nr, global_nh, global_nmult,
-              k_match, l_match, r_match, dove_num, dove_match, ov_num, ov_match,
-              r_orphan, l_orphan, global_np, out_info, iomut, po.use_bed_format,
-              po.check_kmers_orphans, po.tn5_shift, po.use_chr, unitig_end_cache, rw, token);
-          } else {
-            do_map<FragmentT, SketchHitT, RadT>(
-              ri, rparser, binning, ptab, global_nr, global_nh, global_nmult,
-              k_match, l_match, r_match, dove_num, dove_match, ov_num, ov_match,
-              r_orphan, l_orphan, global_np, out_info, iomut, po.use_bed_format,
-              po.check_kmers_orphans, po.tn5_shift, po.use_chr, unitig_end_cache, rw, token);
-          }
-        }
-      }));
+        }));
     }
 
     for (auto &w : workers) {
@@ -1146,7 +1155,7 @@ int run_pesc_sc_atac(int argc, char **argv) {
     rparser.stop();
   } else {
     using FragmentT = fastx_parser::ReadPair;
- 
+
     auto num_input_files = po.single_read_filenames.size();
     size_t additional_files = (num_input_files > 1) ? (num_input_files - 1) : 0;
 
@@ -1171,46 +1180,49 @@ int run_pesc_sc_atac(int argc, char **argv) {
     piscem::unitig_end_cache_t unitig_end_cache(po.end_cache_capacity);
     std::vector<std::thread> workers;
     for (size_t i = 0; i < nthread; ++i) {
-      workers.push_back(std::thread([&ri, &po, &rparser, &binning, &ptab,
-                                     &global_nr, &global_nh, &global_nmult,
-                                     &k_match, &global_np, &out_info, &iomut,
-                                     &rw, &l_match, &r_match, &dove_match,
-                                     &dove_num, &ov_num, &ov_match, &r_orphan,
-                                     &l_orphan, &unitig_end_cache]() {
-        const auto token = rw.get_token();
-        if (!po.enable_structural_constraints) {
-          using SketchHitT =
-            mapping::util::sketch_hit_info_no_struct_constraint;
-          if (po.use_sam_format) {
-            do_map<FragmentT, SketchHitT, SamT>(
-              ri, rparser, binning, ptab, global_nr, global_nh, global_nmult,
-              k_match, l_match, r_match, dove_num, dove_match, ov_num, ov_match,
-              r_orphan, l_orphan, global_np, out_info, iomut, po.use_bed_format,
-              po.check_kmers_orphans, po.tn5_shift, po.use_chr, unitig_end_cache, rw, token);
+      workers.push_back(std::thread(
+        [&ri, &po, &rparser, &binning, &ptab, &global_nr, &global_nh,
+         &global_nmult, &k_match, &global_np, &out_info, &iomut, &rw, &l_match,
+         &r_match, &dove_match, &dove_num, &ov_num, &ov_match, &r_orphan,
+         &l_orphan, &unitig_end_cache]() {
+          const auto token = rw.get_token();
+          if (!po.enable_structural_constraints) {
+            using SketchHitT =
+              mapping::util::sketch_hit_info_no_struct_constraint;
+            if (po.use_sam_format) {
+              do_map<FragmentT, SketchHitT, SamT>(
+                ri, rparser, binning, ptab, global_nr, global_nh, global_nmult,
+                k_match, l_match, r_match, dove_num, dove_match, ov_num,
+                ov_match, r_orphan, l_orphan, global_np, out_info, iomut,
+                po.use_bed_format, po.check_kmers_orphans, po.tn5_shift,
+                po.use_chr, unitig_end_cache, rw, token);
+            } else {
+              do_map<FragmentT, SketchHitT, RadT>(
+                ri, rparser, binning, ptab, global_nr, global_nh, global_nmult,
+                k_match, l_match, r_match, dove_num, dove_match, ov_num,
+                ov_match, r_orphan, l_orphan, global_np, out_info, iomut,
+                po.use_bed_format, po.check_kmers_orphans, po.tn5_shift,
+                po.use_chr, unitig_end_cache, rw, token);
+            }
           } else {
-            do_map<FragmentT, SketchHitT, RadT>(
-              ri, rparser, binning, ptab, global_nr, global_nh, global_nmult,
-              k_match, l_match, r_match, dove_num, dove_match, ov_num, ov_match,
-              r_orphan, l_orphan, global_np, out_info, iomut, po.use_bed_format,
-              po.check_kmers_orphans, po.tn5_shift, po.use_chr, unitig_end_cache, rw, token);
+            using SketchHitT = mapping::util::sketch_hit_info;
+            if (po.use_sam_format) {
+              do_map<FragmentT, SketchHitT, SamT>(
+                ri, rparser, binning, ptab, global_nr, global_nh, global_nmult,
+                k_match, l_match, r_match, dove_num, dove_match, ov_num,
+                ov_match, r_orphan, l_orphan, global_np, out_info, iomut,
+                po.use_bed_format, po.check_kmers_orphans, po.tn5_shift,
+                po.use_chr, unitig_end_cache, rw, token);
+            } else {
+              do_map<FragmentT, SketchHitT, RadT>(
+                ri, rparser, binning, ptab, global_nr, global_nh, global_nmult,
+                k_match, l_match, r_match, dove_num, dove_match, ov_num,
+                ov_match, r_orphan, l_orphan, global_np, out_info, iomut,
+                po.use_bed_format, po.check_kmers_orphans, po.tn5_shift,
+                po.use_chr, unitig_end_cache, rw, token);
+            }
           }
-        } else {
-          using SketchHitT = mapping::util::sketch_hit_info;
-          if (po.use_sam_format) {
-            do_map<FragmentT, SketchHitT, SamT>(
-              ri, rparser, binning, ptab, global_nr, global_nh, global_nmult,
-              k_match, l_match, r_match, dove_num, dove_match, ov_num, ov_match,
-              r_orphan, l_orphan, global_np, out_info, iomut, po.use_bed_format,
-              po.check_kmers_orphans, po.tn5_shift, po.use_chr, unitig_end_cache, rw, token);
-          } else {
-            do_map<FragmentT, SketchHitT, RadT>(
-              ri, rparser, binning, ptab, global_nr, global_nh, global_nmult,
-              k_match, l_match, r_match, dove_num, dove_match, ov_num, ov_match,
-              r_orphan, l_orphan, global_np, out_info, iomut, po.use_bed_format,
-              po.check_kmers_orphans, po.tn5_shift, po.use_chr, unitig_end_cache, rw, token);
-          }
-        }
-      }));
+        }));
     }
 
     for (auto &w : workers) {

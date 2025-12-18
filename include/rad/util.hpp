@@ -49,7 +49,7 @@ write_rad_header(mindex::reference_index &ri, size_t bc_length,
   // write the tag meta-information section
 
   // File-level tag description
-  uint16_t file_level_tags = with_position ? 3 : 2;
+  uint16_t file_level_tags = with_position ? 4 : 3;
   bw << file_level_tags;
 
   // cblen
@@ -59,6 +59,9 @@ write_rad_header(mindex::reference_index &ri, size_t bc_length,
 
   bw << std::string("ulen");
   bw << type_id;
+
+  bw << std::string("known_rad_type");
+  bw << static_cast<uint8_t>(8);
 
   if (with_position) {
     // rlen
@@ -121,6 +124,9 @@ write_rad_header(mindex::reference_index &ri, size_t bc_length,
   bw << static_cast<uint16_t>(bc_length);
   bw << static_cast<uint16_t>(umi_length);
 
+  std::string rad_type = with_position ? "sc_rna_pos" : "sc_rna_basic";
+  bw << rad_type;
+
   // Save offset where read_length will be written (as placeholder with 0)
   std::optional<size_t> read_length_offset =
     with_position ? std::make_optional<size_t>(bw.num_bytes()) : std::nullopt;
@@ -155,9 +161,11 @@ inline size_t write_rad_header_bulk(mindex::reference_index &ri, bool is_paired,
   // write the tag meta-information section
 
   // File-level tag description
-  // none right now
-  uint16_t file_level_tags{1};
+  uint16_t file_level_tags{2};
   bw << file_level_tags;
+
+  bw << std::string("known_rad_type");
+  bw << static_cast<uint8_t>(8);
 
   bw << std::string("ref_lengths");
   uint8_t type_id{7}; // type is array
@@ -200,6 +208,9 @@ inline size_t write_rad_header_bulk(mindex::reference_index &ri, bool is_paired,
 
   // ### end of tag definitions
 
+  std::string rad_type = "bulk_with_pos";
+  bw << rad_type;
+
   // the actual file-level tag
   // we've already recorded the description
   // so here, we give the length and the the
@@ -226,6 +237,7 @@ inline void write_rad_header_atac(mindex::reference_index &ri,
   }
 
   tag_defn.add_file_tag<RAD::Type::u16>("cblen");
+  tag_defn.add_file_tag<RAD::Type::str>("known_rad_type");
   tag_defn.add_file_tag<RAD::Type::v_u64>("ref_lengths");
 
   tag_defn.add_read_tag<RAD::Type::u32>("barcode");
