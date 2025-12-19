@@ -405,7 +405,7 @@ inline void write_to_rad_stream_atac(
   bc_kmer_t &bck, mapping::util::MappingType map_type,
   std::vector<mapping::util::simple_hit> &accepted_hits,
   phmap::flat_hash_map<uint64_t, uint32_t> &unmapped_bc_map,
-  uint32_t &num_reads_in_chunk, std::string &strbuff, std::string &barcode,
+  uint32_t &num_reads_in_chunk, std::optional<std::string> &strbuff, std::string &barcode,
   mindex::reference_index &ri, RAD::RAD_Writer &rw, RAD::Token &token,
   bool tn5_shift) {
 
@@ -439,8 +439,10 @@ inline void write_to_rad_stream_atac(
     // bottom 30 bits are target id
     // strbuff += std::to_string((0x3FFFFFFF & aln.tid) | fw_mask |
     // mate_fw_mask);
-    strbuff += ri.ref_name(aln.tid);
-    strbuff += "\t";
+    if (strbuff) {
+      *strbuff += ri.ref_name(aln.tid);
+      *strbuff += "\t";
+    }
     int32_t leftmost_pos = 0;
     // placeholder value for no fragment length
     uint16_t frag_len = std::numeric_limits<uint16_t>::max();
@@ -494,14 +496,16 @@ inline void write_to_rad_stream_atac(
     aln_rec.add_tag(RAD::Type::u16(frag_len));
     read_rec.add_aln_rec(aln_rec);
 
-    strbuff += std::to_string(leftmost_pos);
-    strbuff += "\t";
-    strbuff += std::to_string(leftmost_pos + frag_len);
-    strbuff += "\t";
-    strbuff += barcode;
-    strbuff += "\t";
-    strbuff += std::to_string(accepted_hits.size());
-    strbuff += "\n";
+    if (strbuff) {
+      *strbuff += std::to_string(leftmost_pos);
+      *strbuff += "\t";
+      *strbuff += std::to_string(leftmost_pos + frag_len);
+      *strbuff += "\t";
+      *strbuff += barcode;
+      *strbuff += "\t";
+      *strbuff += std::to_string(accepted_hits.size());
+      *strbuff += "\n";
+    }
   }
 
   rw.add(read_rec, token);

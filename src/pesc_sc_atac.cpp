@@ -694,7 +694,7 @@ void do_map(mindex::reference_index &ri,
   uint64_t read_num = 0;
   (void)read_num;
 
-  std::string temp_buff = "";
+  std::optional<std::string> temp_buff = write_bed ? std::make_optional<std::string>("") : std::nullopt;
   while (parser.refill(rg)) {
     for (auto &record : rg) {
       ++global_nr;
@@ -782,11 +782,11 @@ void do_map(mindex::reference_index &ri,
       if (num_reads_in_chunk > max_chunk_reads) {
         if (write_bed) {
           out_info.bed_mutex.lock();
-          out_info.bed_file << temp_buff;
+          out_info.bed_file << *temp_buff;
           out_info.bed_mutex.unlock();
+          *temp_buff = "";
         }
         out_info.num_chunks++;
-        temp_buff = "";
         num_reads_in_chunk = 0;
       }
     }
@@ -795,11 +795,11 @@ void do_map(mindex::reference_index &ri,
   if (num_reads_in_chunk > 0) {
     if (write_bed) {
       out_info.bed_mutex.lock();
-      out_info.bed_file << temp_buff;
+      out_info.bed_file << *temp_buff;
       out_info.bed_mutex.unlock();
+      *temp_buff = "";
     }
     out_info.num_chunks++;
-    temp_buff = "";
     num_reads_in_chunk = 0;
   }
 
