@@ -926,7 +926,11 @@ struct poison_state_t {
 template <typename sketch_hit_info_t, typename streaming_query_t> struct mapping_cache_info {
 public:
   mapping_cache_info(mindex::reference_index &ri, piscem::unitig_end_cache_t* unitig_end_map = nullptr)
-    : k(ri.k()), q(ri.get_dict(), unitig_end_map), hs(&ri) {}
+    : k(ri.k()), q(ri.get_dict(), unitig_end_map), hs(&ri) {
+    // Pre-reserve capacity to avoid rehashing during mapping
+    hit_map.reserve(256);
+    accepted_hits.reserve(64);
+  }
 
   inline void clear() {
     map_type = mapping::util::MappingType::UNMAPPED;
@@ -934,6 +938,9 @@ public:
     hs.clear();
     hit_map.clear();
     accepted_hits.clear();
+    // Pre-reserve capacity to reduce allocations in hot path
+    hit_map.reserve(256);
+    accepted_hits.reserve(64);
     has_matching_kmers = false;
     ambiguous_hit_indices.clear();
     frag_seq = "";
