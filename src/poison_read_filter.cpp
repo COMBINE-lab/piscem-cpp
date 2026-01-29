@@ -22,7 +22,8 @@ void filter_poison_reads(poison_map_t& poison_map,
                          std::vector<std::string>& read_filenames,
                          const std::string& output_file) {
   (void) output_file;
-  fastx_parser::FastxParser<fastx_parser::ReadSeq> rparser(read_filenames, 1, 1);
+  fastx_parser::ParserConfig pc;
+  fastx_parser::FastxParser<fastx_parser::ReadSeq> rparser(pc, read_filenames);
   rparser.start();
 
   pufferfish::CanonicalKmerIterator kit_end;
@@ -39,7 +40,7 @@ void filter_poison_reads(poison_map_t& poison_map,
     // we can process.
     for (auto& record : rg) {
       
-      pufferfish::CanonicalKmerIterator kit(record.seq);
+      pufferfish::CanonicalKmerIterator kit(record.first().seq);
       ++reads_processed;
       while (kit != kit_end) {
         // current canonical k-mer
