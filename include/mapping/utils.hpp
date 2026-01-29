@@ -928,8 +928,8 @@ public:
   mapping_cache_info(mindex::reference_index &ri, piscem::unitig_end_cache_t* unitig_end_map = nullptr)
     : k(ri.k()), q(ri.get_dict(), unitig_end_map), hs(&ri) {
     // Pre-reserve capacity to avoid rehashing during mapping
-    hit_map.reserve(256);
-    accepted_hits.reserve(64);
+    hit_map.reserve(max_hit_occ);
+    accepted_hits.reserve(max_accepted_hits_reserve);
   }
 
   inline void clear() {
@@ -939,8 +939,8 @@ public:
     hit_map.clear();
     accepted_hits.clear();
     // Pre-reserve capacity to reduce allocations in hot path
-    hit_map.reserve(256);
-    accepted_hits.reserve(64);
+    hit_map.reserve(max_hit_occ);
+    accepted_hits.reserve(max_accepted_hits_reserve);
     has_matching_kmers = false;
     ambiguous_hit_indices.clear();
     frag_seq = "";
@@ -962,6 +962,7 @@ public:
   size_t max_hit_occ_recover = 1024;
   bool attempt_occ_recover = (max_hit_occ_recover > max_hit_occ);
   size_t max_read_occ = 2500;
+  size_t max_accepted_hits_reserve = 64;
   size_t k{0};
 
   // to perform queries
