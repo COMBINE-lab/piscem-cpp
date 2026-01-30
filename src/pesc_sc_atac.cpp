@@ -1083,6 +1083,7 @@ int run_pesc_sc_atac(int argc, char **argv) {
     auto num_input_files = po.left_read_filenames.size();
     size_t additional_files = (num_input_files > 1) ? (num_input_files - 1) : 0;
     fastx_parser::ParserConfig pc;
+    pc.chunkSize = 256;
 
     constexpr bool enable_within_set_parallelism = false;
     if (enable_within_set_parallelism && additional_files == 0 && po.nthread > 3) {
@@ -1169,8 +1170,10 @@ int run_pesc_sc_atac(int argc, char **argv) {
     auto num_input_files = po.single_read_filenames.size();
     size_t additional_files = (num_input_files > 1) ? (num_input_files - 1) : 0;
     fastx_parser::ParserConfig pc;
+    pc.chunkSize = 256;
 
-    if (additional_files == 0 && nthread > 3) {
+    constexpr bool enable_within_set_parallelism = false;
+    if (enable_within_set_parallelism && additional_files == 0 && po.nthread > 3) {
       nthread -= 1;
       pc.parallelParsing = true;
     } else {
