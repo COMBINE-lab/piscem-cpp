@@ -749,10 +749,11 @@ int run_pesc_sc(int argc, char **argv) {
     // to parse.
     size_t remaining_threads = po.nthread;
     fastx_parser::ParserConfig pc;
+    pc.chunkSize = 256;
 
     constexpr bool enable_within_set_parallelism = false;
     if (enable_within_set_parallelism && additional_files == 0 && po.nthread > 3) {
-      pc.chunkSize = 1'000;
+      //pc.chunkSize = 1'000;
       pc.parallelParsing = true;
       //po.nthread -= 1;
     } else {
