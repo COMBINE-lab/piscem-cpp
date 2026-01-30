@@ -916,6 +916,7 @@ int run_pesc_bulk(int argc, char **argv) {
       .with_parsers(np)
       .within_set_parallelism(false)
       .build();
+    pc.chunkSize = 256;
 
     fastx_parser::FastxParser<fastx_parser::ReadSeq> rparser(pc,
       po.single_read_filenames);
