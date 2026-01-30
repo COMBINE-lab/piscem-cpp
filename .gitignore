@@ -1,2 +1,5 @@
 .DS_Store
 build
+benchmark_hashmap
+benchmark_hashmap.cpp
+generate_benchmark.py

@@ -5,6 +5,7 @@
 #include "../include/hit_searcher.hpp"
 #include "../include/itlib/small_vector.hpp"
 #include "../include/parallel_hashmap/phmap.h"
+#include "../include/unordered_dense.h"
 #include "../include/poison_table.hpp"
 #include "../include/projected_hits.hpp"
 #include "../include/util_piscem.hpp"
@@ -926,7 +927,11 @@ struct poison_state_t {
 template <typename sketch_hit_info_t, typename streaming_query_t> struct mapping_cache_info {
 public:
   mapping_cache_info(mindex::reference_index &ri, piscem::unitig_end_cache_t* unitig_end_map = nullptr)
-    : k(ri.k()), q(ri.get_dict(), unitig_end_map), hs(&ri) {}
+    : k(ri.k()), q(ri.get_dict(), unitig_end_map), hs(&ri) {
+    // Pre-reserve capacity to avoid rehashing during mapping
+    hit_map.reserve(max_hit_occ);
+    accepted_hits.reserve(max_accepted_hits_reserve);
+  }
 
   inline void clear() {
     map_type = mapping::util::MappingType::UNMAPPED;
@@ -934,6 +939,9 @@ public:
     hs.clear();
     hit_map.clear();
     accepted_hits.clear();
+    // Pre-reserve capacity to reduce allocations in hot path
+    hit_map.reserve(max_hit_occ);
+    accepted_hits.reserve(max_accepted_hits_reserve);
     has_matching_kmers = false;
     ambiguous_hit_indices.clear();
     frag_seq = "";
@@ -944,17 +952,18 @@ public:
   mapping::util::MappingType map_type{mapping::util::MappingType::UNMAPPED};
 
   // map from reference id to hit info
-  phmap::flat_hash_map<uint32_t, sketch_hit_info_t> hit_map;
+  ankerl::unordered_dense::map<uint32_t, sketch_hit_info_t> hit_map;
   std::vector<mapping::util::simple_hit> accepted_hits;
 
   // map to recall the number of unmapped reads we see
   // for each barcode
-  phmap::flat_hash_map<uint64_t, uint32_t> unmapped_bc_map;
+  ankerl::unordered_dense::map<uint64_t, uint32_t> unmapped_bc_map;
 
   size_t max_hit_occ = 256;
   size_t max_hit_occ_recover = 1024;
   bool attempt_occ_recover = (max_hit_occ_recover > max_hit_occ);
   size_t max_read_occ = 2500;
+  size_t max_accepted_hits_reserve = 64;
   size_t k{0};
 
   // to perform queries
@@ -1144,7 +1153,7 @@ map_read(std::string *read_seq, mapping_cache_info_t &map_cache,
     // Further filtering of mappings by ambiguous k-mers
     if (perform_ambig_filtering and !hit_map.empty() and
         !map_cache.ambiguous_hit_indices.empty()) {
-      phmap::flat_hash_set<uint64_t> observed_ecs;
+      ankerl::unordered_dense::set<uint64_t> observed_ecs;
       size_t min_cardinality_ec_size = std::numeric_limits<size_t>::max();
       uint64_t min_cardinality_ec = std::numeric_limits<size_t>::max();
       size_t min_cardinality_index = 0;
@@ -1453,7 +1462,7 @@ map_read(std::string *read_seq, mapping_cache_info_t &map_cache,
     // Further filtering of mappings by ambiguous k-mers
     if (perform_ambig_filtering and !hit_map.empty() and
         !map_cache.ambiguous_hit_indices.empty()) {
-      phmap::flat_hash_set<uint64_t> observed_ecs;
+      ankerl::unordered_dense::set<uint64_t> observed_ecs;
       size_t min_cardinality_ec_size = std::numeric_limits<size_t>::max();
       uint64_t min_cardinality_ec = std::numeric_limits<size_t>::max();
       size_t min_cardinality_index = 0;

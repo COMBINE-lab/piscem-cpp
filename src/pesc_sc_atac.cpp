@@ -10,6 +10,7 @@
 #include "../include/mapping/utils_bin.hpp"
 #include "../include/meta_info.hpp"
 #include "../include/parallel_hashmap/phmap.h"
+#include "../include/unordered_dense.h"
 #include "../include/projected_hits.hpp"
 #include "../include/rad/rad_header.hpp"
 #include "../include/rad/rad_writer.hpp"
@@ -309,7 +310,7 @@ public:
 template <typename mapping_cache_info_t>
 inline void
 write_sam_mappings(mapping_cache_info_t &map_cache_out, bc_kmer_t &bck,
-                   phmap::flat_hash_map<uint64_t, uint32_t> &unmapped_bc_map,
+                   ankerl::unordered_dense::map<uint64_t, uint32_t> &unmapped_bc_map,
                    fastx_parser::ReadPair &record, std::string &workstr_left,
                    std::atomic<uint64_t> &global_nhits,
                    std::ostringstream &osstream) {
@@ -351,7 +352,7 @@ write_sam_mappings(mapping_cache_info_t &map_cache_out, bc_kmer_t &bck,
 template <typename mapping_cache_info_t>
 inline void
 write_sam_mappings(mapping_cache_info_t &map_cache_out, bc_kmer_t &bck,
-                   phmap::flat_hash_map<uint64_t, uint32_t> &unmapped_bc_map,
+                   ankerl::unordered_dense::map<uint64_t, uint32_t> &unmapped_bc_map,
                    fastx_parser::ReadTriple &record, std::string &workstr_left,
                    std::string &workstr_right,
                    std::atomic<uint64_t> &global_nhits,

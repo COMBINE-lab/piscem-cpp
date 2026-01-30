@@ -9,6 +9,7 @@
 #include "../mapping/utils.hpp"
 #include "../mapping/utils_bin.hpp"
 #include "../parallel_hashmap/phmap.h"
+#include "../unordered_dense.h"
 #include "../reference_index.hpp"
 #include "rad_header.hpp"
 #include "rad_writer.hpp"
@@ -252,7 +253,7 @@ inline void
 write_to_rad_stream(bc_kmer_t &bck, umi_kmer_t &umi, bool with_position,
                     mapping::util::MappingType map_type,
                     std::vector<mapping::util::simple_hit> &accepted_hits,
-                    phmap::flat_hash_map<uint64_t, uint32_t> &unmapped_bc_map,
+                    ankerl::unordered_dense::map<uint64_t, uint32_t> &unmapped_bc_map,
                     uint32_t &num_reads_in_chunk, rad_writer &bw) {
   if (map_type == mapping::util::MappingType::UNMAPPED) {
     unmapped_bc_map[bck.word(0)] += 1;
@@ -404,7 +405,7 @@ write_to_rad_stream_bulk(mapping::util::MappingType map_type,
 inline void write_to_rad_stream_atac(
   bc_kmer_t &bck, mapping::util::MappingType map_type,
   std::vector<mapping::util::simple_hit> &accepted_hits,
-  phmap::flat_hash_map<uint64_t, uint32_t> &unmapped_bc_map,
+  ankerl::unordered_dense::map<uint64_t, uint32_t> &unmapped_bc_map,
   uint32_t &num_reads_in_chunk, std::optional<std::string> &strbuff, std::string &barcode,
   mindex::reference_index &ri, RAD::RAD_Writer &rw, RAD::Token &token,
   bool tn5_shift) {
