@@ -137,11 +137,11 @@ void find_poison_kmers(
     // Here, rg will contain a chunk of read pairs
     // we can process.
     for (auto &record : rg) {
-      spdlog_piscem::info("processing {}", record.name);
+      spdlog_piscem::info("processing {}", record.first().name);
       pstate.reset();
       cache.reset_state();
 
-      pufferfish::CanonicalKmerIterator kit(record.seq);
+      pufferfish::CanonicalKmerIterator kit(record.first().seq);
       while (kit != kit_end) {
         bool inserted_locally =
           pstate.inspect_and_update(kit, ri, cache, poison_kmer_occs);
@@ -149,7 +149,7 @@ void find_poison_kmers(
         ++kit;
         ++global_nk;
       }
-      spdlog_piscem::info("finished processing {}", record.name);
+      spdlog_piscem::info("finished processing {}", record.first().name);
     }
   }
 }
@@ -231,8 +231,12 @@ int run_build_poison_table(int argc, char *argv[]) {
   std::atomic<uint64_t> global_nk{0};
 
   {
-    fastx_parser::FastxParser<fastx_parser::ReadSeq> rparser(
-      po.decoy_seq_paths, po.nthreads, np, 1);
+    fastx_parser::ParserConfig pc;
+    pc.numParsers = np;
+    pc.numConsumers = po.nthreads;
+    pc.chunkSize = 1;
+
+    fastx_parser::FastxParser<fastx_parser::ReadSeq> rparser(pc, po.decoy_seq_paths);
     rparser.start();
     mindex::reference_index ri(po.index_basename);
     CanonicalKmer::k(ri.k());

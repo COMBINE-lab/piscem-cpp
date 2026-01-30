@@ -309,7 +309,7 @@ void do_map(mindex::reference_index &ri,
 
       // first extract the barcode
       std::string *bc =
-        protocol.extract_bc(record.first.seq, record.second.seq);
+        protocol.extract_bc(record.first().seq, record.second().seq);
       // if we couldn't get it, don't bother with
       // anything else for this read.
       if (bc == nullptr) {
@@ -331,7 +331,7 @@ void do_map(mindex::reference_index &ri,
       }
 
       std::string *umi =
-        protocol.extract_umi(record.first.seq, record.second.seq);
+        protocol.extract_umi(record.first().seq, record.second().seq);
       if (umi == nullptr) {
         num_short_umi++;
         continue;
@@ -347,7 +347,7 @@ void do_map(mindex::reference_index &ri,
 
       // alt_max_occ = 0;
       AlignableReadSeqs read_seqs = protocol.get_mappable_read_sequences(
-        record.first.seq, record.second.seq);
+        record.first().seq, record.second().seq);
 
       // Collect read length (only if we haven't collected enough valid lengths
       // yet)
@@ -748,18 +748,28 @@ int run_pesc_sc(int argc, char **argv) {
     // 6 threads, as long as there are additional input files
     // to parse.
     size_t remaining_threads = po.nthread;
-    for (size_t i = 0; i < additional_files; ++i) {
-      if (remaining_threads >= 6) {
-        np += 1;
-        po.nthread -= 1;
-        remaining_threads -= 6;
-      } else {
-        break;
+    fastx_parser::ParserConfig pc;
+
+    constexpr bool enable_within_set_parallelism = false;
+    if (enable_within_set_parallelism && additional_files == 0 && po.nthread > 3) {
+      pc.chunkSize = 1'000;
+      pc.parallelParsing = true;
+      //po.nthread -= 1;
+    } else {
+      for (size_t i = 0; i < additional_files; ++i) {
+        if (remaining_threads >= 6) {
+          np += 1;
+          po.nthread -= 1;
+          remaining_threads -= 6;
+        } else {
+          break;
+        }
       }
     }
 
-    fastx_parser::FastxParser<fastx_parser::ReadPair> rparser(
-      po.left_read_filenames, po.right_read_filenames, po.nthread, np);
+    pc.numConsumers = po.nthread;
+    pc.numParsers = np;
+    fastx_parser::FastxParser<fastx_parser::ReadPair> rparser(pc, po.left_read_filenames, po.right_read_filenames);
     rparser.start();
 
     // set the k-mer size for the
