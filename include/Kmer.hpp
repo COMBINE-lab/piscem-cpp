@@ -491,11 +491,10 @@ public:
   bool is_homopolymer() const { return isHomoPolymer(); }
 
   bool _has_homopolymer_prefix() const {
-    int m = (k_ / 2);
-    auto nuc = data_[0] & 0x03;
-    // XOR of the kmer with itself shifted 1 nucleotide left. This 
-    // will zero out 
-    return 0 == ((data_[0] ^ ((data_[0] << 2) | nuc)) >> (2*m));
+      int m = (k_ / 2);
+      auto nuc = data_[0] & 0x03;
+      // avoid overflow in the shift; thanks Claude!
+      return 0 == ((maskTable[k_] & (data_[0] ^ ((data_[0] << 2) | nuc))) >> (2*m));
   }
 
   bool _has_homopolymer_suffix() const {
