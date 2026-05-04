@@ -206,6 +206,10 @@ add_executable(check src/check.cpp src/FastxParser.cpp)
 target_link_libraries(check zlibng sshash_static Threads::Threads)
 target_include_directories(check PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/include ${ZLIB_INCLUDE_DIRS} ${LIBRADICL_INCLUDE})
 
+add_executable(streaming_lookup_bench src/streaming_lookup_bench.cpp src/FastxParser.cpp)
+target_link_libraries(streaming_lookup_bench zlibng sshash_static Threads::Threads)
+target_include_directories(streaming_lookup_bench PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/include ${ZLIB_INCLUDE_DIRS} ${LIBRADICL_INCLUDE})
+
 #add_executable(query src/query.cpp ${SSHASH_SOURCES} ${Z_LIB_SOURCES})
 #target_link_libraries(query z Threads::Threads)
 #target_include_directories(query PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/include ${LIBRADICL_INCLUDE})

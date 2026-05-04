@@ -184,11 +184,10 @@ public:
   }
 
   inline void set_remaining_contig_bases() {
-    uint64_t num_kmers = m_prev_res.string_end - m_prev_res.string_begin - m_k + 1;
     m_remaining_contig_bases =
       (m_direction == 1)
-        ? (num_kmers - (m_prev_res.kmer_id_in_string + m_k))
-        : (m_prev_res.kmer_id_in_string);
+        ? (m_prev_res.string_end - m_prev_res.string_begin - m_k) - m_prev_res.kmer_id_in_string
+        : m_prev_res.kmer_id_in_string;
   }
 
   inline sshash::lookup_result
