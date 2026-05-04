@@ -2,6 +2,8 @@
 #include "bitsery/brief_syntax.h"
 #include "../external/sshash/include/hash_util.hpp"
 #include "../external/sshash/include/util.hpp"
+#include "../external/sshash/include/kmer.hpp"
+#include "../external/sshash/include/offsets.hpp"
 #include "../external/sshash/include/dictionary.hpp"
 #include "../external/sshash/include/kmer_iterator.hpp"
 #include "../include/bit_vector_iterator.hpp"
@@ -42,8 +44,8 @@ namespace piscem {
     };
 
     using piscem_kmer_t = sshash::dna_uint_kmer_t<uint64_t>;
-    using piscem_dictionary = sshash::dictionary<piscem_kmer_t>;
-    using piscem_kmer_iterator = sshash::kmer_iterator<piscem_kmer_t>;
+    using piscem_dictionary = sshash::dictionary<piscem_kmer_t, sshash::decoded_offsets>;
+    using piscem_kmer_iterator = sshash::kmer_iterator<piscem_kmer_t, bits::bit_vector>;
     using piscem_bv_iterator = sshash::bit_vector_iterator<piscem_kmer_t>;
 
 //    uint64_t max_k = sizeof(piscem_kmer_t) * 4 - 1;

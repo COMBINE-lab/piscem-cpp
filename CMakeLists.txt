@@ -2,18 +2,19 @@
 # a reasonable minimum version worth supporting.
 cmake_minimum_required(VERSION 3.15)
 project(SSHASH)
-include_directories(AFTER 
+include_directories(AFTER
 external/sshash/external/pthash/external/xxHash
-external/sshash/external/pthash/include 
-external/sshash/external/pthash/external/bits/include 
-external/sshash/external/pthash/external/fastmod 
-external/sshash/src 
-external/sshash/include 
-external/sshash 
-external/sshash/external/pthash 
+external/sshash/external/pthash/include
+external/sshash/external/pthash/external/bits/include
+external/sshash/external/pthash/external/fastmod
+external/sshash/src
+external/sshash/include
+external/sshash
+external/sshash/external/pthash
 external/sshash/external/pthash/external/essentials/include
 external/sshash/external/pthash/external/bits/external/essentials/include
 external/sshash/external/pthash/external/mm_file/include
+external/sshash/external/cityhash
 )
 add_subdirectory(${CMAKE_SOURCE_DIR}/external/libradicl)
 # Set path for modules required to search for existing packages in the system.
@@ -167,6 +168,7 @@ endif()
 
 set(Z_LIB_SOURCES
   external/sshash/external/gz/zip_stream.cpp
+  external/sshash/external/cityhash/cityhash.cpp
 )
 
 set(SSHASH_SOURCES

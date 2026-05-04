@@ -85,26 +85,23 @@ public:
 
     if (q.is_present()) {
       const auto kval = m_dict.k();
-      qres.contig_size += kval - 1;
+      uint64_t contig_size_nt = qres.string_end - qres.string_begin;
       sshash::util::contig_span s = q.contig_span();
-      uint32_t contig_id = (qres.contig_id > invalid_u32)
+      uint32_t contig_id = (qres.string_id > invalid_u32)
                              ? invalid_u32
-                             : static_cast<uint32_t>(qres.contig_id);
+                             : static_cast<uint32_t>(qres.string_id);
       uint32_t contig_offset =
-        (qres.kmer_id_in_contig > invalid_u32)
+        (qres.kmer_id_in_string > invalid_u32)
           ? invalid_u32
-          : static_cast<uint32_t>(qres.kmer_id_in_contig);
-      uint32_t contig_length = (qres.contig_size > invalid_u32)
+          : static_cast<uint32_t>(qres.kmer_id_in_string);
+      uint32_t contig_length = (contig_size_nt > invalid_u32)
                                  ? invalid_u32
-                                 : static_cast<uint32_t>(qres.contig_size);
+                                 : static_cast<uint32_t>(contig_size_nt);
 
       bool is_forward =
         (qres.kmer_orientation == sshash::constants::forward_orientation);
 
-      // because the query gives us a global
-      // ID and not a global offset, we have to
-      // adjust it here.
-      uint64_t global_offset = qres.kmer_id + (contig_id * (kval - 1));
+      uint64_t global_offset = qres.kmer_offset;
       return projected_hits{
         contig_id,
         contig_offset,
