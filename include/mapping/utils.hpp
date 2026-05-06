@@ -26,6 +26,13 @@ namespace mapping {
 
 namespace util {
 
+struct avalanching_u32_hash {
+  using is_avalanching = void;
+  auto operator()(uint32_t key) const noexcept -> uint64_t {
+    return static_cast<uint64_t>(key) * UINT64_C(0x9E3779B97F4A7C15);
+  }
+};
+
 class bin_pos {
 public:
   static constexpr uint64_t invalid_bin_id{
@@ -924,10 +931,11 @@ struct poison_state_t {
   poison_table *ptab{nullptr};
 };
 
-template <typename sketch_hit_info_t, typename streaming_query_t> struct mapping_cache_info {
+template <typename sketch_hit_info_t, typename streaming_query_t, bool canonical = false> struct mapping_cache_info {
 public:
   mapping_cache_info(mindex::reference_index &ri, piscem::unitig_end_cache_t* unitig_end_map = nullptr)
-    : k(ri.k()), q(ri.get_dict(), unitig_end_map), hs(&ri) {
+    : k(ri.k()), q(ri.get_dict(), unitig_end_map), hs(&ri),
+      lean_iter(ri.get_dict(), ri.get_contig_table()) {
     // Pre-reserve capacity to avoid rehashing during mapping
     hit_map.reserve(max_hit_occ);
     accepted_hits.reserve(max_accepted_hits_reserve);
@@ -937,11 +945,7 @@ public:
     map_type = mapping::util::MappingType::UNMAPPED;
     q.start();
     hs.clear();
-    hit_map.clear();
     accepted_hits.clear();
-    // Pre-reserve capacity to reduce allocations in hot path
-    hit_map.reserve(max_hit_occ);
-    accepted_hits.reserve(max_accepted_hits_reserve);
     has_matching_kmers = false;
     ambiguous_hit_indices.clear();
     frag_seq = "";
@@ -952,7 +956,7 @@ public:
   mapping::util::MappingType map_type{mapping::util::MappingType::UNMAPPED};
 
   // map from reference id to hit info
-  ankerl::unordered_dense::map<uint32_t, sketch_hit_info_t> hit_map;
+  ankerl::unordered_dense::map<uint32_t, sketch_hit_info_t, avalanching_u32_hash> hit_map;
   std::vector<mapping::util::simple_hit> accepted_hits;
 
   // map to recall the number of unmapped reads we see
@@ -968,6 +972,8 @@ public:
 
   // to perform queries
   streaming_query_t q;
+  // lean read iterator for the lean mapping path
+  piscem::lean_read_iterator<canonical> lean_iter;
   // implements the PASC algorithm
   mindex::hit_searcher hs;
   size_t max_chunk_reads = 5000;
@@ -993,6 +999,7 @@ map_read(std::string *read_seq, mapping_cache_info_t &map_cache,
   // rebind map_cache variables to
   // local names
   auto &q = map_cache.q;
+  (void)q; // lean path does not use the streaming query directly
   auto &hs = map_cache.hs;
   auto &hit_map = map_cache.hit_map;
   auto &accepted_hits = map_cache.accepted_hits;
@@ -1003,7 +1010,7 @@ map_read(std::string *read_seq, mapping_cache_info_t &map_cache,
   bool apply_poison_filter = poison_state.is_valid();
 
   map_cache.has_matching_kmers =
-    hs.get_raw_hits_sketch(*read_seq, q, strat, true, false);
+    hs.get_raw_hits_sketch_lean(*read_seq, map_cache.lean_iter, strat, true, false);
   bool early_stop = false;
 
   // if we are checking ambiguous hits, the maximum EC
@@ -1612,7 +1619,10 @@ inline void merge_se_mappings(mapping_cache_info_t &map_cache_left,
                               mapping_cache_info_t &map_cache_right,
                               int32_t left_len, int32_t right_len,
                               mapping_cache_info_t &map_cache_out) {
-  map_cache_out.clear();
+  // Caller already cleared map_cache_out; only reset the fields merge writes to
+  map_cache_out.map_type = mapping::util::MappingType::UNMAPPED;
+  map_cache_out.accepted_hits.clear();
+  map_cache_out.has_matching_kmers = false;
   auto &accepted_left = map_cache_left.accepted_hits;
   auto &accepted_right = map_cache_right.accepted_hits;
 
@@ -1802,7 +1812,10 @@ inline void merge_se_mappings(mapping_cache_info_t &map_cache_left,
                               int32_t left_len, int32_t right_len,
                               bool check_kmers_orphans,
                               mapping_cache_info_t &map_cache_out) {
-  map_cache_out.clear();
+  // Caller already cleared map_cache_out; only reset the fields merge writes to
+  map_cache_out.map_type = mapping::util::MappingType::UNMAPPED;
+  map_cache_out.accepted_hits.clear();
+  map_cache_out.has_matching_kmers = false;
 
   auto &accepted_left = map_cache_left.accepted_hits;
   auto &accepted_right = map_cache_right.accepted_hits;

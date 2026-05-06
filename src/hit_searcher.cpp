@@ -1375,6 +1375,368 @@ void hit_searcher::clear() {
   right_rawHits.clear();
 }
 
+// Helper: check if a raw kmer word is a homopolymer for the given k.
+// This replicates the logic of Kmer::isHomoPolymer() on a raw uint64_t.
+static inline bool is_homopolymer_word(uint64_t word, int32_t k) {
+  uint64_t mask = (k < 32) ? ((uint64_t(1) << (2 * k)) - 1) : ~uint64_t(0);
+  auto nuc = word & 0x3;
+  return (word == (mask & ((word << 2) | nuc)));
+}
+
+// Helper: build a projected_hits from an sshash lookup_result and contig_span.
+static inline projected_hits build_projected_hits_from_lookup(
+  sshash::lookup_result const &res, sshash::util::contig_span span, uint32_t k) {
+  constexpr uint32_t invalid_u32 = std::numeric_limits<uint32_t>::max();
+  uint64_t contig_size_nt = res.string_end - res.string_begin;
+  bool is_forward = (res.kmer_orientation == sshash::constants::forward_orientation);
+  uint32_t contig_id = (res.string_id > invalid_u32)
+                         ? invalid_u32
+                         : static_cast<uint32_t>(res.string_id);
+  uint32_t contig_offset = (res.kmer_id_in_string > invalid_u32)
+                             ? invalid_u32
+                             : static_cast<uint32_t>(res.kmer_id_in_string);
+  uint32_t contig_length = (contig_size_nt > invalid_u32)
+                             ? invalid_u32
+                             : static_cast<uint32_t>(contig_size_nt);
+  return projected_hits{contig_id, contig_offset, is_forward, contig_length,
+                        res.kmer_offset, k, span};
+}
+
+// walk_safely_until equivalent using the lean iterator.
+// Walks one kmer at a time from current position to end_read_pos,
+// querying and verifying along unitigs.
+template <bool canonical>
+static inline void walk_safely_until_lean(
+  piscem::lean_read_iterator<canonical> &iter,
+  reference_index *pfi,
+  int32_t k,
+  int32_t end_read_pos,
+  std::vector<std::pair<int, projected_hits>> &raw_hits) {
+
+  piscem::piscem_bv_iterator ref_contig_it(pfi->contigs(), 0);
+
+  while (!iter.is_exhausted() && iter.pos() <= end_read_pos) {
+    if (!is_homopolymer_word(iter.fw_word(), k)) {
+      auto res = iter.lookup();
+      if (res.kmer_id != sshash::constants::invalid_uint64) {
+        // HIT
+        auto span = iter.contig_span();
+        auto phit = build_projected_hits_from_lookup(res, span, static_cast<uint32_t>(k));
+        int32_t read_pos = iter.pos();
+        int32_t initial_search_pos = read_pos;
+
+        if (raw_hits.empty() || (read_pos > raw_hits.back().first)) {
+          auto open_phit = phit;
+          open_phit.resulted_from_open_search = true;
+          raw_hits.push_back({read_pos, open_phit});
+        }
+
+        // compute distance to contig end
+        int64_t cCurrPos = static_cast<int64_t>(phit.globalPos_);
+        size_t cStartPos = phit.globalPos_ - phit.contigPos_;
+        size_t cEndPos = cStartPos + phit.contigLen_;
+        int32_t direction = 1;
+        int64_t dist_to_contig_end = 0;
+
+        if (phit.contigOrientation_) {
+          dist_to_contig_end = static_cast<int64_t>(cEndPos) -
+                               static_cast<int64_t>(cCurrPos + k);
+        } else {
+          dist_to_contig_end = static_cast<int64_t>(phit.contigPos_);
+          direction = -1;
+        }
+
+        // walk along the unitig verifying k-mers
+        bool matches = true;
+        bool ended_on_match = false;
+        std::pair<int, projected_hits> last_valid_hit = raw_hits.back();
+
+        while (!iter.is_exhausted() && matches && dist_to_contig_end > 0) {
+          int32_t pos_before = iter.pos();
+          ++iter;
+          if (iter.is_exhausted()) break;
+          int32_t inc_amt = iter.pos() - pos_before;
+          dist_to_contig_end -= inc_amt;
+
+          if (dist_to_contig_end >= 0) {
+            int32_t inc_offset = direction * inc_amt;
+            cCurrPos += inc_offset;
+
+            // read reference k-mer and compare
+            ref_contig_it.at(2 * cCurrPos);
+            uint64_t ref_kmer = static_cast<uint64_t>(ref_contig_it.read(2 * k));
+            auto match_result = iter.is_equivalent(ref_kmer);
+            matches = (match_result != piscem::KmerMatchResult::NO_MATCH);
+
+            if (matches) {
+              bool hit_fw = (match_result == piscem::KmerMatchResult::IDENTITY_MATCH);
+              auto &lphit = last_valid_hit.second;
+              lphit.resulted_from_open_search = false;
+              lphit.contigOrientation_ = hit_fw;
+              lphit.globalPos_ += inc_offset;
+              lphit.contigPos_ += inc_offset;
+              last_valid_hit.first = iter.pos();
+              ended_on_match = (dist_to_contig_end == 0);
+            } else {
+              break;
+            }
+          } else {
+            matches = false;
+          }
+        }
+
+        // add the last valid hit if it advanced beyond what we had
+        if (last_valid_hit.first > raw_hits.back().first) {
+          raw_hits.push_back(last_valid_hit);
+        }
+
+        // if we ended on a match or didn't advance at all, increment
+        if (ended_on_match || (iter.pos() == initial_search_pos)) {
+          ++iter;
+        }
+        continue;
+      }
+    }
+    // miss or homopolymer
+    ++iter;
+  }
+}
+
+template <bool canonical>
+bool hit_searcher::get_raw_hits_sketch_lean(std::string &read,
+                                            piscem::lean_read_iterator<canonical> &iter,
+                                            mindex::SkippingStrategy strat,
+                                            bool isLeft, bool verbose) {
+  (void)verbose;
+  bool strict_mode = (strat == mindex::SkippingStrategy::STRICT);
+
+  auto &raw_hits = isLeft ? left_rawHits : right_rawHits;
+  int32_t k = static_cast<int32_t>(this->k);
+
+  iter.start(read.c_str(), static_cast<int32_t>(read.length()));
+
+  piscem::piscem_bv_iterator ref_contig_it(pfi_->contigs(), 0);
+
+  if (strict_mode) {
+    int32_t read_end_pos = static_cast<int32_t>(read.length()) - k;
+    walk_safely_until_lean(iter, pfi_, k, read_end_pos, raw_hits);
+  } else {
+    // PERMISSIVE mode main loop
+    int64_t dist_to_contig_end = 0;
+
+    while (!iter.is_exhausted()) {
+      // homopolymer check
+      if (!is_homopolymer_word(iter.fw_word(), k)) {
+        auto res = iter.lookup();
+        if (res.kmer_id != sshash::constants::invalid_uint64) {
+          // HIT: we found this k-mer in the index
+          auto span = iter.contig_span();
+          auto phit = build_projected_hits_from_lookup(res, span, static_cast<uint32_t>(k));
+
+          int32_t read_pos = iter.pos();
+
+          // compute contig geometry
+          size_t cStartPos = phit.globalPos_ - phit.contigPos_;
+          size_t cEndPos = cStartPos + phit.contigLen_;
+          int64_t cCurrPos = static_cast<int64_t>(phit.globalPos_);
+
+          // add this hit if it is at a new read position
+          if (raw_hits.empty() || (read_pos > raw_hits.back().first)) {
+            auto open_phit = phit;
+            open_phit.resulted_from_open_search = true;
+            raw_hits.push_back({read_pos, open_phit});
+          }
+
+          // determine direction and distance to contig end
+          int32_t direction = 1;
+          if (phit.contigOrientation_) {
+            dist_to_contig_end = static_cast<int64_t>(cEndPos) -
+                                 static_cast<int64_t>(cCurrPos + k);
+          } else {
+            dist_to_contig_end = static_cast<int64_t>(phit.contigPos_);
+            direction = -1;
+          }
+
+          // compute skip distance
+          int64_t dist_to_read_end =
+            static_cast<int64_t>(read.size() - k) - read_pos;
+          int32_t skip_dist =
+            static_cast<int32_t>(std::min(dist_to_read_end, dist_to_contig_end));
+
+          // if we can potentially skip ahead
+          if (skip_dist > 1) {
+            // save current position for potential rollback
+            int32_t backup_pos = iter.pos();
+            int64_t backup_cpos = cCurrPos;
+
+            // First, try moving one position to verify we can proceed
+            int32_t pos_before = iter.pos();
+            ++iter;
+            if (iter.is_exhausted()) {
+              continue;
+            }
+            int32_t neighbor_dist = iter.pos() - pos_before;
+
+            // If the single-step advance jumped further than skip_dist
+            // (due to Ns), do a direct match check on the neighbor
+            if (neighbor_dist < skip_dist) {
+              // check_direct_match equivalent for neighbor
+              int32_t inc_offset_n = direction * neighbor_dist;
+              int64_t check_pos_n = backup_cpos + inc_offset_n;
+              ref_contig_it.at(2 * check_pos_n);
+              uint64_t ref_kmer_n = static_cast<uint64_t>(ref_contig_it.read(2 * k));
+
+              auto prev_hit_fw = phit.contigOrientation_;
+              auto match_n = iter.is_equivalent(ref_kmer_n);
+              bool matches_n = (match_n != piscem::KmerMatchResult::NO_MATCH);
+              bool hit_fw_n = (match_n == piscem::KmerMatchResult::IDENTITY_MATCH);
+
+              if (!(matches_n && (hit_fw_n == prev_hit_fw))) {
+                // neighbor check failed — go to top of loop for regular search
+                continue;
+              }
+              // neighbor check passed — restore position for the full skip
+              iter.jump_to(backup_pos);
+              if (iter.is_exhausted()) {
+                continue;
+              }
+              cCurrPos = backup_cpos;
+            }
+
+            // Now attempt the full skip
+            int32_t actual_dist = iter.advance(skip_dist);
+            // if we jumped past the end
+            if (iter.is_exhausted()) {
+              // fallback: walk safely from backup position
+              iter.jump_to(backup_pos);
+              if (iter.is_exhausted()) {
+                continue;
+              }
+              ++iter;
+              if (iter.is_exhausted()) {
+                continue;
+              }
+              walk_safely_until_lean(iter, pfi_, k, backup_pos + skip_dist, raw_hits);
+              continue;
+            }
+
+            // save the position we landed at (for midpoint fallback)
+            int32_t alt_pos = iter.pos();
+
+            // if the skip was exactly what we expected, try direct match
+            if (actual_dist == skip_dist) {
+              int32_t inc_offset = direction * skip_dist;
+              int64_t target_cpos = cCurrPos + inc_offset;
+              ref_contig_it.at(2 * target_cpos);
+              uint64_t ref_kmer = static_cast<uint64_t>(ref_contig_it.read(2 * k));
+
+              auto match_type = iter.is_equivalent(ref_kmer);
+              bool matches = (match_type != piscem::KmerMatchResult::NO_MATCH);
+              bool hit_fw = (match_type == piscem::KmerMatchResult::IDENTITY_MATCH);
+              auto prev_hit_fw = phit.contigOrientation_;
+
+              if (matches && (hit_fw == prev_hit_fw)) {
+                // success: add hit and continue
+                auto direct_phit = raw_hits.back().second;
+                direct_phit.resulted_from_open_search = false;
+                direct_phit.globalPos_ += inc_offset;
+                direct_phit.contigPos_ += inc_offset;
+                direct_phit.contigOrientation_ = hit_fw;
+                raw_hits.push_back({iter.pos(), direct_phit});
+                ++iter;
+                continue;
+              }
+            }
+
+            // direct match at end failed. Do a full lookup at the landing position.
+            bool alt_found = false;
+            projected_hits alt_phit{};
+            {
+              auto alt_res = iter.lookup();
+              if (alt_res.kmer_id != sshash::constants::invalid_uint64) {
+                alt_found = true;
+                auto alt_span = iter.contig_span();
+                alt_phit = build_projected_hits_from_lookup(
+                  alt_res, alt_span, static_cast<uint32_t>(k));
+
+                // check if this hit is on the same contig in the expected direction
+                bool accept_hit =
+                  (alt_phit.contig_id() == phit.contig_id()) &&
+                  (alt_phit.hit_fw_on_contig() == phit.hit_fw_on_contig()) &&
+                  ((direction > 0) ? (alt_phit.contig_pos() > phit.contig_pos())
+                                   : (alt_phit.contig_pos() < phit.contig_pos()));
+
+                if (accept_hit) {
+                  alt_phit.resulted_from_open_search = false;
+                  raw_hits.push_back({iter.pos(), alt_phit});
+                  ++iter;
+                  continue;
+                }
+              }
+            }
+
+            // Try the midpoint if skip_dist > 4
+            bool mid_acceptable = false;
+            if (skip_dist > 4) {
+              int32_t mid_skip = skip_dist / 2;
+              iter.jump_to(backup_pos + mid_skip);
+
+              if (!iter.is_exhausted()) {
+                auto mid_res = iter.lookup();
+                if (mid_res.kmer_id != sshash::constants::invalid_uint64) {
+                  auto mid_span = iter.contig_span();
+                  auto mid_phit = build_projected_hits_from_lookup(
+                    mid_res, mid_span, static_cast<uint32_t>(k));
+
+                  if (mid_phit.contig_id() == phit.contig_id()) {
+                    // midpoint matched our first contig
+                    mid_phit.resulted_from_open_search = false;
+                    raw_hits.push_back({iter.pos(), mid_phit});
+                    if (alt_found) {
+                      alt_phit.resulted_from_open_search = true;
+                      raw_hits.push_back({alt_pos, alt_phit});
+                    }
+                    mid_acceptable = true;
+                  } else if (alt_found &&
+                             mid_phit.contig_id() == alt_phit.contig_id()) {
+                    // midpoint matched our second contig
+                    alt_phit.resulted_from_open_search = true;
+                    raw_hits.push_back({alt_pos, alt_phit});
+                    mid_acceptable = true;
+                  }
+                }
+              }
+            }
+
+            if (mid_acceptable) {
+              // jump past the alt position and continue
+              iter.jump_to(alt_pos + 1);
+              continue;
+            } else {
+              // fallback: walk safely from backup + 2 to the alt position
+              iter.jump_to(backup_pos);
+              if (!iter.is_exhausted()) {
+                ++iter; // skip past backup (we already checked neighbor)
+                if (!iter.is_exhausted()) {
+                  ++iter; // skip past neighbor (we already checked it)
+                  walk_safely_until_lean(iter, pfi_, k, alt_pos, raw_hits);
+                }
+              }
+              continue;
+            }
+          }
+          // skip_dist <= 1, just advance
+          ++iter;
+          continue;
+        }
+      }
+      // miss or homopolymer: advance
+      ++iter;
+    }
+  }
+  return !raw_hits.empty();
+}
+
 template bool hit_searcher::get_raw_hits_sketch_everykmer<piscem::streaming_query<false>>(std::string &read,
                                                  piscem::streaming_query<false> &qc, bool isLeft, bool verbose);
 template bool hit_searcher::get_raw_hits_sketch_everykmer<piscem::streaming_query<true>>(std::string &read,
@@ -1397,6 +1759,16 @@ template bool hit_searcher::get_raw_hits_sketch_orig<piscem::streaming_query<fal
  
 template bool hit_searcher::get_raw_hits_sketch_orig<piscem::streaming_query<true>>(std::string &read,
                                        piscem::streaming_query<true> &qc,
+                                       mindex::SkippingStrategy strat,
+                                       bool isLeft, bool verbose);
+
+template bool hit_searcher::get_raw_hits_sketch_lean<false>(std::string &read,
+                                       piscem::lean_read_iterator<false> &iter,
+                                       mindex::SkippingStrategy strat,
+                                       bool isLeft, bool verbose);
+
+template bool hit_searcher::get_raw_hits_sketch_lean<true>(std::string &read,
+                                       piscem::lean_read_iterator<true> &iter,
                                        mindex::SkippingStrategy strat,
                                        bool isLeft, bool verbose);
 

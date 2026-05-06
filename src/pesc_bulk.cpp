@@ -388,7 +388,7 @@ std::string &get_name(fastx_parser::ReadPair &rs) { return rs.first().name; }
 struct RadT {};
 struct SamT {};
 
-template <typename FragT, typename SketchHitT, typename OutputT = RadT>
+template <typename FragT, typename SketchHitT, typename OutputT = RadT, bool canonical = false>
 void do_map(mindex::reference_index &ri,
             fastx_parser::FastxParser<FragT> &parser, poison_table &poison_map,
             const pesc_bulk_options &po,
@@ -428,21 +428,21 @@ void do_map(mindex::reference_index &ri,
 
   pufferfish::CanonicalKmerIterator kit_end;
 
-  mapping_cache_info<SketchHitT, piscem::streaming_query<false>> map_cache_left(ri);
+  mapping_cache_info<SketchHitT, piscem::streaming_query<false>, canonical> map_cache_left(ri);
   map_cache_left.max_ec_card = po.max_ec_card;
   map_cache_left.max_hit_occ = po.max_hit_occ;
   map_cache_left.max_hit_occ_recover = po.max_hit_occ_recover;
   map_cache_left.max_read_occ = po.max_read_occ;
   map_cache_left.attempt_occ_recover = po.attempt_occ_recover;
 
-  mapping_cache_info<SketchHitT, piscem::streaming_query<false>> map_cache_right(ri);
+  mapping_cache_info<SketchHitT, piscem::streaming_query<false>, canonical> map_cache_right(ri);
   map_cache_right.max_ec_card = po.max_ec_card;
   map_cache_right.max_hit_occ = po.max_hit_occ;
   map_cache_right.max_hit_occ_recover = po.max_hit_occ_recover;
   map_cache_right.max_read_occ = po.max_read_occ;
   map_cache_right.attempt_occ_recover = po.attempt_occ_recover;
 
-  mapping_cache_info<SketchHitT, piscem::streaming_query<false>> map_cache_out(ri);
+  mapping_cache_info<SketchHitT, piscem::streaming_query<false>, canonical> map_cache_out(ri);
   map_cache_out.max_ec_card = po.max_ec_card;
   map_cache_out.max_hit_occ = po.max_hit_occ;
   map_cache_out.max_hit_occ_recover = po.max_hit_occ_recover;
@@ -485,6 +485,11 @@ void do_map(mindex::reference_index &ri,
   mindex::hit_searcher hs(&ri);
   uint64_t read_num = 0;
 
+  // Local counters — flushed to atomics at chunk boundaries
+  uint64_t local_nr = 0;
+  uint64_t local_nhits = 0;
+  uint64_t local_npoisoned = 0;
+
   // these don't really belong here
   std::string workstr_left;
   std::string workstr_right;
@@ -499,17 +504,8 @@ void do_map(mindex::reference_index &ri,
     // Here, rg will contain a chunk of read pairs
     // we can process.
     for (auto &record : rg) {
-      ++global_nr;
+      ++local_nr;
       ++read_num;
-      auto rctr = global_nr.load();
-      auto hctr = global_nhits.load();
-
-      if (write_mapping_rate and (rctr % 500000 == 0)) {
-        iomut.lock();
-        std::cerr << "\rprocessed (" << rctr << ") reads; (" << hctr
-                  << ") had mappings.";
-        iomut.unlock();
-      }
 
       // this *overloaded* function will just do the right thing.
       // If record is single-end, just map that read, otherwise, map both and
@@ -519,28 +515,12 @@ void do_map(mindex::reference_index &ri,
                      map_cache_right, map_cache_out);
       (void)had_early_stop;
       if (poison_state.is_poisoned()) {
-        global_npoisoned++;
+        local_npoisoned++;
       }
-      // to write unmapped names
-      /*
-      if (map_cache_out.accepted_hits.empty()) {
-          iomut.lock();
-          std::cout << get_name(record) << "\n";
-          iomut.unlock();
-      }
-      */
-      /*
-      if constexpr( std::is_same_v<FragT, fastx_parser::ReadSeq> ) {
-        if (map_cache_out.accepted_hits.empty()) {
-          std::cout << ">" << record.name << "\n";
-          std::cout << record.seq << "\n";
-        }
-      }
-      */
 
       // RAD output
       if constexpr (std::is_same_v<OutputT, RadT>) {
-        global_nhits += map_cache_out.accepted_hits.empty() ? 0 : 1;
+        local_nhits += map_cache_out.accepted_hits.empty() ? 0 : 1;
         rad::util::write_to_rad_stream_bulk(map_cache_out.map_type,
                                             map_cache_out.accepted_hits,
                                             num_reads_in_chunk, rad_w);
@@ -560,6 +540,24 @@ void do_map(mindex::reference_index &ri,
           // reserve space for headers of next chunk
           rad_w << num_reads_in_chunk;
           rad_w << num_reads_in_chunk;
+
+          // Flush local counters to globals at chunk boundaries
+          global_nr += local_nr;
+          global_nhits += local_nhits;
+          global_npoisoned += local_npoisoned;
+
+          if (write_mapping_rate) {
+            auto rctr = global_nr.load();
+            auto hctr = global_nhits.load();
+            iomut.lock();
+            std::cerr << "\rprocessed (" << rctr << ") reads; (" << hctr
+                      << ") had mappings.";
+            iomut.unlock();
+          }
+
+          local_nr = 0;
+          local_nhits = 0;
+          local_npoisoned = 0;
         }
       }
 
@@ -581,6 +579,11 @@ void do_map(mindex::reference_index &ri,
       }
     }
   }
+
+  // Flush remaining local counters
+  global_nr += local_nr;
+  global_nhits += local_nhits;
+  global_npoisoned += local_npoisoned;
 
   // RAD output: dump any remaining output
   if constexpr (std::is_same_v<OutputT, RadT>) {
@@ -815,9 +818,7 @@ int run_pesc_bulk(int argc, char **argv) {
       "No poison k-mer map exists, or it was requested not to be used");
   }
 
-  // **Note**: the dispatch below is a bit messy right now, but
-  // it's not clear how to clean it up without making it overly
-  // complicated.
+  bool is_canonical = ri.get_dict()->canonical();
 
   // if we have paired-end data
   if (read_opt->empty()) {
@@ -859,30 +860,37 @@ int run_pesc_bulk(int argc, char **argv) {
     for (size_t i = 0; i < po.nthread; ++i) {
       workers.push_back(
         std::thread([&ri, &rparser, &ptab, &global_np, &global_nr, &global_nh,
-                     &po, &out_info, &iomut]() {
-          if (!po.enable_structural_constraints) {
-            using SketchHitT =
-              mapping::util::sketch_hit_info_no_struct_constraint;
-            if (po.use_sam_format) {
-              do_map<FragmentT, SketchHitT, SamT>(ri, rparser, ptab, po,
-                                                  global_np, global_nr,
-                                                  global_nh, out_info, iomut);
+                     &po, &out_info, &iomut, is_canonical]() {
+          auto dispatch = [&]<bool canonical>() {
+            if (!po.enable_structural_constraints) {
+              using SketchHitT =
+                mapping::util::sketch_hit_info_no_struct_constraint;
+              if (po.use_sam_format) {
+                do_map<FragmentT, SketchHitT, SamT, canonical>(
+                  ri, rparser, ptab, po, global_np, global_nr, global_nh,
+                  out_info, iomut);
+              } else {
+                do_map<FragmentT, SketchHitT, RadT, canonical>(
+                  ri, rparser, ptab, po, global_np, global_nr, global_nh,
+                  out_info, iomut);
+              }
             } else {
-              do_map<FragmentT, SketchHitT, RadT>(ri, rparser, ptab, po,
-                                                  global_np, global_nr,
-                                                  global_nh, out_info, iomut);
+              using SketchHitT = mapping::util::sketch_hit_info;
+              if (po.use_sam_format) {
+                do_map<FragmentT, SketchHitT, SamT, canonical>(
+                  ri, rparser, ptab, po, global_np, global_nr, global_nh,
+                  out_info, iomut);
+              } else {
+                do_map<FragmentT, SketchHitT, RadT, canonical>(
+                  ri, rparser, ptab, po, global_np, global_nr, global_nh,
+                  out_info, iomut);
+              }
             }
+          };
+          if (is_canonical) {
+            dispatch.template operator()<true>();
           } else {
-            using SketchHitT = mapping::util::sketch_hit_info;
-            if (po.use_sam_format) {
-              do_map<FragmentT, SketchHitT, SamT>(ri, rparser, ptab, po,
-                                                  global_np, global_nr,
-                                                  global_nh, out_info, iomut);
-            } else {
-              do_map<FragmentT, SketchHitT, RadT>(ri, rparser, ptab, po,
-                                                  global_np, global_nr,
-                                                  global_nh, out_info, iomut);
-            }
+            dispatch.template operator()<false>();
           }
         }));
     }
@@ -926,30 +934,37 @@ int run_pesc_bulk(int argc, char **argv) {
     for (size_t i = 0; i < po.nthread; ++i) {
       workers.push_back(
         std::thread([&ri, &rparser, &ptab, &global_np, &global_nr, &global_nh,
-                     &po, &out_info, &iomut]() {
-          if (!po.enable_structural_constraints) {
-            using SketchHitT =
-              mapping::util::sketch_hit_info_no_struct_constraint;
-            if (po.use_sam_format) {
-              do_map<FragmentT, SketchHitT, SamT>(ri, rparser, ptab, po,
-                                                  global_np, global_nr,
-                                                  global_nh, out_info, iomut);
+                     &po, &out_info, &iomut, is_canonical]() {
+          auto dispatch = [&]<bool canonical>() {
+            if (!po.enable_structural_constraints) {
+              using SketchHitT =
+                mapping::util::sketch_hit_info_no_struct_constraint;
+              if (po.use_sam_format) {
+                do_map<FragmentT, SketchHitT, SamT, canonical>(
+                  ri, rparser, ptab, po, global_np, global_nr, global_nh,
+                  out_info, iomut);
+              } else {
+                do_map<FragmentT, SketchHitT, RadT, canonical>(
+                  ri, rparser, ptab, po, global_np, global_nr, global_nh,
+                  out_info, iomut);
+              }
             } else {
-              do_map<FragmentT, SketchHitT, RadT>(ri, rparser, ptab, po,
-                                                  global_np, global_nr,
-                                                  global_nh, out_info, iomut);
+              using SketchHitT = mapping::util::sketch_hit_info;
+              if (po.use_sam_format) {
+                do_map<FragmentT, SketchHitT, SamT, canonical>(
+                  ri, rparser, ptab, po, global_np, global_nr, global_nh,
+                  out_info, iomut);
+              } else {
+                do_map<FragmentT, SketchHitT, RadT, canonical>(
+                  ri, rparser, ptab, po, global_np, global_nr, global_nh,
+                  out_info, iomut);
+              }
             }
+          };
+          if (is_canonical) {
+            dispatch.template operator()<true>();
           } else {
-            using SketchHitT = mapping::util::sketch_hit_info;
-            if (po.use_sam_format) {
-              do_map<FragmentT, SketchHitT, SamT>(ri, rparser, ptab, po,
-                                                  global_np, global_nr,
-                                                  global_nh, out_info, iomut);
-            } else {
-              do_map<FragmentT, SketchHitT, RadT>(ri, rparser, ptab, po,
-                                                  global_np, global_nr,
-                                                  global_nh, out_info, iomut);
-            }
+            dispatch.template operator()<false>();
           }
         }));
     }

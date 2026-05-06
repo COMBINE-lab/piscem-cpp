@@ -18,6 +18,7 @@ int main(int argc, char** argv) {
     bool locate = false;
     bool sshash_native = false;
     bool lean = false;
+    bool point_lookup = false;
 
     bool validate = false;
 
@@ -29,6 +30,7 @@ int main(int argc, char** argv) {
                  "Use sshash's built-in streaming query instead of piscem-cpp's wrapper");
     app.add_flag("--lean", lean,
                  "Use the lean streaming query (sshash engine + contig table lookup)");
+    app.add_flag("--point", point_lookup, "Non-streaming point lookup (independent per-kmer queries)");
     app.add_flag("--validate", validate,
                  "Validate lean iterator kmer words match CanonicalKmerIterator");
     CLI11_PARSE(app, argc, argv);
@@ -170,7 +172,38 @@ int main(int argc, char** argv) {
         std::cout << "total_time = " << elapsed.count() / 1e9 << " s\n";
     };
 
-    if (lean) {
+    if (point_lookup) {
+        found = 0;
+        num_kmers = 0;
+
+        spdlog_piscem::info("starting benchmark (point-lookup)");
+        auto t_start = std::chrono::high_resolution_clock::now();
+
+        for (auto& seq : sequences) {
+            if (seq.size() < k) continue;
+            const char* data = seq.data();
+            uint64_t n_kmers = seq.size() - k + 1;
+            for (uint64_t i = 0; i < n_kmers; ++i) {
+                auto res = ri.get_dict()->lookup(data + i, true);
+                num_kmers++;
+                if (res.kmer_id != sshash::constants::invalid_uint64) {
+                    found++;
+                }
+            }
+        }
+
+        auto t_stop = std::chrono::high_resolution_clock::now();
+        auto elapsed = std::chrono::duration_cast<std::chrono::nanoseconds>(t_stop - t_start);
+        double ns_per_kmer = static_cast<double>(elapsed.count()) / num_kmers;
+
+        std::cout << "==== streaming lookup report (point-lookup):\n";
+        std::cout << "num_kmers = " << num_kmers << "\n";
+        std::cout << "found_kmers = " << found << " ("
+                  << (num_kmers > 0 ? static_cast<double>(found) / num_kmers * 100.0 : 0)
+                  << "%)\n";
+        std::cout << "time_per_kmer = " << ns_per_kmer << " ns\n";
+        std::cout << "total_time = " << elapsed.count() / 1e9 << " s\n";
+    } else if (lean) {
         piscem::lean_read_iterator lit(ri.get_dict(), ri.get_contig_table());
 
         spdlog_piscem::info("starting benchmark (lean-iterator, locate={})", locate);

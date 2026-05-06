@@ -17,12 +17,13 @@ enum class KmerMatchResult : uint8_t {
     TWIN_MATCH = 2
 };
 
+template <bool canonical = false>
 class lean_read_iterator {
     using dict_t = piscem::piscem_dictionary;
     using kmer_t = dict_t::kmer_type;
 
     // sshash streaming query engine
-    sshash::streaming_query<dict_t, false> m_engine;
+    sshash::streaming_query<dict_t, canonical> m_engine;
 
     // contig table for locate
     sshash::basic_contig_table const* m_bct;
