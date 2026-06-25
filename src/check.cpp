@@ -32,7 +32,9 @@ int main(int argc, char **argv) {
   // set the canonical k-mer size globally
   CanonicalKmer::k(ri.k());
 
-  fastx_parser::FastxParser<klibpp::KSeq> rparser({ref_filename}, 1);
+  fastx_parser::ParserConfig pc;
+  std::vector<std::string> rfiles{ref_filename};
+  fastx_parser::FastxParser<fastx_parser::ReadSeq> rparser(pc, rfiles);
   rparser.start();
   auto rg = rparser.getReadGroup();
 
@@ -42,7 +44,7 @@ int main(int argc, char **argv) {
     for (auto &record : rg) {
 
       pufferfish::CanonicalKmerIterator end;
-      pufferfish::CanonicalKmerIterator kit(record.seq);
+      pufferfish::CanonicalKmerIterator kit(record.first().seq);
       while (kit != end) {
         // auto km = kit->first;
         // auto pos = kit->second;
@@ -59,7 +61,7 @@ int main(int argc, char **argv) {
             auto &ref_name = ri.ref_name(tid);
             int32_t pos = static_cast<int32_t>(ref_pos_ori.pos);
             // bool ori = ref_pos_ori.isFW;
-            if ((pos == read_pos) and (record.name == ref_name)) {
+            if ((pos == read_pos) and (record.first().name == ref_name)) {
               found = true;
               break;
             }

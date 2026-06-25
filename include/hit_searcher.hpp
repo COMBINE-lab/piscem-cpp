@@ -6,6 +6,7 @@
 #include "projected_hits.hpp"
 #include "reference_index.hpp"
 #include "streaming_query.hpp"
+#include "lean_streaming_query.hpp"
 // #include "Util.hpp"
 // #include "dictionary.hpp"
 
@@ -73,6 +74,12 @@ public:
   bool get_raw_hits_sketch_everykmer(std::string &read,
                                      streaming_query_t &qc,
                                      bool isLeft = false, bool verbose = false);
+
+  template <bool canonical>
+  bool get_raw_hits_sketch_lean(std::string &read,
+                                piscem::lean_read_iterator<canonical> &iter,
+                                SkippingStrategy strat = SkippingStrategy::PERMISSIVE,
+                                bool isLeft = false, bool verbose = false);
 
   void clear();
 

@@ -16,6 +16,7 @@
 #include "../include/spdlog_piscem/spdlog.h"
 #include "../include/json.hpp"
 #include "../external/sshash/external/pthash/include/utils/hasher.hpp"
+#include "xxhash.h"
 
 using namespace sshash;
 using phmap::flat_hash_map;
@@ -45,7 +46,7 @@ namespace std {
     {
        const void* data = reinterpret_cast<const void*>(&k[0]);
        uint64_t len = k.size() * sizeof(std::tuple<uint32_t, dir_status>);
-       return pthash::MurmurHash2_64(data, len, 0);
+       return XXH64(data, len, 0);
     }
   };
 

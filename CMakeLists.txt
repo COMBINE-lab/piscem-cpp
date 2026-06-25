@@ -2,18 +2,19 @@
 # a reasonable minimum version worth supporting.
 cmake_minimum_required(VERSION 3.15)
 project(SSHASH)
-include_directories(AFTER 
+include_directories(AFTER
 external/sshash/external/pthash/external/xxHash
-external/sshash/external/pthash/include 
-external/sshash/external/pthash/external/bits/include 
-external/sshash/external/pthash/external/fastmod 
-external/sshash/src 
-external/sshash/include 
-external/sshash 
-external/sshash/external/pthash 
+external/sshash/external/pthash/include
+external/sshash/external/pthash/external/bits/include
+external/sshash/external/pthash/external/fastmod
+external/sshash/src
+external/sshash/include
+external/sshash
+external/sshash/external/pthash
 external/sshash/external/pthash/external/essentials/include
 external/sshash/external/pthash/external/bits/external/essentials/include
 external/sshash/external/pthash/external/mm_file/include
+external/sshash/external/cityhash
 )
 add_subdirectory(${CMAKE_SOURCE_DIR}/external/libradicl)
 # Set path for modules required to search for existing packages in the system.
@@ -92,21 +93,46 @@ if (UNIX)
 
 endif()
 
-#add_subdirectory(external/zlib-cloudflare)
+include(GNUInstallDirs)
+
+# Determine what libdir zlib-ng will use
+set(ZLIB_NG_LIBDIR "${CMAKE_INSTALL_LIBDIR}")
+
 include(ExternalProject)
-ExternalProject_Add(zlib-cloudflare
-  GIT_REPOSITORY https://github.com/cloudflare/zlib
-  GIT_TAG 7aa510344e06fecd6fe09195ac22e9a424ceb660
-  CMAKE_ARGS -DCMAKE_INSTALL_PREFIX=${CMAKE_BINARY_DIR}/zlib-cloudflare
-  SOURCE_DIR ${CMAKE_SOURCE_DIR}/external/zlib-cloudflare
+# Define libz-ng as an external project
+ExternalProject_Add(
+    zlib-ng
+    GIT_REPOSITORY https://github.com/zlib-ng/zlib-ng.git
+    GIT_TAG 2.3.2  # Use a specific version tag for reproducibility
+    CMAKE_ARGS
+        -DCMAKE_BUILD_TYPE=Release
+        -DCMAKE_INSTALL_PREFIX=<INSTALL_DIR>
+        -DBUILD_SHARED_LIBS=OFF  # Build static library
+        -DZLIB_COMPAT=ON # Disable compatibility mode to get libz-ng.a name
+        -DZLIB_ENABLE_TESTS=OFF  # Disable tests
+    BUILD_BYPRODUCTS <INSTALL_DIR>/${ZLIB_NG_LIBDIR}/${CMAKE_STATIC_LIBRARY_PREFIX}z-ng${CMAKE_STATIC_LIBRARY_SUFFIX}
+    INSTALL_COMMAND ${CMAKE_COMMAND} -E echo "Installing zlib-ng..."
+        COMMAND ${CMAKE_COMMAND} --build <BINARY_DIR> --target install
+        COMMAND ${CMAKE_COMMAND} -E copy 
+            <INSTALL_DIR>/${ZLIB_NG_LIBDIR}/${CMAKE_STATIC_LIBRARY_PREFIX}z${CMAKE_STATIC_LIBRARY_SUFFIX}
+            <INSTALL_DIR>/${ZLIB_NG_LIBDIR}/${CMAKE_STATIC_LIBRARY_PREFIX}z-ng${CMAKE_STATIC_LIBRARY_SUFFIX}
 )
 
-ExternalProject_Add_Step(zlib-cloudflare
-  rename_lib
-  COMMAND cp ${CMAKE_BINARY_DIR}/zlib-cloudflare/lib/libz.a ${CMAKE_BINARY_DIR}/zlib-cloudflare/lib/libzcf.a
-  COMMENT "copying cloudflare libz.a to libzcf.a"
-  DEPENDEES install
+# Get the install directory
+ExternalProject_Get_Property(zlib-ng INSTALL_DIR)
+
+# Create the include directory at configure time to avoid CMake errors
+file(MAKE_DIRECTORY ${INSTALL_DIR}/include)
+
+# Create an imported target for libz-ng
+add_library(zlibng STATIC IMPORTED)
+set_target_properties(zlibng PROPERTIES
+    IMPORTED_LOCATION ${INSTALL_DIR}/${ZLIB_NG_LIBDIR}/${CMAKE_STATIC_LIBRARY_PREFIX}z-ng${CMAKE_STATIC_LIBRARY_SUFFIX}
+    INTERFACE_INCLUDE_DIRECTORIES ${INSTALL_DIR}/include
 )
+
+# Ensure the external project is built before using the imported target
+add_dependencies(zlibng zlib-ng)
 
 ## can't reply on find_package because the ExternalProject_Add
 # steps won't complete by compile time, when the find_package 
@@ -117,11 +143,11 @@ ExternalProject_Add_Step(zlib-cloudflare
 
 # install path to the lib / include directories of the 
 # cloudflare libz
-include_directories(${CMAKE_BINARY_DIR}/zlib-cloudflare/include)
-link_directories(${CMAKE_BINARY_DIR}/zlib-cloudflare/lib)
+#include_directories(${CMAKE_BINARY_DIR}/zlib-cloudflare/include)
+#link_directories(${CMAKE_BINARY_DIR}/zlib-cloudflare/lib)
 
 # direct path to the cloudflare libz
-set(CLOUDFLARE_ZLIB ${CMAKE_BINARY_DIR}/zlib-cloudflare/lib/libzcf.a)
+#set(CLOUDFLARE_ZLIB ${CMAKE_BINARY_DIR}/zlib-cloudflare/lib/libzcf.a)
 
 
 set(THREADS_PREFER_PTHREAD_FLAG TRUE)
@@ -142,6 +168,7 @@ endif()
 
 set(Z_LIB_SOURCES
   external/sshash/external/gz/zip_stream.cpp
+  external/sshash/external/cityhash/cityhash.cpp
 )
 
 set(SSHASH_SOURCES
@@ -176,8 +203,12 @@ target_include_directories(build_static PRIVATE  ${ZLIB_INCLUDE_DIRS} ${CMAKE_CU
 #target_include_directories(bench PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/include ${LIBRADICL_INCLUDE})
 
 add_executable(check src/check.cpp src/FastxParser.cpp)
-target_link_libraries(check ${CLOUDFLARE_ZLIB} sshash_static Threads::Threads)
+target_link_libraries(check zlibng sshash_static Threads::Threads)
 target_include_directories(check PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/include ${ZLIB_INCLUDE_DIRS} ${LIBRADICL_INCLUDE})
+
+add_executable(streaming_lookup_bench src/streaming_lookup_bench.cpp src/FastxParser.cpp)
+target_link_libraries(streaming_lookup_bench zlibng sshash_static Threads::Threads)
+target_include_directories(streaming_lookup_bench PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/include ${ZLIB_INCLUDE_DIRS} ${LIBRADICL_INCLUDE})
 
 #add_executable(query src/query.cpp ${SSHASH_SOURCES} ${Z_LIB_SOURCES})
 #target_link_libraries(query z Threads::Threads)
@@ -189,15 +220,15 @@ target_include_directories(check PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/include ${Z
 
 add_executable(pesc-sc src/pesc_sc_runner.cpp) 
 target_include_directories(pesc-sc PUBLIC ${CMAKE_SOURCE_DIR}/include ${ZLIB_INCLUDE_DIRS} ${LIBRADICL_INCLUDE})
-target_link_libraries(pesc-sc pesc_static ${CLOUDFLARE_ZLIB} Threads::Threads sshash_static ${MALLOC_LIB})
+target_link_libraries(pesc-sc pesc_static zlibng Threads::Threads sshash_static ${MALLOC_LIB})
 
 add_executable(pesc-bulk src/pesc_bulk_runner.cpp) 
 target_include_directories(pesc-bulk PUBLIC ${CMAKE_SOURCE_DIR}/include ${ZLIB_INCLUDE_DIRS} ${LIBRADICL_INCLUDE})
-target_link_libraries(pesc-bulk pesc_static ${CLOUDFLARE_ZLIB} Threads::Threads sshash_static ${MALLOC_LIB})
+target_link_libraries(pesc-bulk pesc_static zlibng Threads::Threads sshash_static ${MALLOC_LIB})
 
 add_executable(pesc-sc-atac src/pesc_sc_atac_runner.cpp) 
 target_include_directories(pesc-sc-atac PUBLIC ${LIBRADICL_INCLUDE} ${CMAKE_SOURCE_DIR}/include ${ZLIB_INCLUDE_DIRS})
-target_link_libraries(pesc-sc-atac pesc_static radicl ${CLOUDFLARE_ZLIB} Threads::Threads sshash_static ${MALLOC_LIB})
+target_link_libraries(pesc-sc-atac pesc_static radicl zlibng Threads::Threads sshash_static ${MALLOC_LIB})
 #target_link_directories(pesc-sc-atac PUBLIC /fs/cbcb-lab/rob/students/noor/miniforge3/lib)
 add_dependencies(pesc-sc-atac radicl)
 
@@ -213,19 +244,19 @@ add_dependencies(pesc-sc-atac radicl)
 
 add_executable(build src/build_runner.cpp) 
 target_include_directories(build PUBLIC ${CMAKE_SOURCE_DIR}/include ${ZLIB_INCLUDE_DIRS} ${LIBRADICL_INCLUDE})
-target_link_libraries(build Threads::Threads build_static sshash_static ${CLOUDFLARE_ZLIB} ${MALLOC_LIB}) 
+target_link_libraries(build Threads::Threads build_static sshash_static zlibng ${MALLOC_LIB}) 
 
 add_executable(evaluator src/index_evaluator.cpp) 
 target_include_directories(evaluator PUBLIC ${CMAKE_SOURCE_DIR}/include ${ZLIB_INCLUDE_DIRS} ${LIBRADICL_INCLUDE})
-target_link_libraries(evaluator ${CLOUDFLARE_ZLIB} Threads::Threads sshash_static) 
+target_link_libraries(evaluator zlibng Threads::Threads sshash_static) 
 
 add_executable(build-poison-table src/poison_table_build_runner.cpp) 
 target_include_directories(build-poison-table PUBLIC ${CMAKE_SOURCE_DIR}/include ${ZLIB_INCLUDE_DIRS})
-target_link_libraries(build-poison-table Threads::Threads build_static pesc_static sshash_static ${CLOUDFLARE_ZLIB} ${MALLOC_LIB})
+target_link_libraries(build-poison-table Threads::Threads build_static pesc_static sshash_static zlibng ${MALLOC_LIB})
 
 add_executable(poison_filter src/poison_read_filter.cpp) 
 target_include_directories(poison_filter PUBLIC ${CMAKE_SOURCE_DIR}/include ${ZLIB_INCLUDE_DIRS})
-target_link_libraries(poison_filter Threads::Threads pesc_static sshash_static ${CLOUDFLARE_ZLIB}) 
+target_link_libraries(poison_filter Threads::Threads pesc_static sshash_static zlibng) 
 
 ## tests
 add_subdirectory(external/doctest)
@@ -238,14 +269,14 @@ target_link_libraries(tests PRIVATE doctest pesc_static)
 
 
 ## depend on the cloudflare zlib library
-add_dependencies(check zlib-cloudflare)
-add_dependencies(evaluator zlib-cloudflare)
-add_dependencies(build zlib-cloudflare)
-add_dependencies(pesc-sc zlib-cloudflare)
-add_dependencies(pesc-sc-atac zlib-cloudflare)
-add_dependencies(pesc-bulk zlib-cloudflare)
-add_dependencies(build-poison-table zlib-cloudflare)
-add_dependencies(poison_filter zlib-cloudflare)
+add_dependencies(check zlibng)
+add_dependencies(evaluator zlibng)
+add_dependencies(build zlibng)
+add_dependencies(pesc-sc zlibng)
+add_dependencies(pesc-sc-atac zlibng)
+add_dependencies(pesc-bulk zlibng)
+add_dependencies(build-poison-table zlibng)
+add_dependencies(poison_filter zlibng)
 
 
 #add_executable(test_parse src/test_parse_geo.cpp)
@@ -263,14 +294,21 @@ install(TARGETS pesc_static build_static sshash_static
   CONFIGURATIONS Debug 
   RUNTIME DESTINATION Debug/lib)
 
-install(FILES ${CLOUDFLARE_ZLIB}
-  CONFIGURATIONS Debug
-  RUNTIME DESTINATION Debug/lib)
+install(FILES ${INSTALL_DIR}/${ZLIB_NG_LIBDIR}/${CMAKE_STATIC_LIBRARY_PREFIX}z-ng${CMAKE_STATIC_LIBRARY_SUFFIX}
+    CONFIGURATIONS Debug
+    RUNTIME DESTINATION Debug/lib
+)
 
 install(TARGETS pesc_static build_static sshash_static
   CONFIGURATIONS Release
   RUNTIME DESTINATION Release/lib)
 
-install(FILES ${CLOUDFLARE_ZLIB}
-  CONFIGURATIONS Release
-  RUNTIME DESTINATION Release/lib)
+install(FILES ${INSTALL_DIR}/${ZLIB_NG_LIBDIR}/${CMAKE_STATIC_LIBRARY_PREFIX}z-ng${CMAKE_STATIC_LIBRARY_SUFFIX}
+    CONFIGURATIONS Release
+    RUNTIME DESTINATION Release/lib
+)
+
+install(FILES ${INSTALL_DIR}/${ZLIB_NG_LIBDIR}/${CMAKE_STATIC_LIBRARY_PREFIX}z-ng${CMAKE_STATIC_LIBRARY_SUFFIX}
+    DESTINATION lib
+    COMPONENT libraries
+)

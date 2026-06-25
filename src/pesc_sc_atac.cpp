@@ -3,12 +3,14 @@
 #include "../include/CanonicalKmerIterator.hpp"
 #include "../include/FastxParser.hpp"
 #include "../include/Kmer.hpp"
+#include "../include/boost/unordered/concurrent_flat_map.hpp"
 #include "../include/cli11/CLI11.hpp"
 #include "../include/ghc/filesystem.hpp"
 #include "../include/mapping/utils.hpp"
 #include "../include/mapping/utils_bin.hpp"
 #include "../include/meta_info.hpp"
 #include "../include/parallel_hashmap/phmap.h"
+#include "../include/unordered_dense.h"
 #include "../include/projected_hits.hpp"
 #include "../include/rad/rad_header.hpp"
 #include "../include/rad/rad_writer.hpp"
@@ -19,7 +21,6 @@
 #include "../include/spdlog_piscem/spdlog.h"
 #include "../include/streaming_query.hpp"
 #include "../include/util_piscem.hpp"
-#include "../include/boost/unordered/concurrent_flat_map.hpp"
 #include "check_overlap.cpp"
 // #include "FastxParser.cpp"
 // #include "hit_searcher.cpp"
@@ -70,7 +71,7 @@ struct pesc_atac_options {
 
 template <typename mapping_cache_info_t>
 bool map_fragment(
-  fastx_parser::ReadTrip &record, poison_state_t &poison_state,
+  fastx_parser::ReadTriple &record, poison_state_t &poison_state,
   mapping_cache_info_t &map_cache_left, mapping_cache_info_t &map_cache_right,
   mapping_cache_info_t &map_cache_out, std::atomic<uint64_t> &k_match,
   std::atomic<uint64_t> &l_match, std::atomic<uint64_t> &r_match,
@@ -86,7 +87,7 @@ bool map_fragment(
 
   check_overlap::MateOverlap mate_ov;
   check_overlap::findOverlapBetweenPairedEndReads(
-    record.first.seq, record.second.seq, mate_ov, 30, 0);
+    record.first().seq, record.second().seq, mate_ov, 30, 0);
   if (mate_ov.frag != "") {
     bool exit = mapping::util::map_read(&mate_ov.frag, map_cache_out,
                                         poison_state, binning, km, use_chr);
@@ -106,12 +107,12 @@ bool map_fragment(
                                  : mapping::util::MappingType::UNMAPPED;
       for (auto &hit : map_cache_out.accepted_hits) {
         hit.fragment_length = mate_ov.frag_length;
-        int32_t r2_len = record.first.seq.length() <= record.second.seq.length()
-                           ? record.second.seq.length()
-                           : record.first.seq.length();
-        int32_t r1_len = record.first.seq.length() <= record.second.seq.length()
-                           ? record.first.seq.length()
-                           : record.second.seq.length();
+        int32_t r2_len = record.first().seq.length() <= record.second().seq.length()
+                           ? record.second().seq.length()
+                           : record.first().seq.length();
+        int32_t r1_len = record.first().seq.length() <= record.second().seq.length()
+                           ? record.first().seq.length()
+                           : record.second().seq.length();
         const int32_t ref_len =
           static_cast<int32_t>(map_cache_out.hs.get_index()->ref_len(hit.tid));
         hit.mate_pos = hit.is_fw ? hit.pos + hit.fragment_length - r2_len - 1
@@ -138,13 +139,13 @@ bool map_fragment(
   }
 
   bool early_exit_left = mapping::util::map_read(
-    &record.first.seq, map_cache_left, poison_state, binning, km, use_chr);
+    &record.first().seq, map_cache_left, poison_state, binning, km, use_chr);
   // bool l_map=false,r_map=false;
   // if (map_cache_left.accepted_hits.size() > 0 &&
   // map_cache_left.accepted_hits.size() < 5) {
   //     l_map=true;
   // }
-  // std::cout << "record is " << record.first.name << std::endl;
+  // std::cout << "record is " << record.first().name << std::endl;
   // std::cout << " left\n";
   // mapping::util::print_hits(map_cache_left.accepted_hits);
 
@@ -154,7 +155,7 @@ bool map_fragment(
   bool right_km = false;
   poison_state.set_fragment_end(mapping::util::fragment_end::RIGHT);
   bool early_exit_right =
-    mapping::util::map_read(&record.second.seq, map_cache_right, poison_state,
+    mapping::util::map_read(&record.second().seq, map_cache_right, poison_state,
                             binning, right_km, use_chr);
   // if (map_cache_right.accepted_hits.size() > 0 &&
   // map_cache_right.accepted_hits.size() < 5) {
@@ -177,8 +178,8 @@ bool map_fragment(
     ++k_match;
   }
 
-  int32_t left_len = static_cast<int32_t>(record.first.seq.length());
-  int32_t right_len = static_cast<int32_t>(record.second.seq.length());
+  int32_t left_len = static_cast<int32_t>(record.first().seq.length());
+  int32_t right_len = static_cast<int32_t>(record.second().seq.length());
 
   l_match += map_cache_left.accepted_hits.empty() ? 0 : 1;
   r_match += map_cache_right.accepted_hits.empty() ? 0 : 1;
@@ -186,7 +187,7 @@ bool map_fragment(
                                        left_len, right_len, check_kmers_orphans,
                                        map_cache_out);
   // if (l_map && r_map && map_cache_out.accepted_hits.empty()) {
-  //     std::cout << record.first.name << std::endl;
+  //     std::cout << record.first().name << std::endl;
   //     std::cout << "merge not mapping\n";
   // }
 
@@ -207,8 +208,8 @@ bool map_fragment(
     for (auto &hit : map_cache_out.accepted_hits) {
       hit.fragment_length = map_cache_out.map_type ==
                                 mapping::util::MappingType::MAPPED_FIRST_ORPHAN
-                              ? record.first.seq.length()
-                              : record.second.seq.length();
+                              ? record.first().seq.length()
+                              : record.second().seq.length();
     }
   }
   return (early_exit_left or early_exit_right);
@@ -242,7 +243,7 @@ bool map_fragment(
   poison_state.set_fragment_end(mapping::util::fragment_end::LEFT);
 
   bool early_exit_left = mapping::util::map_read(
-    &record.first.seq, map_cache_out, poison_state, binning, km, use_chr);
+    &record.first().seq, map_cache_out, poison_state, binning, km, use_chr);
   if (poison_state.is_poisoned()) {
     return false;
   }
@@ -250,7 +251,7 @@ bool map_fragment(
     ++k_match;
   }
 
-  int32_t left_len = static_cast<int32_t>(record.first.seq.length());
+  int32_t left_len = static_cast<int32_t>(record.first().seq.length());
 
   if (!map_cache_out.accepted_hits.empty()) {
     uint32_t max_num_hits = map_cache_out.accepted_hits.front().num_hits;
@@ -264,7 +265,7 @@ bool map_fragment(
     for (auto &hit : map_cache_out.accepted_hits) {
       hit.fragment_length = left_len;
     }
-    map_cache_out.frag_seq = record.first.seq;
+    map_cache_out.frag_seq = record.first().seq;
   }
   return early_exit_left;
 }
@@ -309,7 +310,7 @@ public:
 template <typename mapping_cache_info_t>
 inline void
 write_sam_mappings(mapping_cache_info_t &map_cache_out, bc_kmer_t &bck,
-                   phmap::flat_hash_map<uint64_t, uint32_t> &unmapped_bc_map,
+                   ankerl::unordered_dense::map<uint64_t, uint32_t> &unmapped_bc_map,
                    fastx_parser::ReadPair &record, std::string &workstr_left,
                    std::atomic<uint64_t> &global_nhits,
                    std::ostringstream &osstream) {
@@ -331,28 +332,28 @@ write_sam_mappings(mapping_cache_info_t &map_cache_out, bc_kmer_t &bck,
 
       std::string *sptr = nullptr;
       if (is_rc) {
-        combinelib::kmers::reverseComplement(record.first.seq, workstr_left);
+        combinelib::kmers::reverseComplement(record.first().seq, workstr_left);
         sptr = &workstr_left;
       } else {
-        sptr = &record.first.seq;
+        sptr = &record.first().seq;
       }
-      osstream << record.first.name << "\t" << flag << "\t"
+      osstream << record.first().name << "\t" << flag << "\t"
                << map_cache_out.hs.get_index()->ref_name(ah.tid) << "\t"
-               << ah.pos + 1 << "\t255\t*\t*\t0\t" << record.first.seq.length()
+               << ah.pos + 1 << "\t255\t*\t*\t0\t" << record.first().seq.length()
                << "\t" << *sptr << "\t*\n";
       secondary = true;
     }
   } else {
-    osstream << record.first.name << "\t" << 4 << "\t"
-             << "*\t0\t0\t*\t*\t0\t0\t" << record.first.seq << "\t*\n";
+    osstream << record.first().name << "\t" << 4 << "\t"
+             << "*\t0\t0\t*\t*\t0\t0\t" << record.first().seq << "\t*\n";
   }
 }
 
 template <typename mapping_cache_info_t>
 inline void
 write_sam_mappings(mapping_cache_info_t &map_cache_out, bc_kmer_t &bck,
-                   phmap::flat_hash_map<uint64_t, uint32_t> &unmapped_bc_map,
-                   fastx_parser::ReadTrip &record, std::string &workstr_left,
+                   ankerl::unordered_dense::map<uint64_t, uint32_t> &unmapped_bc_map,
+                   fastx_parser::ReadTriple &record, std::string &workstr_left,
                    std::string &workstr_right,
                    std::atomic<uint64_t> &global_nhits,
                    std::ostringstream &osstream) {
@@ -384,20 +385,20 @@ write_sam_mappings(mapping_cache_info_t &map_cache_out, bc_kmer_t &bck,
 
         std::string *sptr = nullptr;
         if (is_rc) {
-          combinelib::kmers::reverseComplement(record.first.seq, workstr_left);
+          combinelib::kmers::reverseComplement(record.first().seq, workstr_left);
           sptr = &workstr_left;
         } else {
-          sptr = &record.first.seq;
+          sptr = &record.first().seq;
         }
-        osstream << record.first.name << "\t" << flag << "\t"
+        osstream << record.first().name << "\t" << flag << "\t"
                  << map_cache_out.hs.get_index()->ref_name(ah.tid) << "\t"
                  << ah.pos + 1 << "\t255\t*\t*\t0\t"
-                 << record.first.seq.length() << "\t" << *sptr << "\t*\n";
+                 << record.first().seq.length() << "\t" << *sptr << "\t*\n";
         secondary = true;
       }
     } else {
-      osstream << record.first.name << "\t" << 4 << "\t"
-               << "*\t0\t0\t*\t*\t0\t0\t" << record.first.seq << "\t*\n";
+      osstream << record.first().name << "\t" << 4 << "\t"
+               << "*\t0\t0\t*\t*\t0\t0\t" << record.first().seq << "\t*\n";
     }
     return;
   }
@@ -445,7 +446,7 @@ write_sam_mappings(mapping_cache_info_t &map_cache_out, bc_kmer_t &bck,
         if (ah.is_fw) {
           flag_first += mate_rc;
           sptr_first =
-            mated_before_mapping ? &map_cache_out.frag_seq : &record.first.seq;
+            mated_before_mapping ? &map_cache_out.frag_seq : &record.first().seq;
 
           flag_second += is_rc;
           if (!have_rc_second) {
@@ -454,7 +455,7 @@ write_sam_mappings(mapping_cache_info_t &map_cache_out, bc_kmer_t &bck,
               combinelib::kmers::reverseComplement(map_cache_out.frag_seq,
                                                    workstr_right);
             } else {
-              combinelib::kmers::reverseComplement(record.second.seq,
+              combinelib::kmers::reverseComplement(record.second().seq,
                                                    workstr_right);
             }
           }
@@ -468,7 +469,7 @@ write_sam_mappings(mapping_cache_info_t &map_cache_out, bc_kmer_t &bck,
               combinelib::kmers::reverseComplement(map_cache_out.frag_seq,
                                                    workstr_left);
             } else {
-              combinelib::kmers::reverseComplement(record.first.seq,
+              combinelib::kmers::reverseComplement(record.first().seq,
                                                    workstr_left);
             }
           }
@@ -476,20 +477,20 @@ write_sam_mappings(mapping_cache_info_t &map_cache_out, bc_kmer_t &bck,
 
           flag_second += mate_rc;
           sptr_second =
-            mated_before_mapping ? &map_cache_out.frag_seq : &record.second.seq;
+            mated_before_mapping ? &map_cache_out.frag_seq : &record.second().seq;
         }
       } else if (map_type == mapping::util::MappingType::MAPPED_FIRST_ORPHAN) {
         pos_first = ah.pos + 1;
         pos_second = 0;
 
-        sptr_first = &record.first.seq;
-        sptr_second = &record.second.seq;
+        sptr_first = &record.first().seq;
+        sptr_second = &record.second().seq;
 
         if (!ah.is_fw) { // if the mapped read is rc
           flag_first += is_rc;
           if (!have_rc_first) {
             have_rc_first = true;
-            combinelib::kmers::reverseComplement(record.first.seq,
+            combinelib::kmers::reverseComplement(record.first().seq,
                                                  workstr_left);
           }
           sptr_first = &workstr_left;
@@ -501,14 +502,14 @@ write_sam_mappings(mapping_cache_info_t &map_cache_out, bc_kmer_t &bck,
         pos_first = 0;
         pos_second = ah.pos + 1;
 
-        sptr_first = &record.first.seq;
-        sptr_second = &record.second.seq;
+        sptr_first = &record.first().seq;
+        sptr_second = &record.second().seq;
         if (!ah.is_fw) {
           flag_first += mate_rc;
           flag_second += is_rc;
           if (!have_rc_second) {
             have_rc_second = true;
-            combinelib::kmers::reverseComplement(record.second.seq,
+            combinelib::kmers::reverseComplement(record.second().seq,
                                                  workstr_right);
           }
           sptr_second = &workstr_right;
@@ -551,21 +552,21 @@ write_sam_mappings(mapping_cache_info_t &map_cache_out, bc_kmer_t &bck,
       const auto ref_name = map_cache_out.hs.get_index()->ref_name(ah.tid);
       const int32_t ref_len =
         static_cast<int32_t>(map_cache_out.hs.get_index()->ref_len(ah.tid));
-      std::string r1name = record.first.name;
-      std::string r2name = record.second.name;
+      std::string r1name = record.first().name;
+      std::string r2name = record.second().name;
 
       if (mated_before_mapping && !map_cache_out.read1) {
-        r1name = record.second.name;
-        r2name = record.first.name;
+        r1name = record.second().name;
+        r2name = record.first().name;
       }
       //   std::string r1name = (mated_before_mapping && !map_cache_out.read1) ?
-      //   record.second.name :
+      //   record.second().name :
       int32_t r1len = mated_before_mapping ? map_cache_out.frag_seq.length()
-                                           : record.first.seq.length();
+                                           : record.first().seq.length();
       //   std::string r2name = (mated_before_mapping && map_cache_out.read1) ?
-      //   record.second.name : record.first.name;
+      //   record.second().name : record.first().name;
       int32_t r2len = mated_before_mapping ? map_cache_out.frag_seq.length()
-                                           : record.second.seq.length();
+                                           : record.second().seq.length();
       // if (tn5_shift) {
       //     if (pos_first <= pos_second) {
       //         pos_first += 4;
@@ -600,10 +601,10 @@ write_sam_mappings(mapping_cache_info_t &map_cache_out, bc_kmer_t &bck,
       secondary = true;
     }
   } else {
-    osstream << record.first.name << "\t" << 77 << "\t"
-             << "*\t0\t0\t*\t*\t0\t0\t" << record.first.seq << "\t*\n";
-    osstream << record.second.name << "\t" << 141 << "\t"
-             << "*\t0\t0\t*\t*\t0\t0\t" << record.second.seq << "\t*\n";
+    osstream << record.first().name << "\t" << 77 << "\t"
+             << "*\t0\t0\t*\t*\t0\t0\t" << record.first().seq << "\t*\n";
+    osstream << record.second().name << "\t" << 141 << "\t"
+             << "*\t0\t0\t*\t*\t0\t0\t" << record.second().seq << "\t*\n";
   }
 }
 struct RadT {};
@@ -621,9 +622,8 @@ void do_map(mindex::reference_index &ri,
             std::atomic<uint64_t> &r_orphan, std::atomic<uint64_t> &l_orphan,
             std::atomic<uint64_t> &global_npoisoned, pesc_output_info &out_info,
             std::mutex &iomut, bool write_bed, bool check_kmers_orphans,
-            bool tn5_shift, bool use_chr, 
-            piscem::unitig_end_cache_t& unitig_end_cache,
-            RAD::RAD_Writer &rw,
+            bool tn5_shift, bool use_chr,
+            piscem::unitig_end_cache_t &unitig_end_cache, RAD::RAD_Writer &rw,
             RAD::Token token) {
 
   auto log_level = spdlog_piscem::get_level();
@@ -661,7 +661,7 @@ void do_map(mindex::reference_index &ri,
   }
 
   constexpr bool paired_end_frags =
-    std::is_same_v<fastx_parser::ReadTrip, FragT>;
+    std::is_same_v<fastx_parser::ReadTriple, FragT>;
   // the reads are paired
   if constexpr (paired_end_frags) {
     poison_state.paired_for_mapping = true;
@@ -674,9 +674,12 @@ void do_map(mindex::reference_index &ri,
   std::string workstr_right;
   std::ostringstream osstream;
 
-  mapping_cache_info<SketchHitT, piscem::streaming_query<true>> map_cache_left(ri, &unitig_end_cache);
-  mapping_cache_info<SketchHitT, piscem::streaming_query<true>> map_cache_right(ri, &unitig_end_cache);
-  mapping_cache_info<SketchHitT, piscem::streaming_query<true>> map_cache_out(ri, &unitig_end_cache);
+  mapping_cache_info<SketchHitT, piscem::streaming_query<true>> map_cache_left(
+    ri, &unitig_end_cache);
+  mapping_cache_info<SketchHitT, piscem::streaming_query<true>> map_cache_right(
+    ri, &unitig_end_cache);
+  mapping_cache_info<SketchHitT, piscem::streaming_query<true>> map_cache_out(
+    ri, &unitig_end_cache);
 
   size_t max_chunk_reads = 5000;
 
@@ -692,7 +695,7 @@ void do_map(mindex::reference_index &ri,
   uint64_t read_num = 0;
   (void)read_num;
 
-  std::string temp_buff = "";
+  std::optional<std::string> temp_buff = write_bed ? std::make_optional<std::string>("") : std::nullopt;
   while (parser.refill(rg)) {
     for (auto &record : rg) {
       ++global_nr;
@@ -709,9 +712,9 @@ void do_map(mindex::reference_index &ri,
 
       std::string *bc{nullptr};
       if constexpr (paired_end_frags) {
-        bc = &record.third.seq;
+        bc = &record.third().seq;
       } else {
-        bc = &record.second.seq;
+        bc = &record.second().seq;
       }
       bc_kmer_t bc_kmer;
 
@@ -755,7 +758,7 @@ void do_map(mindex::reference_index &ri,
       if constexpr (std::is_same_v<OutputT, SamT>) {
         ++processed;
         // mapping::util::print_hits(map_cache_out.accepted_hits);
-        if constexpr (std::is_same_v<fastx_parser::ReadTrip, FragT>) {
+        if constexpr (std::is_same_v<fastx_parser::ReadTriple, FragT>) {
           write_sam_mappings(
             map_cache_out, bc_kmer, map_cache_out.unmapped_bc_map, record,
             workstr_left, workstr_right, global_nhits, osstream);
@@ -780,11 +783,11 @@ void do_map(mindex::reference_index &ri,
       if (num_reads_in_chunk > max_chunk_reads) {
         if (write_bed) {
           out_info.bed_mutex.lock();
-          out_info.bed_file << temp_buff;
+          out_info.bed_file << *temp_buff;
           out_info.bed_mutex.unlock();
+          *temp_buff = "";
         }
         out_info.num_chunks++;
-        temp_buff = "";
         num_reads_in_chunk = 0;
       }
     }
@@ -793,11 +796,11 @@ void do_map(mindex::reference_index &ri,
   if (num_reads_in_chunk > 0) {
     if (write_bed) {
       out_info.bed_mutex.lock();
-      out_info.bed_file << temp_buff;
+      out_info.bed_file << *temp_buff;
       out_info.bed_mutex.unlock();
+      *temp_buff = "";
     }
     out_info.num_chunks++;
-    temp_buff = "";
     num_reads_in_chunk = 0;
   }
 
@@ -917,7 +920,10 @@ int run_pesc_sc_atac(int argc, char **argv) {
     ->default_val("permissive");
   app.add_flag("--quiet", po.quiet,
                "Try to be quiet in terms of console output");
-  app.add_option("--end-cache-capacity", po.end_cache_capacity, "maximum capcity of the unitig end cache")->default_val(5000000);
+  app
+    .add_option("--end-cache-capacity", po.end_cache_capacity,
+                "maximum capcity of the unitig end cache")
+    ->default_val(5000000);
   app.add_option("--thr", po.thr, "threshold for psa")->default_val(0.7);
   app.add_option("--bclen", po.blen, "length for barcode")->default_val(16);
   app.add_option("--bin-size", po.bin_size, "size for binning")
@@ -1020,6 +1026,7 @@ int run_pesc_sc_atac(int argc, char **argv) {
   RAD::Tag_Defn tag_defn;
   RAD::Tag_List file_tag_vals;
   file_tag_vals.add(RAD::Type::u16(po.blen));
+  file_tag_vals.add(RAD::Type::str("sc_atac"));
   std::vector<uint64_t> len;
   len.reserve(ri.num_refs());
   for (decltype(ri.num_refs()) i = 0; i < ri.num_refs(); i++) {
@@ -1071,11 +1078,18 @@ int run_pesc_sc_atac(int argc, char **argv) {
   std::mutex iomut;
 
   if (paired_end) {
-    using FragmentT = fastx_parser::ReadTrip;
-    
+    using FragmentT = fastx_parser::ReadTriple;
+
     auto num_input_files = po.left_read_filenames.size();
     size_t additional_files = (num_input_files > 1) ? (num_input_files - 1) : 0;
+    fastx_parser::ParserConfig pc;
+    pc.chunkSize = 256;
 
+    constexpr bool enable_within_set_parallelism = false;
+    if (enable_within_set_parallelism && additional_files == 0 && po.nthread > 3) {
+      pc.parallelParsing = true;
+      nthread -= 1;
+    } else {
     // start with 1 parsing thread, and one more for every
     // 6 threads, as long as there are additional input files
     // to parse.
@@ -1089,55 +1103,61 @@ int run_pesc_sc_atac(int argc, char **argv) {
         break;
       }
     }
+    }
 
-    fastx_parser::FastxParser<fastx_parser::ReadTrip> rparser(
-      po.left_read_filenames, po.right_read_filenames, po.barcode_filenames,
-      nthread, np);
+    pc.numConsumers = nthread;
+    pc.numParsers = np;
+
+    fastx_parser::FastxParser<fastx_parser::ReadTriple> rparser(pc,
+      po.left_read_filenames, po.right_read_filenames, po.barcode_filenames);
 
     rparser.start();
     piscem::unitig_end_cache_t unitig_end_cache(po.end_cache_capacity);
     std::vector<std::thread> workers;
     for (size_t i = 0; i < nthread; ++i) {
-      workers.push_back(std::thread([&ri, &po, &rparser, &binning, &ptab,
-                                     &global_nr, &global_nh, &global_nmult,
-                                     &k_match, &global_np, &out_info, &iomut,
-                                     &rw, &l_match, &r_match, &dove_match,
-                                     &dove_num, &ov_num, &ov_match, &r_orphan,
-                                     &l_orphan, &unitig_end_cache]() {
-        const auto token = rw.get_token();
-        if (!po.enable_structural_constraints) {
-          using SketchHitT =
-            mapping::util::sketch_hit_info_no_struct_constraint;
-          if (po.use_sam_format) {
-            do_map<FragmentT, SketchHitT, SamT>(
-              ri, rparser, binning, ptab, global_nr, global_nh, global_nmult,
-              k_match, l_match, r_match, dove_num, dove_match, ov_num, ov_match,
-              r_orphan, l_orphan, global_np, out_info, iomut, po.use_bed_format,
-              po.check_kmers_orphans, po.tn5_shift, po.use_chr, unitig_end_cache, rw, token);
+      workers.push_back(std::thread(
+        [&ri, &po, &rparser, &binning, &ptab, &global_nr, &global_nh,
+         &global_nmult, &k_match, &global_np, &out_info, &iomut, &rw, &l_match,
+         &r_match, &dove_match, &dove_num, &ov_num, &ov_match, &r_orphan,
+         &l_orphan, &unitig_end_cache]() {
+          const auto token = rw.get_token();
+          if (!po.enable_structural_constraints) {
+            using SketchHitT =
+              mapping::util::sketch_hit_info_no_struct_constraint;
+            if (po.use_sam_format) {
+              do_map<FragmentT, SketchHitT, SamT>(
+                ri, rparser, binning, ptab, global_nr, global_nh, global_nmult,
+                k_match, l_match, r_match, dove_num, dove_match, ov_num,
+                ov_match, r_orphan, l_orphan, global_np, out_info, iomut,
+                po.use_bed_format, po.check_kmers_orphans, po.tn5_shift,
+                po.use_chr, unitig_end_cache, rw, token);
+            } else {
+              do_map<FragmentT, SketchHitT, RadT>(
+                ri, rparser, binning, ptab, global_nr, global_nh, global_nmult,
+                k_match, l_match, r_match, dove_num, dove_match, ov_num,
+                ov_match, r_orphan, l_orphan, global_np, out_info, iomut,
+                po.use_bed_format, po.check_kmers_orphans, po.tn5_shift,
+                po.use_chr, unitig_end_cache, rw, token);
+            }
           } else {
-            do_map<FragmentT, SketchHitT, RadT>(
-              ri, rparser, binning, ptab, global_nr, global_nh, global_nmult,
-              k_match, l_match, r_match, dove_num, dove_match, ov_num, ov_match,
-              r_orphan, l_orphan, global_np, out_info, iomut, po.use_bed_format,
-              po.check_kmers_orphans, po.tn5_shift, po.use_chr, unitig_end_cache, rw, token);
+            using SketchHitT = mapping::util::sketch_hit_info;
+            if (po.use_sam_format) {
+              do_map<FragmentT, SketchHitT, SamT>(
+                ri, rparser, binning, ptab, global_nr, global_nh, global_nmult,
+                k_match, l_match, r_match, dove_num, dove_match, ov_num,
+                ov_match, r_orphan, l_orphan, global_np, out_info, iomut,
+                po.use_bed_format, po.check_kmers_orphans, po.tn5_shift,
+                po.use_chr, unitig_end_cache, rw, token);
+            } else {
+              do_map<FragmentT, SketchHitT, RadT>(
+                ri, rparser, binning, ptab, global_nr, global_nh, global_nmult,
+                k_match, l_match, r_match, dove_num, dove_match, ov_num,
+                ov_match, r_orphan, l_orphan, global_np, out_info, iomut,
+                po.use_bed_format, po.check_kmers_orphans, po.tn5_shift,
+                po.use_chr, unitig_end_cache, rw, token);
+            }
           }
-        } else {
-          using SketchHitT = mapping::util::sketch_hit_info;
-          if (po.use_sam_format) {
-            do_map<FragmentT, SketchHitT, SamT>(
-              ri, rparser, binning, ptab, global_nr, global_nh, global_nmult,
-              k_match, l_match, r_match, dove_num, dove_match, ov_num, ov_match,
-              r_orphan, l_orphan, global_np, out_info, iomut, po.use_bed_format,
-              po.check_kmers_orphans, po.tn5_shift, po.use_chr, unitig_end_cache, rw, token);
-          } else {
-            do_map<FragmentT, SketchHitT, RadT>(
-              ri, rparser, binning, ptab, global_nr, global_nh, global_nmult,
-              k_match, l_match, r_match, dove_num, dove_match, ov_num, ov_match,
-              r_orphan, l_orphan, global_np, out_info, iomut, po.use_bed_format,
-              po.check_kmers_orphans, po.tn5_shift, po.use_chr, unitig_end_cache, rw, token);
-          }
-        }
-      }));
+        }));
     }
 
     for (auto &w : workers) {
@@ -1146,71 +1166,84 @@ int run_pesc_sc_atac(int argc, char **argv) {
     rparser.stop();
   } else {
     using FragmentT = fastx_parser::ReadPair;
- 
+
     auto num_input_files = po.single_read_filenames.size();
     size_t additional_files = (num_input_files > 1) ? (num_input_files - 1) : 0;
+    fastx_parser::ParserConfig pc;
+    pc.chunkSize = 256;
 
-    // start with 1 parsing thread, and one more for every
-    // 6 threads, as long as there are additional input files
-    // to parse.
-    size_t remaining_threads = nthread;
-    for (size_t i = 0; i < additional_files; ++i) {
-      if (remaining_threads >= 6) {
-        np += 1;
-        nthread -= 1;
-        remaining_threads -= 6;
-      } else {
-        break;
+    constexpr bool enable_within_set_parallelism = false;
+    if (enable_within_set_parallelism && additional_files == 0 && po.nthread > 3) {
+      nthread -= 1;
+      pc.parallelParsing = true;
+    } else {
+      // start with 1 parsing thread, and one more for every
+      // 6 threads, as long as there are additional input files
+      // to parse.
+      size_t remaining_threads = nthread;
+      for (size_t i = 0; i < additional_files; ++i) {
+        if (remaining_threads >= 6) {
+          np += 1;
+          nthread -= 1;
+          remaining_threads -= 6;
+        } else {
+          break;
+        }
       }
     }
 
-    fastx_parser::FastxParser<fastx_parser::ReadPair> rparser(
-      po.single_read_filenames, po.barcode_filenames, nthread, np);
+    pc.numConsumers = nthread;
+    pc.numParsers = np;
+
+    fastx_parser::FastxParser<fastx_parser::ReadPair> rparser(pc, po.single_read_filenames, po.barcode_filenames);
 
     rparser.start();
     piscem::unitig_end_cache_t unitig_end_cache(po.end_cache_capacity);
     std::vector<std::thread> workers;
     for (size_t i = 0; i < nthread; ++i) {
-      workers.push_back(std::thread([&ri, &po, &rparser, &binning, &ptab,
-                                     &global_nr, &global_nh, &global_nmult,
-                                     &k_match, &global_np, &out_info, &iomut,
-                                     &rw, &l_match, &r_match, &dove_match,
-                                     &dove_num, &ov_num, &ov_match, &r_orphan,
-                                     &l_orphan, &unitig_end_cache]() {
-        const auto token = rw.get_token();
-        if (!po.enable_structural_constraints) {
-          using SketchHitT =
-            mapping::util::sketch_hit_info_no_struct_constraint;
-          if (po.use_sam_format) {
-            do_map<FragmentT, SketchHitT, SamT>(
-              ri, rparser, binning, ptab, global_nr, global_nh, global_nmult,
-              k_match, l_match, r_match, dove_num, dove_match, ov_num, ov_match,
-              r_orphan, l_orphan, global_np, out_info, iomut, po.use_bed_format,
-              po.check_kmers_orphans, po.tn5_shift, po.use_chr, unitig_end_cache, rw, token);
+      workers.push_back(std::thread(
+        [&ri, &po, &rparser, &binning, &ptab, &global_nr, &global_nh,
+         &global_nmult, &k_match, &global_np, &out_info, &iomut, &rw, &l_match,
+         &r_match, &dove_match, &dove_num, &ov_num, &ov_match, &r_orphan,
+         &l_orphan, &unitig_end_cache]() {
+          const auto token = rw.get_token();
+          if (!po.enable_structural_constraints) {
+            using SketchHitT =
+              mapping::util::sketch_hit_info_no_struct_constraint;
+            if (po.use_sam_format) {
+              do_map<FragmentT, SketchHitT, SamT>(
+                ri, rparser, binning, ptab, global_nr, global_nh, global_nmult,
+                k_match, l_match, r_match, dove_num, dove_match, ov_num,
+                ov_match, r_orphan, l_orphan, global_np, out_info, iomut,
+                po.use_bed_format, po.check_kmers_orphans, po.tn5_shift,
+                po.use_chr, unitig_end_cache, rw, token);
+            } else {
+              do_map<FragmentT, SketchHitT, RadT>(
+                ri, rparser, binning, ptab, global_nr, global_nh, global_nmult,
+                k_match, l_match, r_match, dove_num, dove_match, ov_num,
+                ov_match, r_orphan, l_orphan, global_np, out_info, iomut,
+                po.use_bed_format, po.check_kmers_orphans, po.tn5_shift,
+                po.use_chr, unitig_end_cache, rw, token);
+            }
           } else {
-            do_map<FragmentT, SketchHitT, RadT>(
-              ri, rparser, binning, ptab, global_nr, global_nh, global_nmult,
-              k_match, l_match, r_match, dove_num, dove_match, ov_num, ov_match,
-              r_orphan, l_orphan, global_np, out_info, iomut, po.use_bed_format,
-              po.check_kmers_orphans, po.tn5_shift, po.use_chr, unitig_end_cache, rw, token);
+            using SketchHitT = mapping::util::sketch_hit_info;
+            if (po.use_sam_format) {
+              do_map<FragmentT, SketchHitT, SamT>(
+                ri, rparser, binning, ptab, global_nr, global_nh, global_nmult,
+                k_match, l_match, r_match, dove_num, dove_match, ov_num,
+                ov_match, r_orphan, l_orphan, global_np, out_info, iomut,
+                po.use_bed_format, po.check_kmers_orphans, po.tn5_shift,
+                po.use_chr, unitig_end_cache, rw, token);
+            } else {
+              do_map<FragmentT, SketchHitT, RadT>(
+                ri, rparser, binning, ptab, global_nr, global_nh, global_nmult,
+                k_match, l_match, r_match, dove_num, dove_match, ov_num,
+                ov_match, r_orphan, l_orphan, global_np, out_info, iomut,
+                po.use_bed_format, po.check_kmers_orphans, po.tn5_shift,
+                po.use_chr, unitig_end_cache, rw, token);
+            }
           }
-        } else {
-          using SketchHitT = mapping::util::sketch_hit_info;
-          if (po.use_sam_format) {
-            do_map<FragmentT, SketchHitT, SamT>(
-              ri, rparser, binning, ptab, global_nr, global_nh, global_nmult,
-              k_match, l_match, r_match, dove_num, dove_match, ov_num, ov_match,
-              r_orphan, l_orphan, global_np, out_info, iomut, po.use_bed_format,
-              po.check_kmers_orphans, po.tn5_shift, po.use_chr, unitig_end_cache, rw, token);
-          } else {
-            do_map<FragmentT, SketchHitT, RadT>(
-              ri, rparser, binning, ptab, global_nr, global_nh, global_nmult,
-              k_match, l_match, r_match, dove_num, dove_match, ov_num, ov_match,
-              r_orphan, l_orphan, global_np, out_info, iomut, po.use_bed_format,
-              po.check_kmers_orphans, po.tn5_shift, po.use_chr, unitig_end_cache, rw, token);
-          }
-        }
-      }));
+        }));
     }
 
     for (auto &w : workers) {

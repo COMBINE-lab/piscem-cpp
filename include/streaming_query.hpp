@@ -131,11 +131,11 @@ public:
         }
       }
 
-      if (!was_cached) { 
-        m_prev_res = m_d->lookup_advanced(kmer_s); 
+      if (!was_cached) {
+        m_prev_res = m_d->lookup(kmer_s);
       }
     } else {
-      m_prev_res = m_d->lookup_advanced(kmer_s); 
+      m_prev_res = m_d->lookup(kmer_s);
     }
 
     m_direction = (m_prev_res.kmer_orientation == sshash::constants::backward_orientation) ? -1 : 1;
@@ -173,8 +173,7 @@ public:
           //m_unitig_ends[kmer.getCanonicalWord()] = res_copy;
         }
       }
-      uint64_t kmer_offset =
-        2 * (m_prev_res.kmer_id + (m_prev_res.contig_id * (m_k - 1)));
+      uint64_t kmer_offset = 2 * m_prev_res.kmer_offset;
       kmer_offset += (m_direction > 0) ? 0 : (2 * m_k);
       m_ref_contig_it.at(kmer_offset);
       set_remaining_contig_bases();
@@ -185,12 +184,10 @@ public:
   }
 
   inline void set_remaining_contig_bases() {
-    // if moving forward, we have (contig-length - (pos + k)) positions left
-    // if moving backward, we have (pos) positions left.
     m_remaining_contig_bases =
       (m_direction == 1)
-        ? (m_prev_res.contig_size - (m_prev_res.kmer_id_in_contig + m_k))
-        : (m_prev_res.kmer_id_in_contig);
+        ? (m_prev_res.string_end - m_prev_res.string_begin - m_k) - m_prev_res.kmer_id_in_string
+        : m_prev_res.kmer_id_in_string;
   }
 
   inline sshash::lookup_result
@@ -264,7 +261,8 @@ public:
         m_start = false;
         m_prev_kmer_id = next_kmer_id;
         m_prev_res.kmer_id += (m_direction * query_advance);
-        m_prev_res.kmer_id_in_contig += (m_direction * query_advance);
+        m_prev_res.kmer_id_in_string += (m_direction * query_advance);
+        m_prev_res.kmer_offset += (m_direction * query_advance);
 
         // record the orientation of the previous match and look at the orientation
         // of the current match.
@@ -292,13 +290,13 @@ public:
     // if we found the query, and the contig id is different
     // from that of the last found contig, then we have to refresh the
     // contig spant.
-    if (m_is_present && (m_prev_res.contig_id != m_prev_contig_id)) {
-      auto start_pos = m_ctg_offsets.access(m_prev_res.contig_id);
-      auto end_pos = m_ctg_offsets.access(m_prev_res.contig_id + 1);
+    if (m_is_present && (m_prev_res.string_id != m_prev_contig_id)) {
+      auto start_pos = m_ctg_offsets.access(m_prev_res.string_id);
+      auto end_pos = m_ctg_offsets.access(m_prev_res.string_id + 1);
       size_t len = end_pos - start_pos;
       m_ctg_span = {m_ctg_entries.get_iterator_at(start_pos),
                     m_ctg_entries.get_iterator_at(start_pos + len), len};
-      m_prev_contig_id = m_prev_res.contig_id;
+      m_prev_contig_id = m_prev_res.string_id;
     }
     return m_prev_res;
   }

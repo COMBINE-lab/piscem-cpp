@@ -26,25 +26,28 @@ int run_build(int argc, char** argv);
 
 bool check_correctness_iterator(piscem::piscem_dictionary const& dict) {
     std::cout << "checking correctness of iterator..." << std::endl;
-    std::string expected_kmer(dict.k(), 0);
+    std::string expected_kmer_str(dict.k(), 0);
     constexpr uint64_t runs = 3;
-    essentials::uniform_int_rng<uint64_t> distr(0, dict.size() - 1, essentials::get_random_seed());
+    essentials::uniform_int_rng<uint64_t> distr(0, dict.num_kmers() - 1, essentials::get_random_seed());
     for (uint64_t run = 0; run != runs; ++run) {
         uint64_t from_kmer_id = distr.gen();
         auto it = dict.at_kmer_id(from_kmer_id);
         while (it.has_next()) {
             auto [kmer_id, kmer] = it.next();
-            dict.access(kmer_id, expected_kmer.data());
+            dict.access(kmer_id, expected_kmer_str.data());
+            auto expected_kmer = sshash::util::string_to_uint_kmer<piscem::piscem_kmer_t>(
+                expected_kmer_str.data(), dict.k());
             if (kmer != expected_kmer or kmer_id != from_kmer_id) {
-                std::cout << "got (" << kmer_id << ",'" << kmer << "')";
+                std::cout << "got (" << kmer_id << ",'"
+                          << sshash::util::uint_kmer_to_string(kmer, dict.k()) << "')";
                 std::cout << " but ";
-                std::cout << "expected (" << from_kmer_id << ",'" << expected_kmer << "')"
+                std::cout << "expected (" << from_kmer_id << ",'" << expected_kmer_str << "')"
                           << std::endl;
                 return false;
             }
             ++from_kmer_id;
         }
-        assert(from_kmer_id == dict.size());
+        assert(from_kmer_id == dict.num_kmers());
     }
     std::cout << "EVERYTHING OK!" << std::endl;
     return true;
@@ -86,10 +89,6 @@ int run_build(int argc, char** argv) {
     app.add_flag("--quiet", quiet, "Only write errors or critical messages to the log");
     app.add_option("-s,--seed", build_config.seed, "Seed for construction")
         ->default_val(constants::seed);
-    app.add_option("-l,--load", build_config.l,
-                   "A (integer) constant that controls the space/time trade-off of the dictionary. "
-                   "A reasonable values lies in [2.." + std::to_string(constants::max_l)  + ")")
-        ->default_val(constants::min_l);
     app.add_option("--lambda", build_config.lambda,
                "A (floating point) constant that trades construction speed for space effectiveness "
                "of minimal perfect hashing. "
@@ -165,9 +164,10 @@ int run_build(int argc, char** argv) {
             check_correctness_iterator(dict);
         }
         if (bench) {
-            perf_test_lookup_access(dict);
-            if (dict.weighted()) perf_test_lookup_weight(dict);
-            perf_test_iterator(dict);
+            essentials::json_lines perf_stats;
+            perf_test_lookup_access(dict, perf_stats);
+            if (dict.weighted()) perf_test_lookup_weight(dict, perf_stats);
+            perf_test_iterator(dict, perf_stats);
         }
     }
     

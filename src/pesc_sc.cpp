@@ -5,6 +5,7 @@
 #include "../include/cli11/CLI11.hpp"
 #include "../include/defaults.hpp"
 #include "../include/ghc/filesystem.hpp"
+#include "../include/itlib/small_vector.hpp"
 #include "../include/mapping/utils.hpp"
 #include "../include/meta_info.hpp"
 #include "../include/parallel_hashmap/phmap.h"
@@ -21,9 +22,12 @@
 #include "../include/util_piscem.hpp"
 #include "zlib.h"
 
+#include <algorithm>
+#include <array>
 #include <atomic>
 #include <chrono>
 #include <cstdio>
+#include <functional>
 #include <iostream>
 #include <memory>
 #include <numeric>
@@ -31,6 +35,7 @@
 #include <sstream>
 #include <thread>
 #include <type_traits>
+#include <unordered_map>
 #include <vector>
 
 using namespace klibpp;
@@ -60,6 +65,7 @@ struct pesc_sc_options {
   std::string library_geometry;
   protocol_t pt{protocol_t::CUSTOM};
   std::unique_ptr<custom_protocol> p{nullptr};
+  bool with_position{false};
   bool no_poison{false};
   bool quiet{false};
   bool enable_structural_constraints{false};
@@ -96,6 +102,11 @@ public:
   // the mutex for safely writing to
   // unmapped_bc_file
   std::mutex unmapped_bc_mutex;
+
+  // Collect read lengths during processing, validate after all loops
+  std::mutex read_length_mutex;
+  std::vector<uint32_t> collected_read_lengths;
+  // std::atomic<bool> has_collected_3_read_lengths{false};
 };
 
 // single-end
@@ -240,21 +251,27 @@ void do_map(mindex::reference_index &ri,
   (void)num_short_umi;
   (void)num_ambig_umi;
 
-  mapping_cache_info<SketchHitT, piscem::streaming_query<false>> map_cache_left(ri);
+  constexpr size_t num_local_samples = 10;
+  itlib::small_vector<uint32_t, num_local_samples> local_read_lengths;
+
+  mapping_cache_info<SketchHitT, piscem::streaming_query<false>> map_cache_left(
+    ri);
   map_cache_left.max_ec_card = po.max_ec_card;
   map_cache_left.max_hit_occ = po.max_hit_occ;
   map_cache_left.max_hit_occ_recover = po.max_hit_occ_recover;
   map_cache_left.max_read_occ = po.max_read_occ;
   map_cache_left.attempt_occ_recover = po.attempt_occ_recover;
 
-  mapping_cache_info<SketchHitT, piscem::streaming_query<false>> map_cache_right(ri);
+  mapping_cache_info<SketchHitT, piscem::streaming_query<false>>
+    map_cache_right(ri);
   map_cache_right.max_ec_card = po.max_ec_card;
   map_cache_right.max_hit_occ = po.max_hit_occ;
   map_cache_right.max_hit_occ_recover = po.max_hit_occ_recover;
   map_cache_right.max_read_occ = po.max_read_occ;
   map_cache_right.attempt_occ_recover = po.attempt_occ_recover;
 
-  mapping_cache_info<SketchHitT, piscem::streaming_query<false>> map_cache_out(ri);
+  mapping_cache_info<SketchHitT, piscem::streaming_query<false>> map_cache_out(
+    ri);
   map_cache_out.max_ec_card = po.max_ec_card;
   map_cache_out.max_hit_occ = po.max_hit_occ;
   map_cache_out.max_hit_occ_recover = po.max_hit_occ_recover;
@@ -292,7 +309,7 @@ void do_map(mindex::reference_index &ri,
 
       // first extract the barcode
       std::string *bc =
-        protocol.extract_bc(record.first.seq, record.second.seq);
+        protocol.extract_bc(record.first().seq, record.second().seq);
       // if we couldn't get it, don't bother with
       // anything else for this read.
       if (bc == nullptr) {
@@ -314,7 +331,7 @@ void do_map(mindex::reference_index &ri,
       }
 
       std::string *umi =
-        protocol.extract_umi(record.first.seq, record.second.seq);
+        protocol.extract_umi(record.first().seq, record.second().seq);
       if (umi == nullptr) {
         num_short_umi++;
         continue;
@@ -330,7 +347,19 @@ void do_map(mindex::reference_index &ri,
 
       // alt_max_occ = 0;
       AlignableReadSeqs read_seqs = protocol.get_mappable_read_sequences(
-        record.first.seq, record.second.seq);
+        record.first().seq, record.second().seq);
+
+      // Collect read length (only if we haven't collected enough valid lengths
+      // yet)
+      if (po.with_position and local_read_lengths.size() < num_local_samples) {
+        std::string *alignable_seq = read_seqs.get_alignable_seq();
+        if (alignable_seq != nullptr) {
+          uint16_t read_length = static_cast<uint16_t>(alignable_seq->length());
+          if (read_length > 0) {
+            local_read_lengths.push_back(read_length);
+          }
+        }
+      }
 
       bool had_early_stop = false;
       // dispatch on the *compile-time determined* paired-endness of this
@@ -355,8 +384,9 @@ void do_map(mindex::reference_index &ri,
 
       global_nhits += map_cache_out.accepted_hits.empty() ? 0 : 1;
       rad::util::write_to_rad_stream(
-        bc_kmer, umi_kmer, map_cache_out.map_type, map_cache_out.accepted_hits,
-        map_cache_out.unmapped_bc_map, num_reads_in_chunk, rad_w);
+        bc_kmer, umi_kmer, po.with_position, map_cache_out.map_type,
+        map_cache_out.accepted_hits, map_cache_out.unmapped_bc_map,
+        num_reads_in_chunk, rad_w);
 
       // dump buffer
       if (num_reads_in_chunk > max_chunk_reads) {
@@ -388,6 +418,14 @@ void do_map(mindex::reference_index &ri,
     out_info.rad_mutex.unlock();
     rad_w.clear();
     num_reads_in_chunk = 0;
+  }
+
+  if (po.with_position) {
+    out_info.read_length_mutex.lock();
+    for (auto rl : local_read_lengths) {
+      out_info.collected_read_lengths.push_back(rl);
+    }
+    out_info.read_length_mutex.unlock();
   }
 
   // unmapped barcode writer
@@ -547,6 +585,9 @@ int run_pesc_sc(int argc, char **argv) {
       .add_option("-t,--threads", po.nthread,
                   "An integer that specifies the number of threads to use")
       ->default_val(16);
+    app.add_flag("--with-position", po.with_position,
+                 "Include information about the position information of each "
+                 "mapped read in the output RAD file");
     app.add_flag(
       "--no-poison", po.no_poison,
       "Do not filter reads for poison k-mers, even if a poison table "
@@ -693,13 +734,13 @@ int run_pesc_sc(int argc, char **argv) {
 
     size_t bc_length = bc_kmer_t::k();
     size_t umi_length = umi_kmer_t::k();
-    size_t chunk_offset =
-      rad::util::write_rad_header(ri, bc_length, umi_length, out_info.rad_file);
+    auto [chunk_offset, read_length_offset] = rad::util::write_rad_header(
+      ri, bc_length, umi_length, po.with_position, out_info.rad_file);
 
     std::mutex iomut;
 
     uint32_t np = 1;
-    
+
     auto num_input_files = po.left_read_filenames.size();
     size_t additional_files = (num_input_files > 1) ? (num_input_files - 1) : 0;
 
@@ -707,18 +748,29 @@ int run_pesc_sc(int argc, char **argv) {
     // 6 threads, as long as there are additional input files
     // to parse.
     size_t remaining_threads = po.nthread;
-    for (size_t i = 0; i < additional_files; ++i) {
-      if (remaining_threads >= 6) {
-        np += 1;
-        po.nthread -= 1;
-        remaining_threads -= 6;
-      } else {
-        break;
+    fastx_parser::ParserConfig pc;
+    pc.chunkSize = 256;
+
+    constexpr bool enable_within_set_parallelism = false;
+    if (enable_within_set_parallelism && additional_files == 0 && po.nthread > 3) {
+      //pc.chunkSize = 1'000;
+      pc.parallelParsing = true;
+      //po.nthread -= 1;
+    } else {
+      for (size_t i = 0; i < additional_files; ++i) {
+        if (remaining_threads >= 6) {
+          np += 1;
+          po.nthread -= 1;
+          remaining_threads -= 6;
+        } else {
+          break;
+        }
       }
     }
 
-    fastx_parser::FastxParser<fastx_parser::ReadPair> rparser(
-      po.left_read_filenames, po.right_read_filenames, po.nthread, np);
+    pc.numConsumers = po.nthread;
+    pc.numParsers = np;
+    fastx_parser::FastxParser<fastx_parser::ReadPair> rparser(pc, po.left_read_filenames, po.right_read_filenames);
     rparser.start();
 
     // set the k-mer size for the
@@ -822,6 +874,54 @@ int run_pesc_sc(int argc, char **argv) {
     uint64_t nc = out_info.num_chunks.load();
     out_info.rad_file.write(reinterpret_cast<char *>(&nc), sizeof(nc));
 
+    if (po.with_position) {
+      uint32_t final_read_length = 0;
+      std::unordered_map<uint32_t, size_t> freq_map;
+      size_t tot = 0;
+      for (auto &l : out_info.collected_read_lengths) {
+        freq_map[l] += 1;
+        tot++;
+      }
+
+      uint32_t most_frequent_len = 0;
+      size_t frequency = 0;
+      for (auto &kv : freq_map) {
+        if (kv.second > frequency) {
+          frequency = kv.second;
+          most_frequent_len = kv.first;
+        }
+      }
+
+      double most_frequent_ratio =
+        (tot > 0) ? frequency / static_cast<double>(tot) : 0.0;
+
+      // Validate and update read_length in header (after all loops, before
+      // writing)
+      if (most_frequent_ratio >= 0.9) {
+        final_read_length = most_frequent_len;
+        spdlog_piscem::info("Found validated read length: {}",
+                            final_read_length);
+      } else {
+        std::stringstream sstr;
+        for (auto &v : out_info.collected_read_lengths) {
+          sstr << v << ", ";
+        }
+        std::string vec_str = sstr.str();
+        if (!vec_str.empty()) {
+          vec_str.pop_back();
+        }
+        if (!vec_str.empty()) {
+          vec_str.pop_back();
+        }
+        spdlog_piscem::warn("Collected read lengths are too variable: [{}]",
+                            vec_str);
+      }
+      if (final_read_length > 0) {
+        out_info.rad_file.seekp(*read_length_offset);
+        out_info.rad_file.write(reinterpret_cast<char *>(&final_read_length),
+                                sizeof(final_read_length));
+      }
+    }
     out_info.rad_file.close();
 
     // We want to check if the RAD file stream was written to

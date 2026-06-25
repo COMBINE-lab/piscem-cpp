@@ -93,7 +93,7 @@ bool map_fragment(fastx_parser::ReadSeq &record, poison_state_t &poison_state,
   (void)map_cache_left;
   (void)map_cache_right;
   poison_state.clear();
-  return mapping::util::map_read(&record.seq, map_cache_out, poison_state,
+  return mapping::util::map_read(&record.first().seq, map_cache_out, poison_state,
                                  skip_strat);
 }
 
@@ -114,20 +114,20 @@ bool map_fragment(fastx_parser::ReadPair &record, poison_state_t &poison_state,
   // don't map a poisoned read pair
   poison_state.set_fragment_end(mapping::util::fragment_end::LEFT);
   bool early_exit_left = mapping::util::map_read(
-    &record.first.seq, map_cache_left, poison_state, skip_strat);
+    &record.first().seq, map_cache_left, poison_state, skip_strat);
   if (poison_state.is_poisoned()) {
     return false;
   }
 
   poison_state.set_fragment_end(mapping::util::fragment_end::RIGHT);
   bool early_exit_right = mapping::util::map_read(
-    &record.second.seq, map_cache_right, poison_state, skip_strat);
+    &record.second().seq, map_cache_right, poison_state, skip_strat);
   if (poison_state.is_poisoned()) {
     return false;
   }
 
-  int32_t left_len = static_cast<int32_t>(record.first.seq.length());
-  int32_t right_len = static_cast<int32_t>(record.second.seq.length());
+  int32_t left_len = static_cast<int32_t>(record.first().seq.length());
+  int32_t right_len = static_cast<int32_t>(record.second().seq.length());
 
   /*
   for (auto& lh : map_cache_left.accepted_hits) {
@@ -176,20 +176,20 @@ inline void write_sam_mappings(mapping_cache_info_t &map_cache_out,
 
       std::string *sptr = nullptr;
       if (is_rc) {
-        combinelib::kmers::reverseComplement(record.seq, workstr_left);
+        combinelib::kmers::reverseComplement(record.first().seq, workstr_left);
         sptr = &workstr_left;
       } else {
-        sptr = &record.seq;
+        sptr = &record.first().seq;
       }
-      osstream << record.name << "\t" << flag << "\t"
+      osstream << record.first().name << "\t" << flag << "\t"
                << map_cache_out.hs.get_index()->ref_name(ah.tid) << "\t"
-               << ah.pos + 1 << "\t255\t*\t*\t0\t" << record.seq.length()
+               << ah.pos + 1 << "\t255\t*\t*\t0\t" << record.first().seq.length()
                << "\t" << *sptr << "\t*\n";
       secondary = true;
     }
   } else {
-    osstream << record.name << "\t" << 4 << "\t"
-             << "*\t0\t0\t*\t*\t0\t0\t" << record.seq << "\t*\n";
+    osstream << record.first().name << "\t" << 4 << "\t"
+             << "*\t0\t0\t*\t*\t0\t0\t" << record.first().seq << "\t*\n";
   }
 }
 
@@ -253,12 +253,12 @@ inline void write_sam_mappings(mapping_cache_info_t &map_cache_out,
 
         if (ah.is_fw) {
           flag_first += mate_rc;
-          sptr_first = &record.first.seq;
+          sptr_first = &record.first().seq;
 
           flag_second += is_rc;
           if (!have_rc_second) {
             have_rc_second = true;
-            combinelib::kmers::reverseComplement(record.second.seq,
+            combinelib::kmers::reverseComplement(record.second().seq,
                                                  workstr_right);
           }
           sptr_second = &workstr_right;
@@ -266,26 +266,26 @@ inline void write_sam_mappings(mapping_cache_info_t &map_cache_out,
           flag_first += is_rc;
           if (!have_rc_first) {
             have_rc_first = true;
-            combinelib::kmers::reverseComplement(record.first.seq,
+            combinelib::kmers::reverseComplement(record.first().seq,
                                                  workstr_left);
           }
           sptr_first = &workstr_left;
 
           flag_second += mate_rc;
-          sptr_second = &record.second.seq;
+          sptr_second = &record.second().seq;
         }
       } else if (map_type == mapping::util::MappingType::MAPPED_FIRST_ORPHAN) {
         pos_first = ah.pos;
         pos_second = 0;
 
-        sptr_first = &record.first.seq;
-        sptr_second = &record.second.seq;
+        sptr_first = &record.first().seq;
+        sptr_second = &record.second().seq;
 
         if (!ah.is_fw) { // if the mapped read is rc
           flag_first += is_rc;
           if (!have_rc_first) {
             have_rc_first = true;
-            combinelib::kmers::reverseComplement(record.first.seq,
+            combinelib::kmers::reverseComplement(record.first().seq,
                                                  workstr_left);
           }
           sptr_first = &workstr_left;
@@ -297,14 +297,14 @@ inline void write_sam_mappings(mapping_cache_info_t &map_cache_out,
         pos_first = 0;
         pos_second = ah.pos + 1;
 
-        sptr_first = &record.first.seq;
-        sptr_second = &record.second.seq;
+        sptr_first = &record.first().seq;
+        sptr_second = &record.second().seq;
         if (!ah.is_fw) {
           flag_first += mate_rc;
           flag_second += is_rc;
           if (!have_rc_second) {
             have_rc_second = true;
-            combinelib::kmers::reverseComplement(record.second.seq,
+            combinelib::kmers::reverseComplement(record.second().seq,
                                                  workstr_right);
           }
           sptr_second = &workstr_right;
@@ -348,21 +348,21 @@ inline void write_sam_mappings(mapping_cache_info_t &map_cache_out,
       const int32_t ref_len =
         static_cast<int32_t>(map_cache_out.hs.get_index()->ref_len(ah.tid));
 
-      osstream << record.first.name << "\t" << flag_first << "\t"
+      osstream << record.first().name << "\t" << flag_first << "\t"
                << ((flag_first & unmapped) ? "*" : ref_name)
                << '\t'; // if mapped RNAME, else *
       print_pos_mapq_cigar(!(flag_first & unmapped), pos_first,
-                           static_cast<int32_t>(record.first.seq.length()),
+                           static_cast<int32_t>(record.first().seq.length()),
                            ref_len, osstream);
       osstream << ((flag_first & mate_unmapped) ? '*' : '=') << '\t' // RNEXT
                << ((flag_first & mate_unmapped) ? 0 : std::max(1, pos_second))
                << '\t' // PNEXT
                << ah.frag_len() << '\t' << *sptr_first << "\t*\n";
-      osstream << record.second.name << "\t" << flag_second << "\t"
+      osstream << record.second().name << "\t" << flag_second << "\t"
                << ((flag_second & unmapped) ? "*" : ref_name)
                << '\t'; // if mapped RNAME, else *
       print_pos_mapq_cigar(!(flag_second & unmapped), pos_second,
-                           static_cast<int32_t>(record.second.seq.length()),
+                           static_cast<int32_t>(record.second().seq.length()),
                            ref_len, osstream);
       osstream << ((flag_second & mate_unmapped) ? '*' : '=') << '\t' // RNEXT
                << ((flag_second & mate_unmapped) ? 0 : std::max(1, pos_first))
@@ -371,16 +371,16 @@ inline void write_sam_mappings(mapping_cache_info_t &map_cache_out,
       secondary = true;
     }
   } else {
-    osstream << record.first.name << "\t" << 77 << "\t"
-             << "*\t0\t0\t*\t*\t0\t0\t" << record.first.seq << "\t*\n";
-    osstream << record.second.name << "\t" << 141 << "\t"
-             << "*\t0\t0\t*\t*\t0\t0\t" << record.second.seq << "\t*\n";
+    osstream << record.first().name << "\t" << 77 << "\t"
+             << "*\t0\t0\t*\t*\t0\t0\t" << record.first().seq << "\t*\n";
+    osstream << record.second().name << "\t" << 141 << "\t"
+             << "*\t0\t0\t*\t*\t0\t0\t" << record.second().seq << "\t*\n";
   }
 }
 
-std::string &get_name(fastx_parser::ReadSeq &rs) { return rs.name; }
+std::string &get_name(fastx_parser::ReadSeq &rs) { return rs.first().name; }
 
-std::string &get_name(fastx_parser::ReadPair &rs) { return rs.first.name; }
+std::string &get_name(fastx_parser::ReadPair &rs) { return rs.first().name; }
 
 // marker (i.e. tag-dispatch) types to
 // record if we are outputting in RAD or
@@ -388,7 +388,7 @@ std::string &get_name(fastx_parser::ReadPair &rs) { return rs.first.name; }
 struct RadT {};
 struct SamT {};
 
-template <typename FragT, typename SketchHitT, typename OutputT = RadT>
+template <typename FragT, typename SketchHitT, typename OutputT = RadT, bool canonical = false>
 void do_map(mindex::reference_index &ri,
             fastx_parser::FastxParser<FragT> &parser, poison_table &poison_map,
             const pesc_bulk_options &po,
@@ -428,21 +428,21 @@ void do_map(mindex::reference_index &ri,
 
   pufferfish::CanonicalKmerIterator kit_end;
 
-  mapping_cache_info<SketchHitT, piscem::streaming_query<false>> map_cache_left(ri);
+  mapping_cache_info<SketchHitT, piscem::streaming_query<false>, canonical> map_cache_left(ri);
   map_cache_left.max_ec_card = po.max_ec_card;
   map_cache_left.max_hit_occ = po.max_hit_occ;
   map_cache_left.max_hit_occ_recover = po.max_hit_occ_recover;
   map_cache_left.max_read_occ = po.max_read_occ;
   map_cache_left.attempt_occ_recover = po.attempt_occ_recover;
 
-  mapping_cache_info<SketchHitT, piscem::streaming_query<false>> map_cache_right(ri);
+  mapping_cache_info<SketchHitT, piscem::streaming_query<false>, canonical> map_cache_right(ri);
   map_cache_right.max_ec_card = po.max_ec_card;
   map_cache_right.max_hit_occ = po.max_hit_occ;
   map_cache_right.max_hit_occ_recover = po.max_hit_occ_recover;
   map_cache_right.max_read_occ = po.max_read_occ;
   map_cache_right.attempt_occ_recover = po.attempt_occ_recover;
 
-  mapping_cache_info<SketchHitT, piscem::streaming_query<false>> map_cache_out(ri);
+  mapping_cache_info<SketchHitT, piscem::streaming_query<false>, canonical> map_cache_out(ri);
   map_cache_out.max_ec_card = po.max_ec_card;
   map_cache_out.max_hit_occ = po.max_hit_occ;
   map_cache_out.max_hit_occ_recover = po.max_hit_occ_recover;
@@ -485,6 +485,11 @@ void do_map(mindex::reference_index &ri,
   mindex::hit_searcher hs(&ri);
   uint64_t read_num = 0;
 
+  // Local counters — flushed to atomics at chunk boundaries
+  uint64_t local_nr = 0;
+  uint64_t local_nhits = 0;
+  uint64_t local_npoisoned = 0;
+
   // these don't really belong here
   std::string workstr_left;
   std::string workstr_right;
@@ -499,17 +504,8 @@ void do_map(mindex::reference_index &ri,
     // Here, rg will contain a chunk of read pairs
     // we can process.
     for (auto &record : rg) {
-      ++global_nr;
+      ++local_nr;
       ++read_num;
-      auto rctr = global_nr.load();
-      auto hctr = global_nhits.load();
-
-      if (write_mapping_rate and (rctr % 500000 == 0)) {
-        iomut.lock();
-        std::cerr << "\rprocessed (" << rctr << ") reads; (" << hctr
-                  << ") had mappings.";
-        iomut.unlock();
-      }
 
       // this *overloaded* function will just do the right thing.
       // If record is single-end, just map that read, otherwise, map both and
@@ -519,28 +515,12 @@ void do_map(mindex::reference_index &ri,
                      map_cache_right, map_cache_out);
       (void)had_early_stop;
       if (poison_state.is_poisoned()) {
-        global_npoisoned++;
+        local_npoisoned++;
       }
-      // to write unmapped names
-      /*
-      if (map_cache_out.accepted_hits.empty()) {
-          iomut.lock();
-          std::cout << get_name(record) << "\n";
-          iomut.unlock();
-      }
-      */
-      /*
-      if constexpr( std::is_same_v<FragT, fastx_parser::ReadSeq> ) {
-        if (map_cache_out.accepted_hits.empty()) {
-          std::cout << ">" << record.name << "\n";
-          std::cout << record.seq << "\n";
-        }
-      }
-      */
 
       // RAD output
       if constexpr (std::is_same_v<OutputT, RadT>) {
-        global_nhits += map_cache_out.accepted_hits.empty() ? 0 : 1;
+        local_nhits += map_cache_out.accepted_hits.empty() ? 0 : 1;
         rad::util::write_to_rad_stream_bulk(map_cache_out.map_type,
                                             map_cache_out.accepted_hits,
                                             num_reads_in_chunk, rad_w);
@@ -560,6 +540,24 @@ void do_map(mindex::reference_index &ri,
           // reserve space for headers of next chunk
           rad_w << num_reads_in_chunk;
           rad_w << num_reads_in_chunk;
+
+          // Flush local counters to globals at chunk boundaries
+          global_nr += local_nr;
+          global_nhits += local_nhits;
+          global_npoisoned += local_npoisoned;
+
+          if (write_mapping_rate) {
+            auto rctr = global_nr.load();
+            auto hctr = global_nhits.load();
+            iomut.lock();
+            std::cerr << "\rprocessed (" << rctr << ") reads; (" << hctr
+                      << ") had mappings.";
+            iomut.unlock();
+          }
+
+          local_nr = 0;
+          local_nhits = 0;
+          local_npoisoned = 0;
         }
       }
 
@@ -581,6 +579,11 @@ void do_map(mindex::reference_index &ri,
       }
     }
   }
+
+  // Flush remaining local counters
+  global_nr += local_nr;
+  global_nhits += local_nhits;
+  global_npoisoned += local_npoisoned;
 
   // RAD output: dump any remaining output
   if constexpr (std::is_same_v<OutputT, RadT>) {
@@ -815,9 +818,7 @@ int run_pesc_bulk(int argc, char **argv) {
       "No poison k-mer map exists, or it was requested not to be used");
   }
 
-  // **Note**: the dispatch below is a bit messy right now, but
-  // it's not clear how to clean it up without making it overly
-  // complicated.
+  bool is_canonical = ri.get_dict()->canonical();
 
   // if we have paired-end data
   if (read_opt->empty()) {
@@ -825,53 +826,71 @@ int run_pesc_bulk(int argc, char **argv) {
 
     auto num_input_files = po.left_read_filenames.size();
     size_t additional_files = (num_input_files > 1) ? (num_input_files - 1) : 0;
+    fastx_parser::ParserConfig pc;
+    pc.chunkSize = 256;
 
-    // start with 1 parsing thread, and one more for every
-    // 6 threads, as long as there are additional input files
-    // to parse.
-    size_t remaining_threads = po.nthread;
-    for (size_t i = 0; i < additional_files; ++i) {
-      if (remaining_threads >= 6) {
-        np += 1;
-        po.nthread -= 1;
-        remaining_threads -= 6;
-      } else {
-        break;
+    constexpr bool enable_within_set_parallelism = false;
+    if (enable_within_set_parallelism && additional_files == 0 && po.nthread > 3) {
+      pc.parallelParsing = true;
+      po.nthread -= 1;
+    } else {
+
+      // start with 1 parsing thread, and one more for every
+      // 6 threads, as long as there are additional input files
+      // to parse.
+      size_t remaining_threads = po.nthread;
+      for (size_t i = 0; i < additional_files; ++i) {
+        if (remaining_threads >= 6) {
+          np += 1;
+          po.nthread -= 1;
+          remaining_threads -= 6;
+        } else {
+          break;
+        }
       }
     }
+  
+    pc.numConsumers = po.nthread;
+    pc.numParsers = np;
 
-    fastx_parser::FastxParser<fastx_parser::ReadPair> rparser(
-      po.left_read_filenames, po.right_read_filenames, po.nthread, np);
+    fastx_parser::FastxParser<fastx_parser::ReadPair> rparser(pc, po.left_read_filenames, po.right_read_filenames);
     rparser.start();
 
     using FragmentT = fastx_parser::ReadPair;
     for (size_t i = 0; i < po.nthread; ++i) {
       workers.push_back(
         std::thread([&ri, &rparser, &ptab, &global_np, &global_nr, &global_nh,
-                     &po, &out_info, &iomut]() {
-          if (!po.enable_structural_constraints) {
-            using SketchHitT =
-              mapping::util::sketch_hit_info_no_struct_constraint;
-            if (po.use_sam_format) {
-              do_map<FragmentT, SketchHitT, SamT>(ri, rparser, ptab, po,
-                                                  global_np, global_nr,
-                                                  global_nh, out_info, iomut);
+                     &po, &out_info, &iomut, is_canonical]() {
+          auto dispatch = [&]<bool canonical>() {
+            if (!po.enable_structural_constraints) {
+              using SketchHitT =
+                mapping::util::sketch_hit_info_no_struct_constraint;
+              if (po.use_sam_format) {
+                do_map<FragmentT, SketchHitT, SamT, canonical>(
+                  ri, rparser, ptab, po, global_np, global_nr, global_nh,
+                  out_info, iomut);
+              } else {
+                do_map<FragmentT, SketchHitT, RadT, canonical>(
+                  ri, rparser, ptab, po, global_np, global_nr, global_nh,
+                  out_info, iomut);
+              }
             } else {
-              do_map<FragmentT, SketchHitT, RadT>(ri, rparser, ptab, po,
-                                                  global_np, global_nr,
-                                                  global_nh, out_info, iomut);
+              using SketchHitT = mapping::util::sketch_hit_info;
+              if (po.use_sam_format) {
+                do_map<FragmentT, SketchHitT, SamT, canonical>(
+                  ri, rparser, ptab, po, global_np, global_nr, global_nh,
+                  out_info, iomut);
+              } else {
+                do_map<FragmentT, SketchHitT, RadT, canonical>(
+                  ri, rparser, ptab, po, global_np, global_nr, global_nh,
+                  out_info, iomut);
+              }
             }
+          };
+          if (is_canonical) {
+            dispatch.template operator()<true>();
           } else {
-            using SketchHitT = mapping::util::sketch_hit_info;
-            if (po.use_sam_format) {
-              do_map<FragmentT, SketchHitT, SamT>(ri, rparser, ptab, po,
-                                                  global_np, global_nr,
-                                                  global_nh, out_info, iomut);
-            } else {
-              do_map<FragmentT, SketchHitT, RadT>(ri, rparser, ptab, po,
-                                                  global_np, global_nr,
-                                                  global_nh, out_info, iomut);
-            }
+            dispatch.template operator()<false>();
           }
         }));
     }
@@ -900,38 +919,52 @@ int run_pesc_bulk(int argc, char **argv) {
       }
     }
 
-    fastx_parser::FastxParser<fastx_parser::ReadSeq> rparser(
-      po.single_read_filenames, po.nthread, np);
+    fastx_parser::ParserConfig pc = fastx_parser::ParserConfigBuilder()
+      .with_consumers(po.nthread)
+      .with_parsers(np)
+      .within_set_parallelism(false)
+      .build();
+    pc.chunkSize = 256;
+
+    fastx_parser::FastxParser<fastx_parser::ReadSeq> rparser(pc,
+      po.single_read_filenames);
     rparser.start();
 
     using FragmentT = fastx_parser::ReadSeq;
     for (size_t i = 0; i < po.nthread; ++i) {
       workers.push_back(
         std::thread([&ri, &rparser, &ptab, &global_np, &global_nr, &global_nh,
-                     &po, &out_info, &iomut]() {
-          if (!po.enable_structural_constraints) {
-            using SketchHitT =
-              mapping::util::sketch_hit_info_no_struct_constraint;
-            if (po.use_sam_format) {
-              do_map<FragmentT, SketchHitT, SamT>(ri, rparser, ptab, po,
-                                                  global_np, global_nr,
-                                                  global_nh, out_info, iomut);
+                     &po, &out_info, &iomut, is_canonical]() {
+          auto dispatch = [&]<bool canonical>() {
+            if (!po.enable_structural_constraints) {
+              using SketchHitT =
+                mapping::util::sketch_hit_info_no_struct_constraint;
+              if (po.use_sam_format) {
+                do_map<FragmentT, SketchHitT, SamT, canonical>(
+                  ri, rparser, ptab, po, global_np, global_nr, global_nh,
+                  out_info, iomut);
+              } else {
+                do_map<FragmentT, SketchHitT, RadT, canonical>(
+                  ri, rparser, ptab, po, global_np, global_nr, global_nh,
+                  out_info, iomut);
+              }
             } else {
-              do_map<FragmentT, SketchHitT, RadT>(ri, rparser, ptab, po,
-                                                  global_np, global_nr,
-                                                  global_nh, out_info, iomut);
+              using SketchHitT = mapping::util::sketch_hit_info;
+              if (po.use_sam_format) {
+                do_map<FragmentT, SketchHitT, SamT, canonical>(
+                  ri, rparser, ptab, po, global_np, global_nr, global_nh,
+                  out_info, iomut);
+              } else {
+                do_map<FragmentT, SketchHitT, RadT, canonical>(
+                  ri, rparser, ptab, po, global_np, global_nr, global_nh,
+                  out_info, iomut);
+              }
             }
+          };
+          if (is_canonical) {
+            dispatch.template operator()<true>();
           } else {
-            using SketchHitT = mapping::util::sketch_hit_info;
-            if (po.use_sam_format) {
-              do_map<FragmentT, SketchHitT, SamT>(ri, rparser, ptab, po,
-                                                  global_np, global_nr,
-                                                  global_nh, out_info, iomut);
-            } else {
-              do_map<FragmentT, SketchHitT, RadT>(ri, rparser, ptab, po,
-                                                  global_np, global_nr,
-                                                  global_nh, out_info, iomut);
-            }
+            dispatch.template operator()<false>();
           }
         }));
     }
