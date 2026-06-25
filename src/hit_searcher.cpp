@@ -707,7 +707,16 @@ check_direct_match(SkipContext &skip_ctx, int32_t k, int direction,
   skip_ctx.ref_contig_it.at(2 * curr_pos);
   skip_ctx.fast_hit.ref_kmer = static_cast<uint64_t>(skip_ctx.ref_contig_it.read(2 * k));
 
-  auto direct_phit = raw_hits.back().second;
+  // Project from the open-search *anchor* (`skip_ctx.proj_hits()`), NOT
+  // `raw_hits.back()`. `dist`/`skip_dist` and `curr_pos` are computed relative to
+  // the anchor, so projecting any other hit (e.g. a prior skip-hit that happens
+  // to be `raw_hits.back()` with a larger `contigPos_`) pushes the position past
+  // the contig end, yielding a `contigPos_ > contigLen_ - k` that does not exist
+  // in the contig. This is masked here by pufferfish's reference-boundary clamp,
+  // but it surfaced as an out-of-bounds panic in the Rust port
+  // (COMBINE-lab/salmon issue #1038). Using the anchor keeps the recorded
+  // position equal to the one verified at `curr_pos` and within the contig.
+  auto direct_phit = skip_ctx.proj_hits();
   auto prev_hit_fw = direct_phit.hit_fw_on_contig();
 
   if constexpr (add_hit_if_successful) {
